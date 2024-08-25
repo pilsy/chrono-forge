@@ -6,35 +6,18 @@ import { denormalize, Schema } from 'normalizr';
 import { get, set } from 'dottie';
 import { isEmpty, isEqual } from 'lodash';
 import { startChildPayload } from './utils/startChildPayload';
-import { WorkflowClass, On, Query, Signal } from './ChronoState';
 
-export const StatefulWorkflow = (options: { name?: string; schema?: Schema } = {}) => {
-  return (constructor: any) => {
-    const workflowName = options.name || constructor.name;
-    const tracer = trace.getTracer('chrono-forge');
-
-    if (!(constructor.prototype instanceof StatefulWorkflowClass)) {
-      abstract class DynamicStatefulWorkflowClass extends StatefulWorkflowClass {
-        constructor(params: any) {
-          super(params, options);
-          this.initializeState(params);
-          Object.assign(this, new constructor(params));
-        }
-      }
-      constructor = DynamicStatefulWorkflowClass;
-    }
-
-    return new Function(
-      'workflow', 'constructor', 'options',
-      `
-      return async function ${workflowName}(params) {
-        const instance = new constructor(params, options.schema);
-        return await instance.executeWorkflow(params);
-      };
-    `
-    )(workflow, constructor, options);
-  };
-};
+export {
+  Workflow,
+  Signal,
+  Query,
+  Hook,
+  Before,
+  After,
+  Property,
+  Condition,
+  Step
+} from './ChronoState';
 
 export type ManagedPath = {
   schemaName?: string;
@@ -275,7 +258,6 @@ abstract class StatefulWorkflowClass extends WorkflowClass {
 
   protected async executeWorkflow(params: StatefulWorkflowParams): Promise<any> {
     const tracer = trace.getTracer('chrono-forge');
-    this.bindQueriesAndSignals();
 
     return tracer.startActiveSpan(`[Workflow]:${this.constructor.name}`, async (span) => {
       try {
