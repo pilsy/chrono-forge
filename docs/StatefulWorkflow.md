@@ -1,48 +1,44 @@
-### `@StatefulWorkflow` Decorator and `StatefulWorkflowClass` Documentation
+### `StatefulWorkflow` Documentation
 
-The `@StatefulWorkflow` decorator and `StatefulWorkflowClass` are designed to provide powerful state management capabilities within Temporal workflows. These tools allow for the seamless handling of complex states, automatic management of child workflows, and dynamic event-driven processing. This document details all the features available in the `@StatefulWorkflow` decorator and `StatefulWorkflowClass`, with usage examples for each feature.
+The `StatefulWorkflow` is designed to provide powerful state management capabilities within Temporal workflows. It enables seamless handling of complex states, automatic management of child workflows, and dynamic event-driven processing. This document details all the features available in the `StatefulWorkflow`, with usage examples for each feature.
 
 ---
 
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [StatefulWorkflowClass Features](#statefulworkflowclass-features)
-   - [State Management](#state-management)
-   - [Child Workflow Management](#child-workflow-management)
-   - [Dynamic Subscription Handling](#dynamic-subscription-handling)
-   - [Hooks for Method Interception](#hooks-for-method-interception)
-   - [Event Emission and Handling](#event-emission-and-handling)
-   - [Error Handling with @OnError](#error-handling-with-onerror)
-   - [Support for continueAsNew](#support-for-continueasnew)
-   - [Signal Forwarding to Child Workflows](#signal-forwarding-to-child-workflows)
-3. [@StatefulWorkflow Decorator Features](#statefulworkflow-decorator-features)
-   - [Automatic Class Extension](#automatic-class-extension)
-   - [Dynamic Workflow Function Creation](#dynamic-workflow-function-creation)
-4. [Detailed Feature Usage](#detailed-feature-usage)
-   - [State Management](#1-state-management-usage)
-   - [Child Workflow Management](#2-child-workflow-management-usage)
-   - [Dynamic Subscription Handling](#3-dynamic-subscription-handling-usage)
-   - [Hooks for Method Interception](#4-hooks-for-method-interception-usage)
-   - [Event Emission and Handling](#5-event-emission-and-handling-usage)
-   - [Error Handling with @OnError](#6-error-handling-with-onerror-usage)
-   - [Support for continueAsNew](#7-support-for-continueasnew-usage)
-   - [Signal Forwarding to Child Workflows](8-#signal-forwarding-to-child-workflows-usage)
-   - [@StatefulWorkflow Decorator Usage](#9-statefulworkflow-decorator-usage)
-   - [Complete Usage Example](#10-complete-usage-example)
-5. [Conclusion](#conclusion)
+2. [StatefulWorkflow Features](#statefulworkflowclass-features)
+   - [State Management](#1-state-management)
+   - [Child Workflow Management](#2-child-workflow-management)
+   - [Dynamic Subscription Handling](#3-dynamic-subscription-handling)
+   - [Hooks for Method Interception](#4-hooks-for-method-interception)
+   - [Event Emission and Handling](#5-event-emission-and-handling)
+   - [Error Handling with @OnError](#6-error-handling-with-onerror)
+   - [Support for continueAsNew](#7-support-for-continueasnew)
+   - [Signal Forwarding to Child Workflows](#8-signal-forwarding-to-child-workflows)
+3. [Detailed Feature Usage](#detailed-feature-usage)
+   - [State Management Usage](#1-state-management-usage)
+   - [Child Workflow Management Usage](#2-child-workflow-management-usage)
+   - [Dynamic Subscription Handling Usage](#3-dynamic-subscription-handling-usage)
+   - [Hooks for Method Interception Usage](#4-hooks-for-method-interception-usage)
+   - [Event Emission and Handling Usage](#5-event-emission-and-handling-usage)
+   - [Error Handling with @OnError Usage](#6-error-handling-with-onerror-usage)
+   - [Support for continueAsNew Usage](#7-support-for-continueasnew-usage)
+   - [Signal Forwarding to Child Workflows Usage](#8-signal-forwarding-to-child-workflows-usage)
+   - [Complete Usage Example](#9-complete-usage-example)
+4. [Conclusion](#conclusion)
 
 ---
 
 ## Overview
 
-The `@StatefulWorkflow` decorator and `StatefulWorkflowClass` are advanced tools designed for managing complex state and interactions within Temporal workflows. These tools provide built-in support for state management, automatic handling of child workflows, dynamic subscription and event handling, and much more. The goal is to make it easier to build robust, scalable workflows that require intricate state management.
+The `StatefulWorkflow` is an advanced tool designed for managing complex state and interactions within Temporal workflows. It provides built-in support for state management, automatic handling of child workflows, dynamic subscription and event handling, and much more. The goal is to make it easier to build robust, scalable workflows that require intricate state management.
 
-## StatefulWorkflowClass Features
+## StatefulWorkflow Features
 
 ### 1. State Management
 
-- **Built-in State Management**: The `StatefulWorkflowClass` provides a state management mechanism that allows workflows to store, query, and update their state over time.
+- **Built-in State Management**: The `StatefulWorkflow` provides a state management mechanism that allows workflows to store, query, and update their state over time.
 - **Deep State Inspection**: Developers can query specific paths within the state, enabling precise control over state retrieval and manipulation.
 
 ### 2. Child Workflow Management
@@ -62,7 +58,7 @@ The `@StatefulWorkflow` decorator and `StatefulWorkflowClass` are advanced tools
 
 ### 5. Event Emission and Handling
 
-- **Event Emission**: The `StatefulWorkflowClass` extends `WorkflowClass`, which in turn extends `EventEmitter`, allowing it to emit and handle events within the workflow.
+- **Event Emission**: The `StatefulWorkflow` extends `WorkflowClass`, which in turn extends `EventEmitter`, allowing it to emit and handle events within the workflow.
 - **Event Handling**: The `@On` decorator is used to bind methods to specific events, optionally filtered by workflow type or child workflow events.
 
 ### 6. Error Handling with @OnError
@@ -80,29 +76,15 @@ The `@StatefulWorkflow` decorator and `StatefulWorkflowClass` are advanced tools
 - **Automatic Signal Forwarding**: Signals received by the parent workflow can be automatically forwarded to all managed child workflows.
 - **Selective Forwarding**: Control which signals are forwarded to child workflows using the `@On` decorator with the `forwardToChildren` option.
 
-## @StatefulWorkflow Decorator Features
-
-### 1. Automatic Class Extension
-
-- **Dynamic Class Extension**: If a class does not already extend `StatefulWorkflowClass`, the `@StatefulWorkflow` decorator automatically extends it, ensuring that all necessary methods and properties are available.
-- **Seamless Integration**: Developers can focus on writing workflow logic without worrying about boilerplate code for class extension.
-
-### 2. Dynamic Workflow Function Creation
-
-- **Named Function Creation**: The `@StatefulWorkflow` decorator dynamically creates and exports a named function for each workflow, making it discoverable by Temporal.
-- **Custom Naming**: Developers can specify custom names for the workflow functions using the `name` option in the decorator.
-
-This ensures that the workflow is correctly registered and can be executed by Temporal.
-
 ## Detailed Feature Usage
 
 ### 1. State Management Usage
 
 #### Querying and Updating State
 ```typescript
-import { StatefulWorkflowClass, Signal, Query } from './StatefulWorkflow';
+import { StatefulWorkflow, Signal, Query } from './StatefulWorkflow';
 
-class MyStatefulWorkflow extends StatefulWorkflowClass {
+class MyStatefulWorkflow extends StatefulWorkflow {
   @Query()
   public getStateValue(key: string): any {
     return this.state[key];
@@ -126,9 +108,9 @@ class MyStatefulWorkflow extends StatefulWorkflowClass {
 
 #### Managing Child Workflows
 ```typescript
-import { StatefulWorkflowClass } from './StatefulWorkflow';
+import { StatefulWorkflow } from './StatefulWorkflow';
 
-class MyStatefulWorkflow extends StatefulWorkflowClass {
+class MyStatefulWorkflow extends StatefulWorkflow {
   protected configurePaths() {
     this.configureManagedPaths([{ path: 'threads', workflowType: 'ThreadWorkflow', idAttribute: 'threadId' }]);
   }
@@ -145,9 +127,9 @@ class MyStatefulWorkflow extends StatefulWorkflowClass {
 
 #### Managing Subscriptions
 ```typescript
-import { StatefulWorkflowClass, Signal } from './StatefulWorkflow';
+import { StatefulWorkflow, Signal } from './StatefulWorkflow';
 
-class MyStatefulWorkflow extends StatefulWorkflowClass {
+class MyStatefulWorkflow extends StatefulWorkflow {
   @Signal()
   public async subscribeToChanges(subscription: { workflowId: string; signalName: string; dataWatchPath: string }): Promise<void> {
     await this.subscribe(subscription);
@@ -165,9 +147,9 @@ class MyStatefulWorkflow extends StatefulWorkflowClass {
 
 #### Using Hooks
 ```typescript
-import { StatefulWorkflowClass, Hook } from './StatefulWorkflow';
+import { StatefulWorkflow, Hook } from './StatefulWorkflow';
 
-class MyStatefulWorkflow extends StatefulWorkflowClass {
+class MyStatefulWorkflow extends StatefulWorkflow {
   @Hook({ before: 'execute' })
   protected async logBeforeExecution() {
     console.log('Before executing...');
@@ -191,9 +173,9 @@ class MyStatefulWorkflow extends StatefulWorkflowClass {
 
 #### Emitting and Handling Events
 ```typescript
-import { StatefulWorkflowClass, On } from './StatefulWorkflow';
+import { StatefulWorkflow, On } from './StatefulWorkflow';
 
-class MyStatefulWorkflow extends StatefulWorkflowClass {
+class MyStatefulWorkflow extends StatefulWorkflow {
   @On('customEvent')
   public async handleCustomEvent(data: string) {
     console.log(`Custom event received: ${data}`);
@@ -211,9 +193,9 @@ class MyStatefulWorkflow extends StatefulWorkflowClass {
 
 #### Handling Errors
 ```typescript
-import { StatefulWorkflowClass, OnError } from './StatefulWorkflow';
+import { StatefulWorkflow, OnError } from './StatefulWorkflow';
 
-class MyStatefulWorkflow extends StatefulWorkflowClass {
+class MyStatefulWorkflow extends StatefulWorkflow {
   @OnError('execute')
   protected async handleError(err: Error) {
     console.error('Error during execution:', err);
@@ -225,17 +207,15 @@ class MyStatefulWorkflow extends StatefulWorkflowClass {
 }
 ```
 **Explanation**:
-- `handleError` is invoked if an error occurs
-
- during the `execute` method.
+- `handleError` is invoked if an error occurs during the `execute` method.
 
 ### 7. Support for continueAsNew Usage
 
 #### Automatic Continuation
 ```typescript
-import { StatefulWorkflowClass, Hook } from './StatefulWorkflow';
+import { StatefulWorkflow, Hook } from './StatefulWorkflow';
 
-class MyStatefulWorkflow extends StatefulWorkflowClass {
+class MyStatefulWorkflow extends StatefulWorkflow {
   private iteration = 0;
 
   @Hook({ after: 'execute' })
@@ -258,9 +238,9 @@ class MyStatefulWorkflow extends StatefulWorkflowClass {
 
 #### Forwarding Signals
 ```typescript
-import { StatefulWorkflowClass, On } from './StatefulWorkflow';
+import { StatefulWorkflow, On } from './StatefulWorkflow';
 
-class ParentWorkflow extends StatefulWorkflowClass {
+class ParentWorkflow extends StatefulWorkflow {
   @On('pause', undefined, { forwardToChildren: true })
   public async handlePause() {
     console.log('Parent workflow paused.');
@@ -272,35 +252,19 @@ class ParentWorkflow extends StatefulWorkflowClass {
 }
 ```
 **Explanation**:
-- The `handlePause` method will handle the `pause` signal and forward it to all child workflows.
+- The `handlePause
 
-### 9. @StatefulWorkflow Decorator Usage
+` method will handle the `pause` signal and forward it to all child workflows.
 
-#### Creating a Stateful Workflow
-```typescript
-import { StatefulWorkflow, StatefulWorkflowClass } from './StatefulWorkflow';
-
-@StatefulWorkflow({ name: 'CustomStatefulWorkflow' })
-class MyStatefulWorkflow extends StatefulWorkflowClass {
-  protected async execute() {
-    // Execution logic
-  }
-}
-```
-**Explanation**:
-- The `@StatefulWorkflow` decorator registers the class as a Temporal stateful workflow.
-- The workflow is named `CustomStatefulWorkflow`.
-
-### 10. Complete Usage Example
+### 9. Complete Usage Example
 
 #### Overview
 
-This example demonstrates how to use all the features provided by the `@StatefulWorkflow` decorator and `StatefulWorkflowClass`. The workflow simulates a project management system where tasks are dynamically managed, and their states are tracked across multiple child workflows.
+This example demonstrates how to use all the features provided by the `StatefulWorkflow`. The workflow simulates a project management system where tasks are dynamically managed, and their states are tracked across multiple child workflows.
 
 ```typescript
 import {
   StatefulWorkflow,
-  StatefulWorkflowClass,
   Signal,
   Query,
   Hook,
@@ -308,8 +272,7 @@ import {
   OnError,
 } from './StatefulWorkflow';
 
-@StatefulWorkflow({ name: 'ProjectManagementWorkflow' })
-class ProjectManagementWorkflow extends StatefulWorkflowClass {
+class ProjectManagementWorkflow extends StatefulWorkflow {
   private projectName: string = '';
   private taskUpdates: any[] = [];
 
@@ -421,6 +384,6 @@ export default ProjectManagementWorkflow;
 
 ## Conclusion
 
-The `@StatefulWorkflow` decorator and `StatefulWorkflowClass` provide a comprehensive, extensible foundation for building complex, stateful workflows with Temporal. By automatically handling state management, child workflows, signals, queries, events, and hooks, this framework enables developers to focus on business logic while providing a robust architecture for managing complex workflow interactions.
+The `StatefulWorkflow` provides a comprehensive, extensible foundation for building complex, stateful workflows with Temporal. By automatically handling state management, child workflows, signals, queries, events, and hooks, this framework enables developers to focus on business logic while providing a robust architecture for managing complex workflow interactions.
 
-Whether you're building simple stateful workflows or managing intricate nested workflows with dynamic states and child workflows, this framework offers the tools you need to succeed. The flexibility and power of `StatefulWorkflowClass` make it easy to build reliable, maintainable workflows for any application.
+Whether you're building simple stateful workflows or managing intricate nested workflows with dynamic states and child workflows, this framework offers the tools you need to succeed. The flexibility and power of `StatefulWorkflow` make it easy to build reliable, maintainable workflows for any application.

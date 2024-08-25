@@ -1,10 +1,10 @@
-### ChronoForge Temporal Workflow System with Decorators
+### `Workflow` and `@ChronoFlow` Documentation
 
-This spec provides a comprehensive overview of the ChronoForge Temporal workflow system in TypeScript. The system integrates various decorators and features to simplify and extend the workflow functionality. It covers everything from basic workflow definitions to advanced step management, conditional execution, and dynamic branching.
+ChronoForge is an opensource framework for Temporal.io Workflows which integrates a wide array of features through a comprehensive set of decorators and a robust workflow execution engine. The system is designed to be flexible, allowing for easy definition of workflows with dynamic execution paths, detailed error handling, and integrated tracing. The use of decorators simplifies the management of steps, conditions, signals, queries, and hooks, while the workflow engine ensures that all steps are executed in the correct order, based on defined dependencies and conditions. This system is powerful enough to handle complex workflows while remaining easy to define, manage, and debug.
 
-Here's the updated and fully working Table of Contents with links:
+***Those who say it cannot be done should stop interrupting the people doing it.***
 
-# Table of Contents
+## Table of Contents
 
 - [1. Workflow Decorators](#1-workflow-decorators)
   - [@ChronoFlow(options: { name?: string })](#chronoflowoptions--name-string-)
@@ -60,7 +60,6 @@ Here's the updated and fully working Table of Contents with links:
   - [Completion Pathways](#completion-pathways)
     - [Entry and Exit Steps](#entry-and-exit-steps)
     - [Pathway Calculation](#pathway-calculation)
-- [Summary](#summary)
 
 ---
 ### 1. **Workflow Decorators**
@@ -456,9 +455,3 @@ The `Workflow` class in ChronoForge is a powerful and flexible foundation for bu
   - The workflow engine calculates the pathway to completion by ensuring all necessary steps are executed in sequence, considering dependencies, conditions, and branching paths.
 
 ---
-
-### Summary
-
-The ChronoForge Temporal workflow system in TypeScript integrates a wide array of features through a comprehensive set of decorators and a robust workflow execution engine. The system is designed to be flexible, allowing for easy definition of workflows with dynamic execution paths, detailed error handling, and integrated tracing. The use of decorators simplifies the management of steps, conditions, signals, queries, and hooks, while the workflow engine ensures that all steps are executed in the correct order, based on defined dependencies and conditions. This system is powerful enough to handle complex workflows while remaining easy to define, manage, and debug.
-
-***Those who say it cannot be done should stop interrupting the people doing it.***
