@@ -3,16 +3,16 @@
 /* eslint-disable no-restricted-imports */
 import * as workflow from '@temporalio/workflow';
 import EventEmitter from 'eventemitter3';
-import { trace, context, SpanStatusCode } from '@opentelemetry/api';
+import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { log } from '@temporalio/workflow';
+import type { Duration } from '@temporalio/common';
 
 export const ChronoFlow = (name: string, options: { [key: string]: any } = {}) => {
   return (constructor: any) => {
     const workflowName = name || constructor.name;
-    const tracer = trace.getTracer('chrono-forge');
 
-    if (!(constructor.prototype instanceof Worklow)) {
-      abstract class DynamicChronoFlow extends Worklow {
+    if (!(constructor.prototype instanceof Workflow)) {
+      abstract class DynamicChronoFlow extends Workflow {
         constructor(params: any) {
           super(params, options);
           Object.assign(this, new constructor(params, options));
@@ -26,18 +26,20 @@ export const ChronoFlow = (name: string, options: { [key: string]: any } = {}) =
       `
       return async function ${workflowName}(params) {
         const instance = new constructor(params, options);
-        instance.bindQueriesAndSignals();
-        return await instance.executeWorkflow(params);
+        return await instance.executeWorkflow();
       };
     `
     )(workflow, constructor, options);
   };
 };
 
-export const ContinueAsNew = (options: { maxIterations?: number } = { maxIterations: 10000 }) => {
-  return (constructor: any) => {
-    constructor.prototype.MAX_ITERATIONS = options.maxIterations || 10000;
-    constructor.prototype.continueAsNewEnabled = true;
+export const ContinueAsNew = () => {
+  return (target: any, propertyKey: string) => {
+    if (!target.constructor.prototype._continueAsNewMethod) {
+      target.constructor.prototype._continueAsNewMethod = propertyKey;
+    } else {
+      throw new Error(`@ContinueAsNew decorator can only be applied to one method in a class. It has already been applied to ${target.constructor.prototype._continueAsNewMethod}.`);
+    }
   };
 };
 
@@ -101,8 +103,17 @@ export const Condition = (timeout?: string) => {
   return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
     const originalMethod = descriptor.value;
     descriptor.value = async function (...args: any[]) {
-      await workflow.condition(() => originalMethod.apply(this, args), timeout ? { timeout } : undefined);
+      await workflow.condition(() => originalMethod.apply(this, args), timeout as Duration);
     };
+  };
+};
+
+export const On = (event: string) => {
+  return (target: any, propertyKey: string) => {
+    if (!target.constructor.prototype._eventHandlers) {
+      target.constructor.prototype._eventHandlers = [];
+    }
+    target.constructor.prototype._eventHandlers.push({ event, method: propertyKey });
   };
 };
 
@@ -122,26 +133,187 @@ export const Step = (options: { name?: string; on?: () => boolean; before?: stri
   };
 };
 
+export type WorkflowStatus = 'running' | 'paused' | 'complete' | 'cancelled' | 'errored';
+
 export abstract class Workflow extends EventEmitter {
   private signalHandlers: { [key: string]: (args: any) => Promise<void> } = {};
   private queryHandlers: { [key: string]: (...args: any) => any } = {};
-  protected handles: { [workflowId: string]: ReturnType<typeof workflow.getExternalWorkflowHandle> | workflow.ChildWorkflowHandle<any> } = {};
-  protected continueAsNew = false;
-  protected log = log;
-  protected steps: { name: string; method: string; on?: () => boolean; before?: string | string[]; after?: string | string[] }[] = [];
   private tracer = trace.getTracer('chrono-forge');
-  protected iteration = 0;
-  protected MAX_ITERATIONS = 10000;
-  protected status = 'running';
+  protected handles: { [workflowId: string]: ReturnType<typeof workflow.getExternalWorkflowHandle> | workflow.ChildWorkflowHandle<any> } = {};
+  protected log = log;
 
-  constructor(protected params: any, protected options: { [key: string]: any }) {
+  @Property({ set: false })
+  protected continueAsNew = false;
+
+  @Property()
+  protected steps: { name: string; method: string; on?: () => boolean; before?: string | string[]; after?: string | string[] }[] = [];
+
+  @Property({ set: false })
+  protected iteration = 0;
+
+  @Property({ set: false })
+  protected MAX_ITERATIONS = 10000;
+
+  @Property()
+  protected status: WorkflowStatus = 'running';
+
+  @Signal()
+  public pause(): void {
+    this.status = 'paused';
+  }
+
+  @Signal()
+  public resume(): void {
+    this.status = 'running';
+  }
+
+  @Property()
+  protected pendingUpdate = false;
+
+  constructor(protected params: any, protected options?: { [key: string]: any }) {
     super();
+    this.bind();
   }
 
   protected abstract condition(): boolean | Promise<boolean>;
   protected abstract execute(...args: unknown[]): Promise<unknown>;
 
-  private bindQueriesAndSignals() {
+  public async signal(signalName: string, ...args: unknown[]): Promise<void> {
+    if (this.signalHandlers[signalName]) { // @ts-ignore
+      await this.signalHandlers[signalName](...args);
+      await this.emitAsync(signalName, ...args);
+    } else {
+      throw new Error(`Signal ${signalName} is not defined on this workflow`);
+    }
+  }
+
+  public async query(queryName: string, ...args: unknown[]): Promise<any> {
+    if (this.queryHandlers[queryName]) {
+      return await this.queryHandlers[queryName](...args);
+    } else {
+      throw new Error(`Query ${queryName} is not defined on this workflow`);
+    }
+  }
+
+  protected async executeWorkflow(): Promise<any> {
+    return this.tracer.startActiveSpan(`[Workflow]:${this.constructor.name}`, async (span) => {
+      try {
+        span.setAttributes({ workflowId: workflow.workflowInfo().workflowId, workflowType: workflow.workflowInfo().workflowType });
+
+        while (this.iteration <= this.MAX_ITERATIONS && !this.isInTerminalState()) {
+          await this.awaitCondition();
+
+          if (this.status === 'paused') {
+            await this.emitAsync('paused')
+            await workflow.condition(() => this.status !== 'paused');
+          }
+
+          const result = await this.execute();
+
+          if (!this.steps || this.steps.length === 0) {
+            if (this.isInTerminalState()) {
+              span.end();
+              return result;
+            }
+          } else {
+            await this.executeSteps();
+            if (this.isInTerminalState()) {
+              span.end();
+              return result;
+            }
+          }
+
+          if (++this.iteration >= this.MAX_ITERATIONS) {
+            await this.handleMaxIterations();
+          } else {
+            this.pendingUpdate = false;
+          }
+        }
+      } catch (err) {
+        await this.handleExecutionError(err, span);
+      }
+      return;
+    });
+  }
+
+  private async executeStep(step: { name: string, method: string }) {
+    const stepMethod = (this as any)[step.method].bind(this);
+    if (typeof stepMethod === 'function') {
+      await stepMethod();
+    }
+  }
+
+  private async executeSteps() {
+    const stepsToExecute = this.steps.filter(step => !step.before);
+    for (const step of stepsToExecute) {
+      if (!step.on || (await step.on())) {
+        await this.executeStep(step);
+        await this.processDependentSteps(step.name);
+      }
+    }
+  }
+
+  private async processDependentSteps(stepName: string) {
+    const dependentSteps = this.steps.filter(step => step.before && step.before.includes(stepName));
+    for (const step of dependentSteps) {
+      if (!step.on || (await step.on())) {
+        await this.executeStep(step);
+        await this.processDependentSteps(step.name);
+      }
+    }
+  }
+
+  protected async awaitCondition(): Promise<any> {
+    if (typeof this.condition === 'function') {
+      return await this.condition();
+    } else {
+      return await workflow.condition(() => this.pendingUpdate || this.status !== 'running');
+    }
+  }
+
+  protected async handleMaxIterations(): Promise<void> {
+    const continueAsNewMethod = (this as any)._continueAsNewMethod;
+
+    if (continueAsNewMethod && typeof (this as any)[continueAsNewMethod] === 'function') {
+      return await (this as any)[continueAsNewMethod]();
+    } else {
+      throw new Error(`No method decorated with @ContinueAsNew found in ${this.constructor.name}. Cannot continue as new.`);
+    }
+  }
+
+  protected async handleExecutionError(err: any, span: any): Promise<void> {
+    if (workflow.isCancellation(err)) {
+      span.setAttribute('cancelled', true);
+      await workflow.CancellationScope.nonCancellable(async () => {
+        for (const handle of Object.values(this.handles)) {
+          try {
+            if ('cancel' in handle && typeof (handle as workflow.ExternalWorkflowHandle).cancel === 'function') {
+              await (handle as workflow.ExternalWorkflowHandle).cancel();
+            }
+          } catch (error) {
+            console.error(error);
+          }
+        }
+        throw err;
+      });
+    } else {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
+      throw err;
+    }
+  }
+
+  protected isInTerminalState(): boolean {
+    return ['complete', 'cancelled', 'errored'].includes(this.status);
+  }
+
+  protected async emitAsync(event: string, ...args: any[]): Promise<void> {
+    const listeners = this.listeners(event);
+    for (const listener of listeners) {
+      await listener(...args);
+    }
+  }
+
+  private bind() {
     const proto = Object.getPrototypeOf(this);
 
     // Bind signals
@@ -166,6 +338,16 @@ export abstract class Workflow extends EventEmitter {
 
     // Register steps
     this.steps = proto.constructor._steps || [];
+
+    // Bind the event handlers
+    const eventHandlers = (this as any)._eventHandlers || [];
+    eventHandlers.forEach((handler: { event: string, method: string }) => {
+      this.on(handler.event, async (...args: any[]) => {
+        if (typeof (this as any)[handler.method] === 'function') {
+          await (this as any)[handler.method](...args);
+        }
+      });
+    });
   }
 
   private applyHooks(hooks: { before: { [name: string]: string[] }, after: { [name: string]: string[] } }) {
@@ -175,6 +357,7 @@ export abstract class Workflow extends EventEmitter {
       workflow.log.debug(`[HOOK]:${methodName}`);
       return new Promise(async (resolve, reject) => {
         await this.tracer.startActiveSpan(`Workflow:applyHooks[${methodName}]`, async span => {
+          // @ts-ignore
           const { before, after } = hooks[methodName as string];
           span.setAttributes({ methodName, before, after });
 
@@ -223,23 +406,6 @@ export abstract class Workflow extends EventEmitter {
     }
   }
 
-  public async signal(signalName: string, ...args: unknown[]): Promise<void> {
-    if (this.signalHandlers[signalName]) { // @ts-ignore
-      await this.signalHandlers[signalName](...args);
-      this.emit(signalName, ...args);
-    } else {
-      throw new Error(`Signal ${signalName} is not defined on this workflow`);
-    }
-  }
-
-  public async query(queryName: string, ...args: unknown[]): Promise<any> {
-    if (this.queryHandlers[queryName]) {
-      return await this.queryHandlers[queryName](...args);
-    } else {
-      throw new Error(`Query ${queryName} is not defined on this workflow`);
-    }
-  }
-
   protected async forwardSignalToChildren(signalName: string, ...args: unknown[]): Promise<void> {
     const childWorkflowHandles = Object.values(this.handles);
     for (const handle of childWorkflowHandles) {
@@ -247,129 +413,6 @@ export abstract class Workflow extends EventEmitter {
         await handle.signal(signalName, ...args);
       } catch (err) {
         console.error(`Failed to forward signal '${signalName}' to child workflow:`, err);
-      }
-    }
-  }
-
-  protected async executeWorkflow(params: any): Promise<any> {
-    return this.tracer.startActiveSpan(`[Workflow]:${this.constructor.name}`, async (span) => {
-      try {
-        span.setAttributes({ workflowId: workflow.workflowInfo().workflowId, workflowType: workflow.workflowInfo().workflowType });
-
-        while (this.iteration <= this.MAX_ITERATIONS) {
-          await this.awaitCondition();
-
-          if (this.status === 'paused') {
-            await this.handlePause();
-          }
-
-          const result = await this.execute(params);
-
-          if (!this.steps || this.steps.length === 0) {
-            if (this.isInTerminalState()) {
-              span.end();
-              return result;
-            }
-          } else {
-            await this.executeSteps();
-            if (this.isInTerminalState()) {
-              span.end();
-              return result;
-            }
-          }
-
-          if (++this.iteration >= this.MAX_ITERATIONS) {
-            await this.handleMaxIterations();
-          } else {
-            this.pendingUpdate = false;
-          }
-        }
-      } catch (err) {
-        await this.handleExecutionError(err, span);
-      }
-    });
-  }
-
-  private async awaitCondition(): Promise<void> {
-    await workflow.condition(() => {
-      if (typeof this.condition === 'function') {
-        return this.condition();
-      } else {
-        return this.pendingUpdate || this.status !== 'running';
-      }
-    });
-  }
-
-  private isInTerminalState(): boolean {
-    return ['complete', 'cancelled', 'errored'].includes(this.status);
-  }
-
-  private async handleMaxIterations(): Promise<void> {
-    await workflow.continueAsNew<typeof this>({
-      state: this.state,
-      status: this.status,
-      subscriptions: this.subscriptions,
-      id: this.id,
-      pid: this.pid,
-      entityName: this.entityName,
-      token: this.token,
-      url: this.url,
-    });
-  }
-
-  private async handlePause(): Promise<void> {
-    await Promise.all(this.subscriptions.map(async (sub) => {
-      try {
-        await this.handles[sub.workflowId].signal('pause');
-      } catch (err) {
-        console.error(err);
-      }
-    }));
-    await workflow.condition(() => this.status !== 'paused');
-  }
-
-  private async handleExecutionError(err: any, span: any): Promise<void> {
-    if (workflow.isCancellation(err)) {
-      span.setAttribute('cancelled', true);
-      await workflow.CancellationScope.nonCancellable(async () => {
-        for (const handle of Object.values(this.handles)) {
-          try {
-            await handle.cancel();
-          } catch (error) {
-            console.error(error);
-          }
-        }
-        throw err;
-      });
-    } else {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
-      throw err;
-    }
-  }
-
-  private async executeSteps() {
-    const stepsToExecute = this.steps.filter(step => !step.before);
-    for (const step of stepsToExecute) {
-      if (!step.on || (await step.on())) {
-        await this.executeStep(step);
-        await this.processDependentSteps(step.name);
-      }
-    }
-  }
-
-  private async executeStep(step: { name: string, method: string }) {
-    const stepMethod = (this as any)[step.method].bind(this);
-    if (typeof stepMethod === 'function') {
-      await stepMethod();
-    }
-  }
-
-  private async processDependentSteps(stepName: string) {
-    const dependentSteps = this.steps.filter(step => step.before && step.before.includes(stepName));
-    for (const step of dependentSteps) {
-      if (!step.on || (await step.on())) {
-        await this.executeStep(step);
-        await this.processDependentSteps(step.name);
       }
     }
   }

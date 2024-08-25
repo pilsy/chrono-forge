@@ -1,11 +1,9 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 import update, { Spec } from "immutability-helper";
 import { normalize, schema } from "normalizr";
-import { schemas } from "../../../../schemas"; // Using named import for schemas
+import { getSchema } from "../SchemaConfig"; // Import the schema configuration module
 
 export type EntitiesState = Record<string, Record<string, any>>;
-
-export type SchemaKeys = keyof typeof schemas;
 
 export type EntityAction = {
   type: string;
@@ -83,22 +81,34 @@ export const clearEntities = (): EntityAction => ({
 
 export const updateEntity = (
   entity: any,
-  entityName: SchemaKeys
-): EntityAction => updateNormalizedEntities(normalize(entity, schemas[entityName]).entities);
+  entityName: string
+): EntityAction => {
+  const schemas = getSchema();
+  if (!schemas || !schemas[entityName]) {
+    throw new Error(`Schema ${entityName} not found. Make sure to set the schema using setSchema.`);
+  }
+  return updateNormalizedEntities(normalize(entity, schemas[entityName]).entities);
+};
 
 export const deleteEntity = (
   entityId: string,
-  entityName: SchemaKeys
+  entityName: string
 ): EntityAction => deleteNormalizedEntity(entityId, entityName);
 
 export const updateEntities = (
   entities: any[],
-  entityName: SchemaKeys
-): EntityAction => updateNormalizedEntities(normalize(entities, schemas[entityName]).entities);
+  entityName: string
+): EntityAction => {
+  const schemas = getSchema();
+  if (!schemas || !schemas[entityName]) {
+    throw new Error(`Schema ${entityName} not found. Make sure to set the schema using setSchema.`);
+  }
+  return updateNormalizedEntities(normalize(entities, schemas[entityName]).entities);
+};
 
 export const deleteEntities = (
   entities: string[],
-  entityName: SchemaKeys
+  entityName: string
 ): EntityAction => deleteNormalizedEntities({ [entityName]: entities });
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -113,9 +123,19 @@ export const initialState: EntitiesState = {};
  * Normalize a single entity or an array of entities using the provided schema.
  */
 export const normalizeEntities = <T>(data: T | T[], entitySchema: schema.Entity | string): EntitiesState => {
-  const schema = typeof entitySchema === "string" // @ts-ignore
+  const schemas = getSchema();
+  if (!schemas) {
+    throw new Error("Schemas not set. Make sure to set the schema using setSchema.");
+  }
+
+  const schema = typeof entitySchema === "string"
     ? schemas[entitySchema]
     : entitySchema;
+
+  if (!schema) {
+    throw new Error(`Schema ${entitySchema} not found.`);
+  }
+
   const normalizedData = normalize(data, Array.isArray(data) ? [schema] : schema);
 
   // Ensure that we are returning a correctly typed EntitiesState object
@@ -185,8 +205,6 @@ export const handleUpdateEntities = (state: EntitiesState, entities: Record<stri
 
   return updateStatement;
 };
-
-
 
 export const handleDeleteEntities = (state: EntitiesState, entities: Record<string, any>) => {
   const deleteStatement: Record<string, any> = {};
