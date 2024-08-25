@@ -1,6 +1,6 @@
 {
   "name": "chrono-forge",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A powerful framework for temporal workflows, state management, and streaming activities, designed for seamless developer experience.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -32,6 +32,7 @@
   ],
   "author": "Richard Gustin",
   "license": "MIT",
+  "repository": "https://github.com/pilsy/chrono-forge.git",
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/api-logs": "^0.52.1",
