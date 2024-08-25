@@ -4,60 +4,40 @@
 import * as workflow from '@temporalio/workflow';
 import EventEmitter from 'eventemitter3';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
-import { buildCancelablePromise } from '../../utils/buildCancelablePromise';
 import { log } from '@temporalio/workflow';
 
-export const Workflow = (options: { name?: string } = {}) => {
+export const Workflow = (name: string, options: { [key: string]: any } = {}) => {
   return (constructor: any) => {
-    const workflowName = options.name || constructor.name;
-    const tracer = trace.getTracer('temporal-worker');
-    
-    // Check if the class already extends WorkflowClass
-    if (!(constructor.prototype instanceof WorkflowClass)) {
-      // Dynamically create a new class that extends WorkflowClass
-      abstract class DynamicWorkflowClass extends WorkflowClass {
-        constructor(...args: any[]) {
-          super(...args);
-          Object.assign(this, new constructor(...args)); // Copy properties from original constructor
+    const workflowName = name || constructor.name;
+    const tracer = trace.getTracer('chrono-forge');
+
+    if (!(constructor.prototype instanceof ChronoFlow)) {
+      abstract class DynamicChronoFlow extends ChronoFlow {
+        constructor(params: any) {
+          super(params, options);
+          Object.assign(this, new constructor(params, options));
         }
       }
-
-      constructor = DynamicWorkflowClass;
+      constructor = DynamicChronoFlow;
     }
-    
-    // Create a named function to serve as the entry point for the workflow
-    const workflowFunction = new Function(
-      'workflow',
-      'constructor',
-      `tracer`,
-      `SpanStatusCode`,
-      `
-      return async function ${workflowName}(...args) {
-        const instance = new constructor(...args);
-        instance.bindQueriesAndSignals();
 
-        return new Promise(async (resolve, reject) => {
-          tracer.startActiveSpan("[Workflow]:${workflowName}", async (span) => {
-            try {
-              const result = await instance.execute(...args);
-              span.setStatus({result, code: SpanStatusCode.OK});
-              resolve(result);
-            } catch (err) {
-              span.setStatus({
-                code: SpanStatusCode.ERROR,
-                message: err.message,
-              });
-              reject(err);
-            } finally {
-              span.end();
-            }
-          });
-        });
+    return new Function(
+      'workflow', 'constructor', 'options',
+      `
+      return async function ${workflowName}(params) {
+        const instance = new constructor(params, options);
+        instance.bindQueriesAndSignals();
+        return await instance.executeWorkflow(params);
       };
     `
-    )(workflow, constructor, tracer, SpanStatusCode);
+    )(workflow, constructor, options);
+  };
+};
 
-    return workflowFunction;
+export const ContinueAsNew = (options: { maxIterations?: number } = { maxIterations: 10000 }) => {
+  return (constructor: any) => {
+    constructor.prototype.MAX_ITERATIONS = options.maxIterations || 10000;
+    constructor.prototype.continueAsNewEnabled = true;
   };
 };
 
@@ -101,12 +81,44 @@ export const Hook = (options: { before?: string; after?: string } = {}) => {
   };
 };
 
-export const On = (event: string, workflowType?: string, options?: { forwardToChildren?: boolean }) => {
+export const Before = (targetMethod: string) => Hook({ before: targetMethod });
+export const After = (targetMethod: string) => Hook({ after: targetMethod });
+
+export const Property = (options: { get?: boolean | string; set?: boolean | string } = {}) => {
   return (target: any, propertyKey: string) => {
-    if (!target.constructor._events) {
-      target.constructor._events = [];
+    if (options.get !== false) {
+      const queryName = typeof options.get === 'string' ? options.get : propertyKey;
+      Query(queryName)(target, propertyKey);
     }
-    target.constructor._events.push({ event, workflowType, handler: propertyKey, forwardToChildren: options?.forwardToChildren });
+    if (options.set !== false) {
+      const signalName = typeof options.set === 'string' ? options.set : propertyKey;
+      Signal(signalName)(target, propertyKey);
+    }
+  };
+};
+
+export const Condition = (timeout?: string) => {
+  return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
+    const originalMethod = descriptor.value;
+    descriptor.value = async function (...args: any[]) {
+      await workflow.condition(() => originalMethod.apply(this, args), timeout ? { timeout } : undefined);
+    };
+  };
+};
+
+export const Step = (options: { name?: string; on?: () => boolean; before?: string | string[]; after?: string | string[] } = {}) => {
+  return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
+    const stepName = options.name || propertyKey;
+    if (!target.constructor._steps) {
+      target.constructor._steps = [];
+    }
+    target.constructor._steps.push({
+      name: stepName,
+      method: propertyKey,
+      on: options.on,
+      before: options.before,
+      after: options.after
+    });
   };
 };
 
@@ -116,11 +128,18 @@ export abstract class WorkflowClass extends EventEmitter {
   protected handles: { [workflowId: string]: ReturnType<typeof workflow.getExternalWorkflowHandle> | workflow.ChildWorkflowHandle<any> } = {};
   protected continueAsNew = false;
   protected log = log;
+  protected steps: { name: string; method: string; on?: () => boolean; before?: string | string[]; after?: string | string[] }[] = [];
+  private tracer = trace.getTracer('chrono-forge');
+  protected iteration = 0;
+  protected MAX_ITERATIONS = 10000;
+  protected status = 'running';
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  constructor(...args: unknown[]) {
+  constructor(protected params: any, protected options: { [key: string]: any }) {
     super();
   }
+
+  protected abstract condition(): boolean | Promise<boolean>;
+  protected abstract execute(...args: unknown[]): Promise<unknown>;
 
   private bindQueriesAndSignals() {
     const proto = Object.getPrototypeOf(this);
@@ -144,59 +163,56 @@ export abstract class WorkflowClass extends EventEmitter {
 
     // Bind hooks
     this.applyHooks(proto.constructor._hooks);
+
+    // Register steps
+    this.steps = proto.constructor._steps || [];
   }
 
-  private applyHooks(hooks: {before: {[name: string]: string[]}, after: {[name: string]: string[]}}) {
+  private applyHooks(hooks: { before: { [name: string]: string[] }, after: { [name: string]: string[] } }) {
     if (!hooks) return;
 
     const applyHook = async (methodName: string, originalMethod: () => any, ...args: any[]) => {
       workflow.log.debug(`[HOOK]:${methodName}`);
       return new Promise(async (resolve, reject) => {
-        await trace.getTracer(`temporal-worker`).startActiveSpan(`Workflow:applyHooks[${methodName}]`, async span => {
-          // @ts-ignore
+        await this.tracer.startActiveSpan(`Workflow:applyHooks[${methodName}]`, async span => {
           const { before, after } = hooks[methodName as string];
-          span.setAttributes({
-            methodName,
-            before,
-            after,
-          });
-  
+          span.setAttributes({ methodName, before, after });
+
           // Run the before hooks
           if (before instanceof Array) {
             for (const beforeHook of before) { // @ts-ignore
               if (typeof this[beforeHook] === "function") {
                 workflow.log.debug(`[HOOK]:before(${methodName})`);
-                await trace.getTracer('temporal-worker').startActiveSpan(`[HOOK]:before(${methodName})`,
+                await this.tracer.startActiveSpan(`[HOOK]:before(${methodName})`,
                   async () => await (this as any)[beforeHook](...args)
                 );
               }
             }
           }
-  
+
           workflow.log.debug(`[HOOK]:${methodName}.call()...`);
           let result;
           try {
             result = await originalMethod.apply(this, args as any);
-          } catch(err) {
+          } catch (err) {
             return reject(err);
           }
-  
+
           // Run the after hooks
           if (after instanceof Array) {
             for (const afterHook of after) { // @ts-ignore
               if (typeof this[afterHook] === "function") {
                 workflow.log.debug(`[HOOK]:after(${methodName})`);
-                await trace.getTracer('temporal-worker').startActiveSpan(`[HOOK]:after(${methodName})`,
+                await this.tracer.startActiveSpan(`[HOOK]:after(${methodName})`,
                   async () => await (this as any)[afterHook](...args)
                 );
               }
             }
           }
-  
-          resolve(result);
-        })
-      })
 
+          resolve(result);
+        });
+      });
     };
 
     for (const methodName of Object.keys(hooks)) { // @ts-ignore
@@ -207,7 +223,6 @@ export abstract class WorkflowClass extends EventEmitter {
     }
   }
 
-  // Methods to signal and query the workflow directly
   public async signal(signalName: string, ...args: unknown[]): Promise<void> {
     if (this.signalHandlers[signalName]) { // @ts-ignore
       await this.signalHandlers[signalName](...args);
@@ -236,6 +251,126 @@ export abstract class WorkflowClass extends EventEmitter {
     }
   }
 
-  // Developers can override this method to implement their specific logic
-  protected abstract execute(...args: unknown[]): Promise<unknown>;
+  protected async executeWorkflow(params: any): Promise<any> {
+    return this.tracer.startActiveSpan(`[Workflow]:${this.constructor.name}`, async (span) => {
+      try {
+        span.setAttributes({ workflowId: workflow.workflowInfo().workflowId, workflowType: workflow.workflowInfo().workflowType });
+
+        while (this.iteration <= this.MAX_ITERATIONS) {
+          await this.awaitCondition();
+
+          if (this.status === 'paused') {
+            await this.handlePause();
+          }
+
+          const result = await this.execute(params);
+
+          if (!this.steps || this.steps.length === 0) {
+            if (this.isInTerminalState()) {
+              span.end();
+              return result;
+            }
+          } else {
+            await this.executeSteps();
+            if (this.isInTerminalState()) {
+              span.end();
+              return result;
+            }
+          }
+
+          if (++this.iteration >= this.MAX_ITERATIONS) {
+            await this.handleMaxIterations();
+          } else {
+            this.pendingUpdate = false;
+          }
+        }
+      } catch (err) {
+        await this.handleExecutionError(err, span);
+      }
+    });
+  }
+
+  private async awaitCondition(): Promise<void> {
+    await workflow.condition(() => {
+      if (typeof this.condition === 'function') {
+        return this.condition();
+      } else {
+        return this.pendingUpdate || this.status !== 'running';
+      }
+    });
+  }
+
+  private isInTerminalState(): boolean {
+    return ['complete', 'cancelled', 'errored'].includes(this.status);
+  }
+
+  private async handleMaxIterations(): Promise<void> {
+    await workflow.continueAsNew<typeof this>({
+      state: this.state,
+      status: this.status,
+      subscriptions: this.subscriptions,
+      id: this.id,
+      pid: this.pid,
+      entityName: this.entityName,
+      token: this.token,
+      url: this.url,
+    });
+  }
+
+  private async handlePause(): Promise<void> {
+    await Promise.all(this.subscriptions.map(async (sub) => {
+      try {
+        await this.handles[sub.workflowId].signal('pause');
+      } catch (err) {
+        console.error(err);
+      }
+    }));
+    await workflow.condition(() => this.status !== 'paused');
+  }
+
+  private async handleExecutionError(err: any, span: any): Promise<void> {
+    if (workflow.isCancellation(err)) {
+      span.setAttribute('cancelled', true);
+      await workflow.CancellationScope.nonCancellable(async () => {
+        for (const handle of Object.values(this.handles)) {
+          try {
+            await handle.cancel();
+          } catch (error) {
+            console.error(error);
+          }
+        }
+        throw err;
+      });
+    } else {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
+      throw err;
+    }
+  }
+
+  private async executeSteps() {
+    const stepsToExecute = this.steps.filter(step => !step.before);
+    for (const step of stepsToExecute) {
+      if (!step.on || (await step.on())) {
+        await this.executeStep(step);
+        await this.processDependentSteps(step.name);
+      }
+    }
+  }
+
+  private async executeStep(step: { name: string, method: string }) {
+    const stepMethod = (this as any)[step.method].bind(this);
+    if (typeof stepMethod === 'function') {
+      await stepMethod();
+    }
+  }
+
+  private async processDependentSteps(stepName: string) {
+    const dependentSteps = this.steps.filter(step => step.before && step.before.includes(stepName));
+    for (const step of dependentSteps) {
+      if (!step.on || (await step.on())) {
+        await this.executeStep(step);
+        await this.processDependentSteps(step.name);
+      }
+    }
+  }
 }
