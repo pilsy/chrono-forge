@@ -6,13 +6,13 @@ import EventEmitter from 'eventemitter3';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import { log } from '@temporalio/workflow';
 
-export const Workflow = (name: string, options: { [key: string]: any } = {}) => {
+export const ChronoFlow = (name: string, options: { [key: string]: any } = {}) => {
   return (constructor: any) => {
     const workflowName = name || constructor.name;
     const tracer = trace.getTracer('chrono-forge');
 
-    if (!(constructor.prototype instanceof ChronoFlow)) {
-      abstract class DynamicChronoFlow extends ChronoFlow {
+    if (!(constructor.prototype instanceof Worklow)) {
+      abstract class DynamicChronoFlow extends Worklow {
         constructor(params: any) {
           super(params, options);
           Object.assign(this, new constructor(params, options));
@@ -122,7 +122,7 @@ export const Step = (options: { name?: string; on?: () => boolean; before?: stri
   };
 };
 
-export abstract class WorkflowClass extends EventEmitter {
+export abstract class Workflow extends EventEmitter {
   private signalHandlers: { [key: string]: (args: any) => Promise<void> } = {};
   private queryHandlers: { [key: string]: (...args: any) => any } = {};
   protected handles: { [workflowId: string]: ReturnType<typeof workflow.getExternalWorkflowHandle> | workflow.ChildWorkflowHandle<any> } = {};
