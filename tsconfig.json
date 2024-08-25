@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    /* Language and Environment */
+    "target": "es2022",                              /* Set the JavaScript language version to ES2022, supported by Node.js 20. */
+    "lib": ["es2022"],                               /* Specify the set of libraries that describe the runtime environment. */
+    "module": "commonjs",                            /* Use CommonJS modules, which are compatible with Node.js. */
+    "rootDir": "src",                                /* Set the root directory for your source files. */
+    "outDir": "./dist",                              /* Output directory for the compiled files. */
+    "strict": true,                                  /* Enable all strict type-checking options. */
+    "esModuleInterop": true,                         /* Emit additional JavaScript to ease support for importing CommonJS modules. */
+    "moduleResolution": "node",                      /* Use Node.js module resolution strategy. */
+    "resolveJsonModule": true,                       /* Enable importing .json files. */
+    "allowSyntheticDefaultImports": true,            /* Allow 'import x from y' when a module doesn't have a default export. */
+    "skipLibCheck": true,                            /* Skip type checking of all .d.ts files. */
+    "skipDefaultLibCheck": true,                     /* Skip type checking .d.ts files that are included with TypeScript. */
+    "forceConsistentCasingInFileNames": true,        /* Ensure that casing is correct in imports. */
+    "noEmit": false,                                 /* Enable emitting files from a compilation (necessary for Temporal). */
+
+    /* Temporal.io Workflow Settings */
+    "isolatedModules": true,                         /* Ensure that each file can be safely transpiled without relying on other imports. */
+    "experimentalDecorators": true,                  /* Enable support for decorators, used in Temporal.io workflows. */
+    "emitDecoratorMetadata": true,                   /* Emit design-type metadata for decorated declarations in source files. */
+    "allowJs": false,                                /* Disallow JavaScript files to be a part of your program, ensuring TypeScript consistency. */
+    "noImplicitAny": true,                           /* Enable error reporting for expressions and declarations with an implied 'any' type. */
+    "strictNullChecks": true,                        /* Ensure null and undefined are considered distinct types. */
+    "strictPropertyInitialization": true,            /* Ensure that class properties are correctly initialized. */
+    "noImplicitReturns": true,                       /* Enable error reporting for functions that do not return. */
+    "noFallthroughCasesInSwitch": true,              /* Enable error reporting for fallthrough cases in switch statements. */
+    "verbatimModuleSyntax": true,                    /* Report imports that are only used as types as errors. */
+    "newLine": "lf",                                 /* Ensure consistent line endings for cross-platform compatibility. */
+    "removeComments": true                           /* Remove comments from the emitted JavaScript for cleaner output. */
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test"]
+}

@@ -270,12 +270,6 @@ abstract class StatefulWorkflowClass extends WorkflowClass {
             await this.handlePause();
           }
 
-          if (this.shouldLoadData()) {
-            await this.loadDataAndEnqueueChanges();
-          }
-
-          await this.processState();
-
           const result = await this.execute(params);
           if (this.isInTerminalState()) {
             span.end();
@@ -291,18 +285,18 @@ abstract class StatefulWorkflowClass extends WorkflowClass {
       }
     });
   }
+  
+  protected abstract condition(): boolean | Promise<boolean>;
 
+  
   private async awaitCondition(): Promise<void> {
-    await workflow.condition(() => this.pendingUpdate || this.pendingChanges.length > 0 || this.status !== 'running');
-  }
-
-  private shouldLoadData(): boolean {
-    return (this.id || this.pid) && this.entityName && this.token && this.url && this.loadData;
-  }
-
-  private async loadDataAndEnqueueChanges(): Promise<void> {
-    const updates = await this.loadData();
-    this.pendingChanges.push({ updates, entityName: this.entityName, strategy: '$merge' });
+    await workflow.condition(() => {
+      if (typeof this.condition === 'function') {
+        return this.condition();
+      } else {
+        return this.pendingUpdate || this.pendingChanges.length > 0 || this.status !== 'running';
+      }
+    });
   }
 
   private isInTerminalState(): boolean {
@@ -351,6 +345,15 @@ abstract class StatefulWorkflowClass extends WorkflowClass {
       throw err;
     }
   }
-}
 
-export { On, Query, Signal };
+  private shouldLoadData(): boolean {
+    return (this.id || this.pid) && this.entityName && this.token && this.url && this.loadData;
+  }
+
+  private async loadDataAndEnqueueChanges(): Promise<void> {
+    const updates = await this.loadData();
+    this.pendingChanges.push({ updates, entityName: this.entityName, strategy: '$merge' });
+  }
+
+
+}
