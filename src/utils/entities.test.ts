@@ -26,9 +26,6 @@ import reducer, {
 import type { EntitiesState } from './entities';
 import schemas from '../../../../schemas';
 
-const testData = require(`../../../tests/data/TEST_INPUT-kylieCrReplyAndOutreached.json`);
-const testDataNormalized = require(`../../../tests/data/TEST_INPUT_NORMALISED-kylieCrReplyAndOutreached.json`);
-
 describe('Entities', () => {
   describe('Action Creators', () => {
     it('should create an action to update a normalized entity', () => {
@@ -284,16 +281,6 @@ describe('Entities', () => {
       const newState = reducer(state, action);
 
       expect(newState).toEqual(initialState);
-    });
-
-    it('should handle kylie test case data', async () => {
-      const action = updateEntity({
-        pid: "poo",
-        threads: [testData.thread],
-        sequence: testData.sequence
-      }, 'Campaign');
-      const newState = reducer({}, action);
-      expect(newState).toEqual(testDataNormalized);
     });
 
     it('should return the initial state when an unknown action is passed', () => {

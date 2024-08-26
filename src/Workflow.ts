@@ -26,6 +26,7 @@ export const ChronoFlow = (name: string, options: { [key: string]: any } = {}) =
       `
       return async function ${workflowName}(params) {
         const instance = new constructor(params, options);
+
         return await instance.executeWorkflow();
       };
     `
@@ -88,16 +89,25 @@ export const After = (targetMethod: string) => Hook({ after: targetMethod });
 
 export const Property = (options: { get?: boolean | string; set?: boolean | string } = {}) => {
   return (target: any, propertyKey: string) => {
-    if (options.get !== false) {
-      const queryName = typeof options.get === 'string' ? options.get : propertyKey;
-      Query(queryName)(target, propertyKey);
+    if (!target.constructor._properties) {
+      target.constructor._properties = [];
     }
-    if (options.set !== false) {
-      const signalName = typeof options.set === 'string' ? options.set : propertyKey;
-      Signal(signalName)(target, propertyKey);
-    }
+
+    // Register the property with its associated getter and setter
+    target.constructor._properties.push({
+      propertyKey,
+      get: options.get || options.get === undefined,
+      set: options.set || options.set === undefined,
+      queryName: `query${capitalize(typeof options.get === 'string' ? options.get : propertyKey)}`,
+      signalName: `signal${capitalize(typeof options.set === 'string' ? options.set : propertyKey)}`,
+    });
   };
 };
+
+function capitalize(str: string): string {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
 
 export const Condition = (timeout?: string) => {
   return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
@@ -136,9 +146,9 @@ export const Step = (options: { name?: string; on?: () => boolean; before?: stri
 export type WorkflowStatus = 'running' | 'paused' | 'complete' | 'cancelled' | 'errored';
 
 export abstract class Workflow extends EventEmitter {
-  private signalHandlers: { [key: string]: (args: any) => Promise<void> } = {};
-  private queryHandlers: { [key: string]: (...args: any) => any } = {};
-  private tracer = trace.getTracer('chrono-forge');
+  protected signalHandlers: { [key: string]: (args: any) => Promise<void> } = {};
+  protected queryHandlers: { [key: string]: (...args: any) => any } = {};
+  protected tracer = trace.getTracer('temporal-worker');
   protected handles: { [workflowId: string]: ReturnType<typeof workflow.getExternalWorkflowHandle> | workflow.ChildWorkflowHandle<any> } = {};
   protected log = log;
 
@@ -152,7 +162,7 @@ export abstract class Workflow extends EventEmitter {
   protected iteration = 0;
 
   @Property({ set: false })
-  protected MAX_ITERATIONS = 10000;
+  protected maxIterations = 10000;
 
   @Property()
   protected status: WorkflowStatus = 'running';
@@ -172,13 +182,15 @@ export abstract class Workflow extends EventEmitter {
 
   constructor(protected params: any, protected options?: { [key: string]: any }) {
     super();
-    this.bind();
+    Object.assign(this, params);
+    this.options = options;
+    this.bindHooks();
   }
 
   protected abstract condition(): boolean | Promise<boolean>;
   protected abstract execute(...args: unknown[]): Promise<unknown>;
 
-  public async signal(signalName: string, ...args: unknown[]): Promise<void> {
+  protected async signal(signalName: string, ...args: unknown[]): Promise<void> {
     if (this.signalHandlers[signalName]) { // @ts-ignore
       await this.signalHandlers[signalName](...args);
       await this.emitAsync(signalName, ...args);
@@ -187,7 +199,7 @@ export abstract class Workflow extends EventEmitter {
     }
   }
 
-  public async query(queryName: string, ...args: unknown[]): Promise<any> {
+  protected async query(queryName: string, ...args: unknown[]): Promise<any> {
     if (this.queryHandlers[queryName]) {
       return await this.queryHandlers[queryName](...args);
     } else {
@@ -200,7 +212,7 @@ export abstract class Workflow extends EventEmitter {
       try {
         span.setAttributes({ workflowId: workflow.workflowInfo().workflowId, workflowType: workflow.workflowInfo().workflowType });
 
-        while (this.iteration <= this.MAX_ITERATIONS && !this.isInTerminalState()) {
+        while (this.iteration <= this.maxIterations && !this.isInTerminalState()) {
           await this.awaitCondition();
 
           if (this.status === 'paused') {
@@ -223,7 +235,7 @@ export abstract class Workflow extends EventEmitter {
             }
           }
 
-          if (++this.iteration >= this.MAX_ITERATIONS) {
+          if (++this.iteration >= this.maxIterations) {
             await this.handleMaxIterations();
           } else {
             this.pendingUpdate = false;
@@ -236,14 +248,14 @@ export abstract class Workflow extends EventEmitter {
     });
   }
 
-  private async executeStep(step: { name: string, method: string }) {
+  protected async executeStep(step: { name: string, method: string }) {
     const stepMethod = (this as any)[step.method].bind(this);
     if (typeof stepMethod === 'function') {
       await stepMethod();
     }
   }
 
-  private async executeSteps() {
+  protected async executeSteps() {
     const stepsToExecute = this.steps.filter(step => !step.before);
     for (const step of stepsToExecute) {
       if (!step.on || (await step.on())) {
@@ -253,7 +265,7 @@ export abstract class Workflow extends EventEmitter {
     }
   }
 
-  private async processDependentSteps(stepName: string) {
+  protected async processDependentSteps(stepName: string) {
     const dependentSteps = this.steps.filter(step => step.before && step.before.includes(stepName));
     for (const step of dependentSteps) {
       if (!step.on || (await step.on())) {
@@ -264,10 +276,11 @@ export abstract class Workflow extends EventEmitter {
   }
 
   protected async awaitCondition(): Promise<any> {
+    this.log.debug(`[Workflow]:${this.constructor.name}:awaitCondition`);
     if (typeof this.condition === 'function') {
       return await this.condition();
     } else {
-      return await workflow.condition(() => this.pendingUpdate || this.status !== 'running');
+      return await workflow.condition(() => this.pendingUpdate || this.status !== 'running', "1 day");
     }
   }
 
@@ -290,15 +303,15 @@ export abstract class Workflow extends EventEmitter {
             if ('cancel' in handle && typeof (handle as workflow.ExternalWorkflowHandle).cancel === 'function') {
               await (handle as workflow.ExternalWorkflowHandle).cancel();
             }
-          } catch (error) {
-            console.error(error);
+          } catch (error: any) {
+            this.log.error(`${error?.message ?? error}`);
           }
         }
         throw err;
       });
     } else {
       span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
-      throw err;
+      throw err.message ?? err;
     }
   }
 
@@ -313,33 +326,62 @@ export abstract class Workflow extends EventEmitter {
     }
   }
 
-  private bind() {
+  protected async forwardSignalToChildren(signalName: string, ...args: unknown[]): Promise<void> {
+    const childWorkflowHandles = Object.values(this.handles);
+    for (const handle of childWorkflowHandles) {
+      try {
+        await handle.signal(signalName, ...args);
+      } catch (error: any) {
+        this.log.error(`Failed to forward signal '${signalName}' to child workflow:`, error);
+      }
+    }
+  }
+
+  private bindHooks() {
     const proto = Object.getPrototypeOf(this);
 
-    // Bind signals
+    this.applyHooks(proto.constructor._hooks);
+
+
     const signals = proto.constructor._signals || [];
     signals.forEach(([signalName, signalMethod]: [name: string, method: string]) => {
-      this.signalHandlers[signalName] = (this as any)[signalMethod].bind(this);
+      this.signalHandlers[signalName] = (this as any)[signalMethod]?.bind(this);
       workflow.setHandler(workflow.defineSignal(signalName), async (...args: any[]) => { // @ts-ignore
         await this.signalHandlers[signalName](...args);
         this.emit(signalName, ...args);
       });
     });
 
-    // Bind queries
     const queries = proto.constructor._queries || [];
     queries.forEach(([queryName, queryMethod]: [name: string, method: string]) => {
-      this.queryHandlers[queryName] = (this as any)[queryMethod].bind(this);
+      this.queryHandlers[queryName] = (this as any)[queryMethod]?.bind(this);
       workflow.setHandler(workflow.defineQuery(queryName), this.queryHandlers[queryName]);
     });
 
-    // Bind hooks
-    this.applyHooks(proto.constructor._hooks);
+    const properties = proto.constructor._properties || [];
+    properties.forEach(({ propertyKey, get, set, queryName, signalName }: { propertyKey: string, get: boolean | string, set: boolean | string, queryName: string, signalName: string }) => {
+      if (get) {
+        // @ts-ignore
+        this.queryHandlers[queryName] = () => this[propertyKey as string];
+        workflow.setHandler(workflow.defineQuery(typeof get === "string" ? get : propertyKey), this.queryHandlers[queryName]);
+      }
 
-    // Register steps
+      if (set) {
+        // @ts-ignore
+        this.signalHandlers[signalName] = (value: any) => {
+          // @ts-ignore
+          this[propertyKey] = value;
+        };
+        workflow.setHandler(workflow.defineSignal(typeof set === "string" ? set : propertyKey), async (...args: any[]) => {
+          // @ts-ignore
+          await this.signalHandlers[signalName as string](...args);
+          this.emit(signalName, ...args);
+        });
+      }
+    });
+
     this.steps = proto.constructor._steps || [];
 
-    // Bind the event handlers
     const eventHandlers = (this as any)._eventHandlers || [];
     eventHandlers.forEach((handler: { event: string, method: string }) => {
       this.on(handler.event, async (...args: any[]) => {
@@ -354,7 +396,7 @@ export abstract class Workflow extends EventEmitter {
     if (!hooks) return;
 
     const applyHook = async (methodName: string, originalMethod: () => any, ...args: any[]) => {
-      workflow.log.debug(`[HOOK]:${methodName}`);
+      this.log.debug(`[HOOK]:${methodName}`);
       return new Promise(async (resolve, reject) => {
         await this.tracer.startActiveSpan(`Workflow:applyHooks[${methodName}]`, async span => {
           // @ts-ignore
@@ -365,7 +407,7 @@ export abstract class Workflow extends EventEmitter {
           if (before instanceof Array) {
             for (const beforeHook of before) { // @ts-ignore
               if (typeof this[beforeHook] === "function") {
-                workflow.log.debug(`[HOOK]:before(${methodName})`);
+                this.log.debug(`[HOOK]:before(${methodName})`);
                 await this.tracer.startActiveSpan(`[HOOK]:before(${methodName})`,
                   async () => await (this as any)[beforeHook](...args)
                 );
@@ -373,7 +415,7 @@ export abstract class Workflow extends EventEmitter {
             }
           }
 
-          workflow.log.debug(`[HOOK]:${methodName}.call()...`);
+          this.log.debug(`[HOOK]:${methodName}.call()...`);
           let result;
           try {
             result = await originalMethod.apply(this, args as any);
@@ -385,7 +427,7 @@ export abstract class Workflow extends EventEmitter {
           if (after instanceof Array) {
             for (const afterHook of after) { // @ts-ignore
               if (typeof this[afterHook] === "function") {
-                workflow.log.debug(`[HOOK]:after(${methodName})`);
+                this.log.debug(`[HOOK]:after(${methodName})`);
                 await this.tracer.startActiveSpan(`[HOOK]:after(${methodName})`,
                   async () => await (this as any)[afterHook](...args)
                 );
@@ -403,17 +445,6 @@ export abstract class Workflow extends EventEmitter {
       this[methodName] = async (...args: any[]) => { // @ts-ignore
         return await applyHook(methodName, originalMethod, ...args);
       };
-    }
-  }
-
-  protected async forwardSignalToChildren(signalName: string, ...args: unknown[]): Promise<void> {
-    const childWorkflowHandles = Object.values(this.handles);
-    for (const handle of childWorkflowHandles) {
-      try {
-        await handle.signal(signalName, ...args);
-      } catch (err) {
-        console.error(`Failed to forward signal '${signalName}' to child workflow:`, err);
-      }
     }
   }
 }

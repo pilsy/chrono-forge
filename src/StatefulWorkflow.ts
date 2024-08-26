@@ -8,6 +8,8 @@ import { get, set } from 'dottie';
 import { isEmpty, isEqual } from 'lodash';
 import { startChildPayload } from './utils/startChildPayload';
 import { Workflow, WorkflowStatus, Signal, Query, Hook, Before, After, Property, Condition, Step, ContinueAsNew } from './Workflow';
+import { getSchema } from "./SchemaConfig";
+
 
 export type ManagedPath = {
   schemaName?: string;
@@ -34,6 +36,9 @@ export type StatefulWorkflowParams = {
 };
 
 export abstract class StatefulWorkflow extends Workflow {
+  // @ts-ignore
+  protected schema: Schema;
+
   @Property({ set: false })
   protected state: EntitiesState = {};
 
@@ -62,19 +67,31 @@ export abstract class StatefulWorkflow extends Workflow {
   protected url?: string;
 
   @Signal('token')
-  public setToken({ token }: { token: string }): void {
+  public setToken(token: string): void {
     if (token && this.token !== token) {
+      this.log.info(`Updating token...`);
       this.token = token;
+      this.pendingUpdate = true;
     }
   }
 
-  protected loadData?: () => Promise<any>;
+  protected abstract loadData?: () => Promise<any>;
 
-  constructor(params?: StatefulWorkflowParams, protected options?: { schema?: Schema;[key: string]: any }) {
+  constructor(params?: StatefulWorkflowParams, protected options?: { schema?: Schema; schemaName?: string; [key: string]: any }) {
     super(params, options);
     Object.assign(this, params);
+    this.options = options;
     if (this.options?.schema) {
+      this.schema = this.options.schema;
       this.configureManagedPaths(this.options.schema);
+    } else if (this.options?.schemaName) {
+      const schemas = options?.schemas ?? getSchema();
+      if (schemas) {
+        this.schema = schemas[this.options?.schemaName as string];
+        if (this.schema) { // @ts-ignore
+          this.configureManagedPaths(this.schema);
+        }
+      }
     }
   }
 
@@ -114,13 +131,14 @@ export abstract class StatefulWorkflow extends Workflow {
     }
   }
 
+  @Before("execute")
   protected async processState(): Promise<void> {
     while (this.pendingChanges.length > 0) {
       const change = this.pendingChanges.shift();
       const previousState = this.state;
       const newState = reducer(this.state, {
         type: change?.deletions ? DELETE_ENTITIES : UPDATE_ENTITIES,
-        entities: normalizeEntities(change?.deletions || change?.updates, this.options?.schema as schema.Entity),
+        entities: normalizeEntities(change?.deletions || change?.updates, this.schema as schema.Entity),
       });
 
       if (newState) {
@@ -136,13 +154,18 @@ export abstract class StatefulWorkflow extends Workflow {
   protected async processChildState(newState: EntitiesState, differences: DetailedDiff, previousState: EntitiesState): Promise<void> {
     const denormalizedState = denormalize(
       get(newState, `${this.entityName}.${this.id || this.pid}`),
-      this.options?.schema as Schema,
+      this?.schema as Schema,
       newState
     );
 
+    console.log(this.schema);
+    console.log(`denormalized`);
+    console.log(denormalizedState);
+    console.log(`differences`);
+    console.log(differences);
+
     for (const config of this.managedPaths) {
       const value = get(denormalizedState, config.path as string, false);
-
       if (Array.isArray(value)) {
         await this.processArrayItems(value, config, differences, previousState);
       } else if (value && typeof value === 'object') {
@@ -154,7 +177,7 @@ export abstract class StatefulWorkflow extends Workflow {
     }
   }
 
-  private async processArrayItems(items: any[], config: ManagedPath, differences: DetailedDiff, previousState: EntitiesState): Promise<void> {
+  protected async processArrayItems(items: any[], config: ManagedPath, differences: DetailedDiff, previousState: EntitiesState): Promise<void> {
     const currentItems = get(previousState, config.path as string, []);
     for (const newItem of items) {
       const difference = get(differences, `added.${config.schemaName as string}.${newItem[config.idAttribute as string]}`) as DetailedDiff ||
@@ -170,7 +193,7 @@ export abstract class StatefulWorkflow extends Workflow {
     }
   }
 
-  private async processItem(
+  protected async processItem(
     item: any,
     config: ManagedPath,
     difference: DetailedDiff,
@@ -183,21 +206,26 @@ export abstract class StatefulWorkflow extends Workflow {
     const previousItem = get(previousState, `${config.schemaName as string}.${id}`);
     const newItem = get(this.state, `${config.schemaName as string}.${id}`);
 
+    console.log(previousItem);
+    console.log(newItem);
+
     // Compare the previous and current state
     const hasStateChanged = !isEqual(previousItem, newItem);
 
     // Proceed only if the state has changed
     if (hasStateChanged) {
       if (existingHandle && difference) {
+        console.log(`Updating a child process for ${config.schemaName}...`);
         // @ts-ignore
         await this.updateChildWorkflow(existingHandle, item, config);
       } else if (!existingHandle && difference) {
+        console.log(`Starting a new child process for ${config.schemaName}...`);
         await this.startChildWorkflow(config.workflowType!, id, item, config.schemaName!);
       }
     }
   }
 
-  private async processDeletion(id: string, config: ManagedPath): Promise<void> {
+  protected async processDeletion(id: string, config: ManagedPath): Promise<void> {
     try {
       const handle = this.handles[id];
       if ('cancel' in handle && typeof handle.cancel === 'function') {
@@ -237,8 +265,7 @@ export abstract class StatefulWorkflow extends Workflow {
     }
   }
 
-
-  private async updateChildWorkflow(
+  protected async updateChildWorkflow(
     handle: workflow.ChildWorkflowHandle<any>,
     item: any,
     config: ManagedPath
@@ -265,33 +292,32 @@ export abstract class StatefulWorkflow extends Workflow {
     }
   }
 
-
-  protected configureManagedPaths(parentSchema: Schema & { entitySchema?: { [key: string]: Schema & { _idAttribute: string; _key: string; }; }; }): void {
-    if (!parentSchema.entitySchema) {
-      throw new Error("The provided schema does not have 'entitySchema' defined.");
+  protected configureManagedPaths(parentSchema: Schema & { schema?: { [key: string]: Schema & [{ _idAttribute: string; _key: string; }]; }; }): void {
+    this.log.debug(`[Workflow]:${this.constructor.name}:configureManagedPaths`);
+    if (!parentSchema.schema) {
+      throw new Error("The provided schema does not have 'schema' defined.");
     }
-    const childSchemas = parentSchema.entitySchema;
+    const childSchemas = parentSchema.schema;
     for (const [path, schema] of Object.entries(childSchemas)) {
       this.managedPaths.push({
         path,
-        idAttribute: schema._idAttribute,
-        workflowType: `${schema._key}Workflow`,
+        idAttribute: schema[0]._idAttribute,
+        workflowType: `${schema[0]._key}Workflow`,
         autoStartChildren: true,
-        schemaName: schema._key,
+        schemaName: schema[0]._key,
       });
     }
   }
 
-
   protected abstract execute(...args: unknown[]): Promise<unknown>;
 
   protected async executeWorkflow(): Promise<any> {
-    const tracer = trace.getTracer('chrono-forge');
-    return tracer.startActiveSpan(`[Workflow]:${this.constructor.name}`, async (span) => {
+    const tracer = trace.getTracer('temporal-worker');
+    return tracer.startActiveSpan(`[StatefulWorkflow]:${this.constructor.name}`, async (span) => {
       try {
         span.setAttributes({ workflowId: workflow.workflowInfo().workflowId, workflowType: workflow.workflowInfo().workflowType });
 
-        while (this.iteration <= this.MAX_ITERATIONS) {
+        while (this.iteration <= this.maxIterations) {
           await this.awaitCondition();
 
           if (this.status === 'paused') {
@@ -306,7 +332,7 @@ export abstract class StatefulWorkflow extends Workflow {
           if (this.isInTerminalState()) {
             span.end();
             return result;
-          } else if (++this.iteration >= this.MAX_ITERATIONS) {
+          } else if (++this.iteration >= this.maxIterations) {
             await this.handleMaxIterations();
           } else {
             this.pendingUpdate = false;
@@ -319,25 +345,22 @@ export abstract class StatefulWorkflow extends Workflow {
     });
   }
 
-  @ContinueAsNew()
-  private async continueAsNewHandler(): Promise<void> {
-    // @ts-ignore
-    await workflow.continueAsNew<typeof this>({
-      state: this.state,
-      status: this.status,
-      subscriptions: this.subscriptions,
-      id: this.id,
-      pid: this.pid,
-      entityName: this.entityName,
-      token: this.token,
-      url: this.url,
-    });
-  }
+  // @ContinueAsNew()
+  // protected async continueAsNewHandler(): Promise<void> {
+  //   // @ts-ignore
+  //   await workflow.continueAsNew<typeof this>({
+  //     state: this.state,
+  //     status: this.status,
+  //     subscriptions: this.subscriptions,
+  //     id: this.id,
+  //     pid: this.pid,
+  //     entityName: this.entityName,
+  //     token: this.token,
+  //     url: this.url,
+  //   });
+  // }
 
-
-
-
-  private async handlePause(): Promise<void> {
+  protected async handlePause(): Promise<void> {
     await Promise.all(this.subscriptions.map(async (sub) => {
       try {
         await this.handles[sub.workflowId].signal('pause');
@@ -348,11 +371,11 @@ export abstract class StatefulWorkflow extends Workflow {
     await workflow.condition(() => this.status !== 'paused');
   }
 
-  private shouldLoadData(): boolean {
-    return !!(this.id || this.pid) && !!this.entityName && !!this.token && !!this.url && typeof this.loadData === "function";
+  protected shouldLoadData(): boolean {
+    return typeof this.loadData === "function";
   }
 
-  private async loadDataAndEnqueueChanges(): Promise<void> {
+  protected async loadDataAndEnqueueChanges(): Promise<void> {
     if (typeof this.loadData === "function") {
       const updates = await this.loadData();
       this.pendingChanges.push({ updates, entityName: this.entityName, strategy: '$merge' });

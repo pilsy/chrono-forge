@@ -2,7 +2,23 @@ import { Workflow, ChronoFlow } from '../Workflow';
 
 describe('ChronoFlow Workflow Tests', () => {
 
-  describe('Signal Handling', () => {
+  describe('@ChronoFlow Decorator', () => {
+
+    it('should_dynamically_create_class_extending_workflow', () => {
+      // TODO: Implement test for dynamic class creation extending Workflow
+    });
+
+    it('should_bind_queries_and_signals_to_dynamic_class', () => {
+      // TODO: Implement test for binding queries and signals in dynamic class
+    });
+
+    it('should_execute_workflow_function_with_tracing', () => {
+      // TODO: Implement test for executing workflow function with tracing
+    });
+
+  });
+
+  describe('@Signal Decorator', () => {
 
     it('should_bind_signals_correctly', () => {
       // TODO: Implement test for binding signals
@@ -34,7 +50,7 @@ describe('ChronoFlow Workflow Tests', () => {
 
   });
 
-  describe('Query Handling', () => {
+  describe('@Query Decorator', () => {
 
     it('should_bind_queries_correctly', () => {
       // TODO: Implement test for binding queries
@@ -54,7 +70,7 @@ describe('ChronoFlow Workflow Tests', () => {
 
   });
 
-  describe('Hook Handling', () => {
+  describe('@Hook Decorator', () => {
 
     it('should_apply_before_hooks_correctly', () => {
       // TODO: Implement test for applying before hooks
@@ -84,8 +100,60 @@ describe('ChronoFlow Workflow Tests', () => {
       // TODO: Implement test for applying hooks based on conditions
     });
 
-    it('should_execute_inherited_hooks_in_child_class', () => {
-      // TODO: Implement test for executing inherited hooks in child class
+  });
+
+  describe('@Before Decorator', () => {
+
+    it('should_execute_before_hooks_in_correct_order', () => {
+      // TODO: Implement test for executing before hooks in the correct order
+    });
+
+  });
+
+  describe('@After Decorator', () => {
+
+    it('should_execute_after_hooks_in_correct_order', () => {
+      // TODO: Implement test for executing after hooks in the correct order
+    });
+
+  });
+
+  describe('@Property Decorator', () => {
+
+    it('should_create_query_and_signal_handlers_for_property', () => {
+      // TODO: Implement test for creating query and signal handlers for a property
+    });
+
+    it('should_not_create_query_and_signal_handlers_if_disabled', () => {
+      // TODO: Implement test for not creating handlers if get/set are disabled
+    });
+
+  });
+
+  describe('@Condition Decorator', () => {
+
+    it('should_execute_method_only_when_condition_is_met', () => {
+      // TODO: Implement test for executing a method only when the condition is met
+    });
+
+    it('should_timeout_if_condition_not_met', () => {
+      // TODO: Implement test for timing out if the condition is not met
+    });
+
+  });
+
+  describe('@Step Decorator', () => {
+
+    it('should_execute_steps_in_correct_order_based_on_dependencies', () => {
+      // TODO: Implement test for executing steps in the correct order based on dependencies
+    });
+
+    it('should_skip_step_if_condition_not_met', () => {
+      // TODO: Implement test for skipping steps if the condition is not met
+    });
+
+    it('should_process_dependent_steps_correctly', () => {
+      // TODO: Implement test for processing dependent steps correctly
     });
 
   });
@@ -100,18 +168,6 @@ describe('ChronoFlow Workflow Tests', () => {
       // TODO: Implement test for tracing workflow execution with OpenTelemetry
     });
 
-    it('should_dynamically_create_class_extending_workflow', () => {
-      // TODO: Implement test for dynamic class creation extending Workflow
-    });
-
-    it('should_bind_queries_and_signals_to_dynamic_class', () => {
-      // TODO: Implement test for binding queries and signals in dynamic class
-    });
-
-    it('should_execute_workflow_function_with_tracing', () => {
-      // TODO: Implement test for executing workflow function with tracing
-    });
-
     it('should_continue_as_new_after_max_iterations', () => {
       // TODO: Implement test for continueAsNew after max iterations
     });
@@ -120,24 +176,12 @@ describe('ChronoFlow Workflow Tests', () => {
       // TODO: Implement test for awaiting condition properly
     });
 
-    it('should_execute_steps_in_correct_order_based_on_dependencies', () => {
-      // TODO: Implement test for executing steps in correct order based on dependencies
-    });
-
-    it('should_skip_step_if_condition_not_met', () => {
-      // TODO: Implement test for skipping steps if condition is not met
-    });
-
     it('should_handle_pause_and_resume_correctly', () => {
       // TODO: Implement test for handling pause and resume correctly
     });
 
     it('should_handle_execution_error_gracefully', () => {
       // TODO: Implement test for handling execution errors gracefully
-    });
-
-    it('should_process_dependent_steps_correctly', () => {
-      // TODO: Implement test for processing dependent steps correctly
     });
 
     it('should_handle_workflow_termination_correctly', () => {
@@ -223,4 +267,3 @@ describe('ChronoFlow Workflow Tests', () => {
   });
 
 });
-
