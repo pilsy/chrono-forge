@@ -50,22 +50,24 @@ ChronoForge offers a streamlined approach to creating both basic and stateful wo
 A basic workflow in ChronoForge utilizes the `@ChronoFlow` decorator along with various step and signal decorators to define its logic:
 
 ```typescript
-import { ChronoFlow, Workflow, Step, Signal, Query, Before, After } from 'chrono-forge';
+import { ChronoFlow, Workflow, Property, Step, Signal, Query, Before, After } from 'chrono-forge';
 
-@ChronoFlow({ name: 'SimpleWorkflow' })
+@ChronoFlow()
 class SimpleWorkflow extends Workflow {
+  @Property() // "data" query and signal available automtically
   private data: string = '';
 
-  @Query()
+  @Query() // custom query to get data
   getData() {
     return this.data;
   }
 
-  @Signal()
+  @Signal() // custom signal to get data
   setData(newData: string) {
     this.data = newData;
   }
 
+  // Note: you don't need to use steps, if you have a simple workflow just implement the execute method
   @Step({ name: 'initialize' })
   async initialize() {
     console.log('Initializing workflow...');
@@ -94,34 +96,60 @@ export default SimpleWorkflow;
 ChronoForge also supports stateful workflows that manage normalized state across executions:
 
 ```typescript
-import { StatefulWorkflowClass, Signal, Query, Hook, ContinueAsNew } from 'chrono-forge';
+import { StatefulWorkflow, Property, Signal, Query, Before, Hook, ContinueAsNew } from 'chrono-forge';
 import { schema } from 'normalizr';
 
-const entitySchema = new schema.Entity('entity');
+const MyEntity = new schema.Entity('MyEntity');
+const MyOtherEntity = new schema.Entity('MyOtherEntity');
+const schemas = {
+  MyEntity,
+  MyOtherEntity
+};
 
-class MyStatefulWorkflow extends StatefulWorkflowClass {
+@ChronoFlow("MyStatefulWorkflow", {
+  schemas,
+  schemaName: "MyEntity",
+})
+class MyStatefulWorkflow extends StatefulWorkflow {
+  protected continueAsNew = true;
+
+  @Property() // Wires up "custom" query to get the value and "custom" signal to set the value
+  protected custom: string = "my custom value";
+
+  // Custom implementation of a query (you can already query state without this)
   @Query()
   public getStateValue(key: string): any {
     return this.state[key];
   }
 
+  // Custom implementation of a signal (you can already signal to set state without this)
   @Signal()
   public updateStateValue(key: string, value: any): void {
     this.state[key] = value;
   }
 
-  @Hook({ after: 'execute' })
-  async afterExecution() {
-    console.log('After execution hook.');
+  @On("someSignal")
+  async handleSomeSignal(data: any) {
+    this.log.debug(`someSignal event fired! with ${data}...`);
   }
 
-  @ContinueAsNew()
-  async continueAsNewWorkflow() {
-    console.log('Continuing as new workflow...');
+  @Before("processState")
+  async beforeExecuteAndProcessingNewState(newState: EntitiesState) {
+    this.log.info(`Hooked in before processing new state to do something...`);
+  }
+
+  @Before("execute")
+  async beforeExecute() {
+    this.log.info('Before execution hook.');
   }
 
   protected async execute() {
     console.log('Executing stateful workflow with normalized state...');
+  }
+
+  @Hook({ after: 'execute' })
+  async afterExecution() {
+    this.log.info('After execution hook.');
   }
 }
 
