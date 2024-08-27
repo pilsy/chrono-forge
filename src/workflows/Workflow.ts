@@ -7,7 +7,7 @@ import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { log } from '@temporalio/workflow';
 import type { Duration } from '@temporalio/common';
 
-export const ChronoFlow = (name: string, options: { [key: string]: any } = {}) => {
+export const ChronoFlow = (name?: string, options: { [key: string]: any } = {}) => {
   return (constructor: any) => {
     const workflowName = name || constructor.name;
 
@@ -24,10 +24,9 @@ export const ChronoFlow = (name: string, options: { [key: string]: any } = {}) =
     return new Function(
       'workflow', 'constructor', 'options',
       `
-      return async function ${workflowName}(params) {
-        const instance = new constructor(params, options);
-
-        return await instance.executeWorkflow();
+      return async function ${workflowName}(...args) {
+        const instance = new constructor(args[0], args[1]);
+        return await instance.executeWorkflow(...args);
       };
     `
     )(workflow, constructor, options);
@@ -187,7 +186,11 @@ export abstract class Workflow extends EventEmitter {
     this.bindHooks();
   }
 
-  protected abstract condition(): boolean | Promise<boolean>;
+  protected async condition(): Promise<any> {
+    this.log.debug(`[Workflow]:${this.constructor.name}:awaitCondition`);
+    return await workflow.condition(() => this.pendingUpdate || this.status !== 'running', "1 day");
+  }
+
   protected abstract execute(...args: unknown[]): Promise<unknown>;
 
   protected async signal(signalName: string, ...args: unknown[]): Promise<void> {
@@ -207,13 +210,18 @@ export abstract class Workflow extends EventEmitter {
     }
   }
 
-  protected async executeWorkflow(): Promise<any> {
+  // @ts-ignore
+  protected async executeWorkflow(...args): Promise<any> {
     return this.tracer.startActiveSpan(`[Workflow]:${this.constructor.name}`, async (span) => {
       try {
         span.setAttributes({ workflowId: workflow.workflowInfo().workflowId, workflowType: workflow.workflowInfo().workflowType });
 
+        if (!this.continueAsNew) {
+          return await this.execute(...args);
+        }
+
         while (this.iteration <= this.maxIterations && !this.isInTerminalState()) {
-          await this.awaitCondition();
+          await this.condition();
 
           if (this.status === 'paused') {
             await this.emitAsync('paused')
@@ -272,15 +280,6 @@ export abstract class Workflow extends EventEmitter {
         await this.executeStep(step);
         await this.processDependentSteps(step.name);
       }
-    }
-  }
-
-  protected async awaitCondition(): Promise<any> {
-    this.log.debug(`[Workflow]:${this.constructor.name}:awaitCondition`);
-    if (typeof this.condition === 'function') {
-      return await this.condition();
-    } else {
-      return await workflow.condition(() => this.pendingUpdate || this.status !== 'running', "1 day");
     }
   }
 

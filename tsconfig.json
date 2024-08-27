@@ -32,13 +32,15 @@
     "sourceMap": true
   },
   "include": [
-    "src/Workflow.ts",
-    "src/StatefulWorkflow.ts",
+    "src/workflows/*.ts",
+    "src/workflows/StatefulWorkflow.ts",
     "src/SchemaConfig.ts",
     "src/utils/entities.ts",
     "src/utils/startChildPayload.ts",
-    "src/index.ts"
+    "src/index.ts",
+    // "src/tests/**/*.test.ts",
+    // "src/tests/**/*.ts"
   ],
   // "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "test"]
+  "exclude": ["node_modules", "dist"]
 }

@@ -1,14 +1,14 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 import * as workflow from '@temporalio/workflow';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
-import { normalizeEntities, reducer, EntitiesState, UPDATE_ENTITIES, DELETE_ENTITIES } from './utils/entities';
+import { normalizeEntities, reducer, EntitiesState, UPDATE_ENTITIES, DELETE_ENTITIES } from '../utils/entities';
 import { detailedDiff, DetailedDiff } from 'deep-object-diff';
 import { schema, denormalize, Schema } from 'normalizr';
 import { get, set } from 'dottie';
 import { isEmpty, isEqual } from 'lodash';
-import { startChildPayload } from './utils/startChildPayload';
+import { startChildPayload } from '../utils/startChildPayload';
 import { Workflow, WorkflowStatus, Signal, Query, Hook, Before, After, Property, Condition, Step, ContinueAsNew } from './Workflow';
-import { getSchema } from "./SchemaConfig";
+import { getSchema } from "../SchemaConfig";
 
 
 export type ManagedPath = {
@@ -318,7 +318,7 @@ export abstract class StatefulWorkflow extends Workflow {
         span.setAttributes({ workflowId: workflow.workflowInfo().workflowId, workflowType: workflow.workflowInfo().workflowType });
 
         while (this.iteration <= this.maxIterations) {
-          await this.awaitCondition();
+          await this.condition();
 
           if (this.status === 'paused') {
             await this.handlePause();

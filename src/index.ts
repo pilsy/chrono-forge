@@ -11,22 +11,22 @@ export {
   On,
   Step,
   Workflow
-} from "./Workflow";
+} from "./workflows/Workflow";
 
 export type {
   WorkflowStatus
-} from "./Workflow";
+} from "./workflows/Workflow";
 
 export {
   // StatefulChronoFlow,
   StatefulWorkflow
-} from "./StatefulWorkflow";
+} from "./workflows/StatefulWorkflow";
 
 export type {
   ManagedPath,
   Subscription,
   StatefulWorkflowParams
-} from "./StatefulWorkflow";
+} from "./workflows/StatefulWorkflow";
 
 export * as SchemaConfig from "./SchemaConfig";
 
