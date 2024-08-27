@@ -14,6 +14,8 @@ describe('ChronoFlow Workflow Tests', () => {
   let client: WorkflowClient;
   let nativeConnection;
 
+  jest.setTimeout(10000);
+
   const mockActivities = {
     makeHTTPRequest: async () => '99',
   };
@@ -27,12 +29,12 @@ describe('ChronoFlow Workflow Tests', () => {
     const { client: workflowClient, nativeConnection: nc } = testEnv;
     client = workflowClient;
     nativeConnection = nc;
-  }, 60000);
+  }, 20000);
 
   afterAll(async () => {
     // await worker?.shutdown();
     // await testEnv?.nativeConnection?.close();
-  }, 60000);
+  }, 20000);
 
   describe('Workflow Execution', () => {
     it('Should call the execute() method with provided arguments', async () => {
@@ -583,7 +585,7 @@ describe('ChronoFlow Workflow Tests', () => {
   });
 
   describe('Signal Handling', () => {
-    it('should_bind_signals_correctly', async () => {
+    it('Should bind signals correctly', async () => {
       worker = await Worker.create({
         connection: nativeConnection,
         taskQueue: 'test',
@@ -604,7 +606,7 @@ describe('ChronoFlow Workflow Tests', () => {
       });
     });
 
-    it('should_bind_named_signals_correctly', async () => {
+    it('Should bind named signals correctly', async () => {
       worker = await Worker.create({
         connection: nativeConnection,
         taskQueue: 'test',
@@ -625,7 +627,7 @@ describe('ChronoFlow Workflow Tests', () => {
       });
     });
 
-    it('should_emit_event_on_signal_invocation', async () => {
+    it('Should emit an event on signal invocation', async () => {
       worker = await Worker.create({
         connection: nativeConnection,
         taskQueue: 'test',
@@ -811,30 +813,27 @@ describe('ChronoFlow Workflow Tests', () => {
   });
 
   describe('Query Handling', () => {
-    it.skip('should_bind_queries_correctly', async () => {
-      @ChronoFlow()
-      class TestWorkflow extends Workflow {
-        private status = 'initial';
-
-        @Query('getStatus')
-        getStatus() {
-          return this.status;
-        }
-
-        async execute() {
-          return this.status;
-        }
-      }
-
-      const { client } = testEnv;
-      const result = await client.workflow.start(TestWorkflow, {
+    it('Should bind queries correctly', async () => {
+      worker = await Worker.create({
+        connection: nativeConnection,
         taskQueue: 'test',
-        workflowId: 'test-workflow',
-        args: [],
+        workflowsPath: path.resolve(__dirname, './testWorkflows'),
+        activities: mockActivities,
       });
+      await worker.runUntil(async () => {
+        const { client } = testEnv;
+        const handle = await client.workflow.start("ShouldBindQueriesCorrectly", {
+          taskQueue: 'test',
+          workflowId: 'should_bind_queries_correctly',
+          args: [],
+        });
 
-      const queryResult = await result.query('getStatus');
-      expect(queryResult).toBe('initial');
+        const queryResult = await handle.query('getStatus');
+        expect(queryResult).toBe('initial');
+        
+        const workflowResult = await handle.result();
+        expect(workflowResult).toBe('initial');
+      });
     });
 
     it.skip('should_throw_error_for_undefined_query', async () => {
@@ -921,35 +920,24 @@ describe('ChronoFlow Workflow Tests', () => {
   });
 
   describe('Hook Handling', () => {
-    it.skip('should_apply_before_hooks_correctly', async () => {
-      @ChronoFlow()
-      class TestWorkflow extends Workflow {
-        public status = 'initial';
-
-        @Before('updateStatus')
-        beforeUpdateStatus() {
-          this.status = 'before-hook';
-        }
-
-        async updateStatus(newStatus: string) {
-          this.status = newStatus;
-        }
-
-        async execute() {
-          await this.updateStatus('updated');
-          return this.status;
-        }
-      }
-
-      const { client } = testEnv;
-      const result = await client.workflow.start(TestWorkflow, {
+    it('should_apply_before_hooks_correctly', async () => {
+      worker = await Worker.create({
+        connection: nativeConnection,
         taskQueue: 'test',
-        workflowId: 'test-workflow',
-        args: [],
+        workflowsPath: path.resolve(__dirname, './testWorkflows'),
+        activities: mockActivities,
       });
-
-      const workflowResult = await result.result();
-      expect(workflowResult).toBe('updated');
+      await worker.runUntil(async () => {
+        const { client } = testEnv;
+        const handle = await client.workflow.start("ShouldApplyBeforeHooksCorrectly", {
+          taskQueue: 'test',
+          workflowId: 'should_apply_before_hooks_correctly',
+          args: [],
+        });
+  
+        const workflowResult = await handle.result();
+        expect(workflowResult).toBe('beforeHookApplied');
+      });
     });
 
     it.skip('should_apply_after_hooks_correctly', async () => {

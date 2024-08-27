@@ -1,16 +1,16 @@
 export {
   ChronoFlow,
-  ContinueAsNew,
-  Signal,
-  Query,
+  Workflow,
+  On,
   Hook,
-  Before,
+  Step,
+  Query,
+  Signal,
   After,
+  Before,
   Property,
   Condition,
-  On,
-  Step,
-  Workflow
+  ContinueAsNew,
 } from "./workflows/Workflow";
 
 export type {
@@ -18,7 +18,6 @@ export type {
 } from "./workflows/Workflow";
 
 export {
-  // StatefulChronoFlow,
   StatefulWorkflow
 } from "./workflows/StatefulWorkflow";
 

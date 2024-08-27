@@ -38,8 +38,8 @@
     "src/utils/entities.ts",
     "src/utils/startChildPayload.ts",
     "src/index.ts",
-    // "src/tests/**/*.test.ts",
-    // "src/tests/**/*.ts"
+    "src/tests/**/*.test.ts",
+    "src/tests/**/*.ts"
   ],
   // "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]

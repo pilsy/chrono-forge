@@ -53,36 +53,7 @@ A basic workflow in ChronoForge utilizes the `@ChronoFlow` decorator along with 
 import { ChronoFlow, Workflow, Property, Step, Signal, Query, Before, After } from 'chrono-forge';
 
 @ChronoFlow()
-class SimpleWorkflow extends Workflow {
-  @Property() // "data" query and signal available automtically
-  private data: string = '';
-
-  @Query() // custom query to get data
-  getData() {
-    return this.data;
-  }
-
-  @Signal() // custom signal to get data
-  setData(newData: string) {
-    this.data = newData;
-  }
-
-  // Note: you don't need to use steps, if you have a simple workflow just implement the execute method
-  @Step({ name: 'initialize' })
-  async initialize() {
-    console.log('Initializing workflow...');
-  }
-
-  @Step({ name: 'processData', after: 'initialize' })
-  async processData() {
-    console.log('Processing data:', this.data);
-  }
-
-  @Step({ name: 'finalize', after: 'processData' })
-  async finalize() {
-    console.log('Finalizing workflow.');
-  }
-
+export class SimpleWorkflow extends Workflow {
   protected async execute() {
     console.log('Executing workflow...');
   }
