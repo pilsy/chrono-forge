@@ -112,7 +112,6 @@ export const Property = (options: { get?: boolean | string; set?: boolean | stri
       signalName
     });
 
-    // Automatically wire up signals and queries for the property
     if (options.get) {
       const getterName = typeof options.get === 'string' ? options.get : propertyKey;
       target.constructor._getters = target.constructor._getters || {};
@@ -400,7 +399,6 @@ export abstract class Workflow extends EventEmitter {
     (proto.constructor._signals || []).forEach(([signalName, signalMethod]: [string, string]) => {
       this.signalHandlers[signalName] = (this as any)[signalMethod]?.bind(this);
       workflow.setHandler(workflow.defineSignal(signalName), async (...args: any[]) => {
-        // console.log(`Calling signal handler ${signalName}`);
         // @ts-ignore
         await this.signalHandlers[signalName](...(args as []));
         this.emit(signalName, ...args);
@@ -432,8 +430,6 @@ export abstract class Workflow extends EventEmitter {
               ? (this as any)[proto.constructor._getters[propertyKey]].bind(this)
               : () => (this as any)[propertyKey];
 
-          // console.log(`${propertyKey} : ${queryName} : ${signalName} : ${get} : ${set}`);
-
           this.queryHandlers[queryName] = getter;
           workflow.setHandler(workflow.defineQuery(typeof get === 'string' ? get : propertyKey), this.queryHandlers[queryName]);
         }
@@ -445,8 +441,6 @@ export abstract class Workflow extends EventEmitter {
               : (value: any) => {
                   (this as any)[propertyKey] = value;
                 };
-
-          // console.log(`${propertyKey} : ${queryName} : ${signalName} : ${get} : ${set}`);
 
           this.signalHandlers[signalName] = setter;
           workflow.setHandler(workflow.defineSignal(typeof set === 'string' ? set : propertyKey), async (...args: any[]) => {
@@ -520,7 +514,6 @@ export abstract class Workflow extends EventEmitter {
   }
 }
 
-// Helper function
 function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }

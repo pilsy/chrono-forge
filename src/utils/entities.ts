@@ -20,7 +20,6 @@ export const DELETE_ENTITY = 'entities.deleteEntity';
 export const DELETE_ENTITIES = 'entities.deleteEntities';
 export const CLEAR_ENTITIES = 'entities.clearEntities';
 
-// Action Creators
 export const updateNormalizedEntity = (entity: Record<string, any>, entityName: string): EntityAction => {
   if (!entity || !entityName) {
     throw new Error('Entity and entityName must be provided.');
@@ -90,15 +89,12 @@ export const deleteEntities = (entities: string[], entityName: string): EntityAc
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface EntitiesSpec<T> {
-  [key: string]: any; // Add an index signature to allow dynamic keys
+  [key: string]: any;
 }
 
 export const defaultState: EntitiesState = {};
 export const initialState: EntitiesState = {};
 
-/**
- * Normalize a single entity or an array of entities using the provided schema.
- */
 export const normalizeEntities = <T>(data: T | T[], entitySchema: Schema | string): EntitiesState => {
   const schemas = SchemaManager.getInstance().getSchemas();
   if (!schemas) {
@@ -113,7 +109,6 @@ export const normalizeEntities = <T>(data: T | T[], entitySchema: Schema | strin
 
   const normalizedData = normalize(data, Array.isArray(data) ? [schema] : schema);
 
-  // Ensure that we are returning a correctly typed EntitiesState object
   const entities: EntitiesState = {};
   for (const key in normalizedData.entities) {
     if (Object.prototype.hasOwnProperty.call(normalizedData.entities, key)) {
@@ -123,29 +118,22 @@ export const normalizeEntities = <T>(data: T | T[], entitySchema: Schema | strin
   return entities;
 };
 
-/**
- * Create an update statement for immutability-helper using normalized entities.
- */
 export const createUpdateStatement = (state: EntitiesState, normalizedEntities: EntitiesState): Spec<EntitiesState> => {
   const updateStatement: Spec<EntitiesState> = {};
 
   for (const entityName in normalizedEntities) {
     if (!state[entityName]) {
-      // If the entity type does not exist in the state, use $set
       updateStatement[entityName] = {
         $set: normalizedEntities[entityName]
       };
     } else {
-      // If the entity type exists, check each entity
       updateStatement[entityName] = {};
       for (const entityId in normalizedEntities[entityName]) {
         if (state[entityName][entityId]) {
-          // Use $merge if the entity exists
           updateStatement[entityName][entityId] = {
             $merge: normalizedEntities[entityName][entityId]
           };
         } else {
-          // Use $set if the entity does not exist
           updateStatement[entityName][entityId] = {
             $set: normalizedEntities[entityName][entityId]
           };
@@ -174,7 +162,6 @@ export const handleUpdateEntities = (state: EntitiesState, entities: Record<stri
       }
     }
   }
-  // console.log(updateStatement);
   return updateStatement;
 };
 

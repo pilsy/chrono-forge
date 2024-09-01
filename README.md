@@ -4,6 +4,14 @@ ChronoForge is an open-source framework designed to streamline the creation and 
 
 > ***Those who say it cannot be done should stop interrupting the people doing it.***
 
+## Documentation
+
+For detailed documentation on all features and usage, please refer to the following:
+
+- **[StatefulWorkflow Documentation](docs/StatefulWorkflow.md)**: Comprehensive guide on using the `StatefulWorkflowClass`.
+- **[Workflow Documentation](docs/Workflow.md)**: Detailed documentation on the base `Workflow` class and its features.
+- **[Entities Documentation](docs/entities.md)**: Guide on managing normalized state within workflows.
+
 ## Table of Contents
 
 1. [Introduction](#introduction)
@@ -17,9 +25,8 @@ ChronoForge is an open-source framework designed to streamline the creation and 
    - [State Management and Normalization](#state-management-and-normalization)
    - [Error Handling and Tracing](#error-handling-and-tracing)
    - [Dynamic Workflow Creation](#dynamic-workflow-creation)
-5. [Documentation](#documentation)
-6. [Contributing](#contributing)
-7. [License](#license)
+5. [Contributing](#contributing)
+6. [License](#license)
 
 ## Introduction
 
@@ -50,7 +57,7 @@ ChronoForge offers a streamlined approach to creating both basic and stateful wo
 A basic workflow in ChronoForge utilizes the `@ChronoFlow` decorator along with various step and signal decorators to define its logic:
 
 ```typescript
-import { ChronoFlow, Workflow, Property, Step, Signal, Query, Before, After } from 'chrono-forge';
+import { ChronoFlow, Workflow } from 'chrono-forge';
 
 @ChronoFlow()
 export class SimpleWorkflow extends Workflow {
@@ -68,23 +75,17 @@ ChronoForge also supports stateful workflows that manage normalized state across
 
 ```typescript
 import { StatefulWorkflow, Property, Signal, Query, Before, Hook, ContinueAsNew } from 'chrono-forge';
-import { schema } from 'normalizr';
+import schemas, { MyEntity } from "@schemas"
 
-const MyEntity = new schema.Entity('MyEntity');
-const MyOtherEntity = new schema.Entity('MyOtherEntity');
-const schemas = {
-  MyEntity,
-  MyOtherEntity
-};
-
-@ChronoFlow("MyStatefulWorkflow", {
+@ChronoFlow({
+  schema: MyEntity,
   schemas,
-  schemaName: "MyEntity",
 })
 class MyStatefulWorkflow extends StatefulWorkflow {
+  protected maxIterations = 10000;
   protected continueAsNew = true;
 
-  @Property() // Wires up "custom" query to get the value and "custom" signal to set the value
+  @Property() // Wires up "custom" query to get the value, and "custom" signal to set the value
   protected custom: string = "my custom value";
 
   // Custom implementation of a query (you can already query state without this)
@@ -125,6 +126,29 @@ class MyStatefulWorkflow extends StatefulWorkflow {
 }
 
 export default MyStatefulWorkflow;
+```
+
+`src/schema/index.ts`
+```typescript
+import { SchemaManager } from '../SchemaManager';
+
+const schemaManager = SchemaManager.getInstance();
+schemaManager.setSchemas({ // Recursive schemas fully supported
+  MyEntity: {
+    idAttribute: 'id',
+    myOtherEntity: ['MyOtherEntity']
+  },
+  MyOtherEntity: {
+    idAttribute: 'id',
+    myEntity: 'MyEntity'
+  }
+});
+
+const schemas = schemaManager.getSchemas();
+const { MyEntity, MyOtherEntity } = schemas;
+export { MyEntity, MyOtherEntity };
+export default schemas;
+
 ```
 
 In this example, `MyStatefulWorkflow` handles normalized state using the `normalizr` library, allowing for complex state management across multiple executions.
@@ -177,14 +201,6 @@ ChronoForge supports the dynamic creation of workflows at runtime. This feature 
 
 - **Named Function for Workflow**: Dynamically creates and names workflow functions, ensuring that workflows inherit all necessary functionality.
 - **Dynamic Branching**: Supports branching within workflows based on step return values, allowing for highly flexible and adaptive workflows.
-
-## Documentation
-
-For detailed documentation on all features and usage, please refer to the following:
-
-- **[StatefulWorkflowClass Documentation](docs/StatefulWorkflow.md)**: Comprehensive guide on using the `StatefulWorkflowClass`.
-- **[WorkflowClass Documentation](docs/Workflow.md)**: Detailed documentation on the base `Workflow` class and its features.
-- **[Entities Documentation](docs/entities.md)**: Guide on managing normalized state within workflows.
 
 ## Contributing
 

@@ -1,389 +1,131 @@
-### `StatefulWorkflow` Documentation
+## `StatefulWorkflow` Docs
 
-The `StatefulWorkflow` is designed to provide powerful state management capabilities within Temporal workflows. It enables seamless handling of complex states, automatic management of child workflows, and dynamic event-driven processing. This document details all the features available in the `StatefulWorkflow`, with usage examples for each feature.
+### Overview
+
+`StatefulWorkflow` is an extensible and sophisticated workflow class designed for Temporal.io, a popular workflow orchestration platform. It provides a robust foundation for creating dynamic, hierarchical workflows that can seamlessly manage state, synchronize data, and communicate across multiple levels of parent-child relationships. With features such as automatic child state management, dynamic data loading from APIs, powerful subscription-based state synchronization, and intelligent handling of circular relationships, `StatefulWorkflow` is well-suited for complex systems where entities interact across various layers and domains.
+
+The core philosophy of `StatefulWorkflow` is to facilitate efficient, scalable, and flexible workflow management by abstracting away many of the tedious details associated with state handling, entity normalization, and data propagation. It allows developers to focus on implementing their business logic while the workflow itself manages the complexities of state updates, data consistency, and hierarchical relationships.
+
+### Key Functional Pillars of `StatefulWorkflow`
+
+1. **Automatic Child State Management**: `StatefulWorkflow` leverages its deep understanding of hierarchical relationships to automatically manage child workflows. This includes starting, updating, or canceling child workflows based on changes in the parent’s state. This automated approach simplifies complex workflows where parent entities must manage the lifecycle and synchronization of child entities.
+
+2. **Data Normalization and Denormalization**: Handling complex nested data structures can be challenging, especially in distributed workflows. `StatefulWorkflow` uses `normalizr` to normalize data into a flat structure for efficient storage and processing. This allows for easier updates, querying, and synchronization. When data is sent to subscribers or used in business logic, it is automatically denormalized back into a usable form.
+
+3. **Dynamic Data Loading from External APIs**: In many real-world applications, workflows need to interact with external services to fetch or update data. `StatefulWorkflow` provides an extensible mechanism for loading data from APIs using a `loadData` function that can be implemented by the developer. This data loading is tightly integrated into the workflow’s execution cycle, ensuring that the workflow state is always up-to-date.
+
+4. **Dynamic Parent-Child-Grandchild Relationship Handling**: The complexity of workflow management increases exponentially when dealing with multi-level parent-child relationships. `StatefulWorkflow` intelligently handles these relationships by detecting potential redundancies and circular dependencies. It can delegate the management of child workflows to appropriate ancestors if needed, ensuring efficient and clean state management across the hierarchy.
+
+5. **Subscription-Based State Synchronization**: A key challenge in hierarchical workflows is keeping the state synchronized across different levels and entities. `StatefulWorkflow` provides a powerful subscription system that allows workflows to subscribe to state changes from other workflows. This enables dynamic and selective propagation of updates, additions, or deletions based on flexible criteria such as paths and selectors.
+
+6. **API Token Management and Propagation**: Securely managing API tokens is crucial for workflows that interact with external systems. `StatefulWorkflow` includes built-in functionality for managing and propagating API tokens throughout the workflow hierarchy. This ensures that all workflows have consistent access to the necessary credentials while preventing security risks associated with token misuse or redundancy.
+
+### Benefits of Using `StatefulWorkflow`
+
+- **Simplifies Complex State Management**: By automating the management of child workflows and using normalized data structures, `StatefulWorkflow` reduces the burden on developers to manually handle intricate state transitions and updates.
+- **Promotes Scalability and Flexibility**: The dynamic handling of parent-child relationships and subscriptions enables workflows to adapt to changing states and requirements without extensive reconfiguration.
+- **Enhances Data Integrity and Consistency**: With its robust synchronization mechanisms and intelligent relationship management, `StatefulWorkflow` ensures that data remains consistent and accurate across all levels of the workflow hierarchy.
+- **Facilitates Integration with External APIs**: The `loadData` functionality allows workflows to seamlessly interact with external services, keeping the workflow state aligned with real-world data and ensuring a more reactive and responsive system.
+- **Ensures Security and Efficiency**: Through effective API token management and propagation, `StatefulWorkflow` ensures secure and efficient access to external resources without compromising on performance or security.
+
+`StatefulWorkflow` is designed to address the complexities of managing stateful, hierarchical workflows in distributed systems. By combining automatic state management, dynamic data loading, flexible subscription-based synchronization, and intelligent relationship handling, it offers a comprehensive solution for building robust and scalable workflows. This powerful class abstracts away the complexities associated with state propagation, API integration, and entity management, allowing developers to focus on delivering business value while leveraging Temporal.io’s workflow orchestration capabilities.
 
 ---
 
-## Table of Contents
+# [Table of Contents](./StatefulWorkflow/table_of_contents.md)
 
-1. [Overview](#overview)
-2. [StatefulWorkflow Features](#statefulworkflowclass-features)
-   - [State Management](#1-state-management)
-   - [Child Workflow Management](#2-child-workflow-management)
-   - [Dynamic Subscription Handling](#3-dynamic-subscription-handling)
-   - [Hooks for Method Interception](#4-hooks-for-method-interception)
-   - [Event Emission and Handling](#5-event-emission-and-handling)
-   - [Error Handling with @OnError](#6-error-handling-with-onerror)
-   - [Support for continueAsNew](#7-support-for-continueasnew)
-   - [Signal Forwarding to Child Workflows](#8-signal-forwarding-to-child-workflows)
-3. [Detailed Feature Usage](#detailed-feature-usage)
-   - [State Management Usage](#1-state-management-usage)
-   - [Child Workflow Management Usage](#2-child-workflow-management-usage)
-   - [Dynamic Subscription Handling Usage](#3-dynamic-subscription-handling-usage)
-   - [Hooks for Method Interception Usage](#4-hooks-for-method-interception-usage)
-   - [Event Emission and Handling Usage](#5-event-emission-and-handling-usage)
-   - [Error Handling with @OnError Usage](#6-error-handling-with-onerror-usage)
-   - [Support for continueAsNew Usage](#7-support-for-continueasnew-usage)
-   - [Signal Forwarding to Child Workflows Usage](#8-signal-forwarding-to-child-workflows-usage)
-   - [Complete Usage Example](#9-complete-usage-example)
-4. [Conclusion](#conclusion)
+1. [Introduction to `StatefulWorkflow`](./StatefulWorkflow/introduction.md)
+   - [Overview and Purpose](./StatefulWorkflow/introduction.md#overview-and-purpose)
+   - [Key Features](./StatefulWorkflow/introduction.md#key-features)
+   - [Use Cases and Applications](./StatefulWorkflow/introduction.md#use-cases-and-applications)
+
+2. [Getting Started with `StatefulWorkflow`](./StatefulWorkflow/getting_started.md)
+   - [Initial Setup and Requirements](./StatefulWorkflow/getting_started.md#initial-setup-and-requirements)
+   - [Extending `StatefulWorkflow` for Custom Workflows](./StatefulWorkflow/getting_started.md#extending-statefulworkflow-for-custom-workflows)
+   - [Overview of Key Concepts and Terminology](./StatefulWorkflow/getting_started.md#overview-of-key-concepts-and-terminology)
+
+3. [Defining Workflow Relationships with `managedPaths`](./StatefulWorkflow/defining_workflow_relationships.md)
+   - [Introduction to `managedPaths`](./StatefulWorkflow/defining_workflow_relationships.md#introduction-to-managedpaths)
+   - [Configuration and Examples](./StatefulWorkflow/defining_workflow_relationships.md#configuration-and-examples)
+   - [Managing Relationships and Dependencies](./StatefulWorkflow/defining_workflow_relationships.md#managing-relationships-and-dependencies)
+   - [Auto-Starting Child Workflows](./StatefulWorkflow/defining_workflow_relationships.md#auto-starting-child-workflows)
+
+4. [State Management and Data Normalization](./StatefulWorkflow/state_management_and_data_normalization.md)
+   - [Overview of State Management in `StatefulWorkflow`](./StatefulWorkflow/state_management_and_data_normalization.md#overview-of-state-management-in-statefulworkflow)
+     - [Dynamic State Updates](./StatefulWorkflow/state_management_and_data_normalization.md#dynamic-state-updates)
+     - [Data Consistency](./StatefulWorkflow/state_management_and_data_normalization.md#data-consistency)
+     - [Efficient Querying and Modification](./StatefulWorkflow/state_management_and_data_normalization.md#efficient-querying-and-modification)
+   - [Automatic Data Normalization with `SchemaManager`](./StatefulWorkflow/state_management_and_data_normalization.md#automatic-data-normalization-with-schemamanager)
+     - [Simplified Data Management](./StatefulWorkflow/state_management_and_data_normalization.md#simplified-data-management)
+     - [Automatic Handling](./StatefulWorkflow/state_management_and_data_normalization.md#automatic-handling)
+     - [Consistency Across Workflows](./StatefulWorkflow/state_management_and_data_normalization.md#consistency-across-workflows)
+   - [Handling Complex Nested Data Structures](./StatefulWorkflow/state_management_and_data_normalization.md#handling-complex-nested-data-structures)
+     - [Schema-Based Normalization](./StatefulWorkflow/state_management_and_data_normalization.md#schema-based-normalization)
+     - [Automatic Relationship Management](./StatefulWorkflow/state_management_and_data_normalization.md#automatic-relationship-management)
+     - [Efficient Data Access](./StatefulWorkflow/state_management_and_data_normalization.md#efficient-data-access)
+   - [Updating, Merging, and Deleting Entities](./StatefulWorkflow/state_management_and_data_normalization.md#updating-merging-and-deleting-entities)
+     - [Updating Entities](./StatefulWorkflow/state_management_and_data_normalization.md#updating-entities)
+     - [Merging Entities](./StatefulWorkflow/state_management_and_data_normalization.md#merging-entities)
+     - [Deleting Entities](./StatefulWorkflow/state_management_and_data_normalization.md#deleting-entities)
+     - [Automatic Synchronization](./StatefulWorkflow/state_management_and_data_normalization.md#automatic-synchronization)
+
+5. [Exposed Queries and Signals in `StatefulWorkflow`](./StatefulWorkflow/exposed_queries_and_signals.md)
+   - [Exposed Queries](./StatefulWorkflow/exposed_queries_and_signals.md#exposed-queries)
+     - [`id`](./StatefulWorkflow/exposed_queries_and_signals.md#id)
+     - [`entityName`](./StatefulWorkflow/exposed_queries_and_signals.md#entityname)
+     - [`state`](./StatefulWorkflow/exposed_queries_and_signals.md#state)
+     - [`pendingChanges`](./StatefulWorkflow/exposed_queries_and_signals.md#pendingchanges)
+     - [`subscriptions`](./StatefulWorkflow/exposed_queries_and_signals.md#subscriptions)
+     - [`managedPaths`](./StatefulWorkflow/exposed_queries_and_signals.md#managedpaths)
+     - [`apiUrl`](./StatefulWorkflow/exposed_queries_and_signals.md#apiurl)
+     - [`apiToken`](./StatefulWorkflow/exposed_queries_and_signals.md#apitoken)
+   - [Exposed Signals](./StatefulWorkflow/exposed_queries_and_signals.md#exposed-signals)
+     - [`apiToken`](./StatefulWorkflow/exposed_queries_and_signals.md#apitoken-signal)
+     - [`apiUrl`](./StatefulWorkflow/exposed_queries_and_signals.md#apiurl-signal)
+     - [`update`](./StatefulWorkflow/exposed_queries_and_signals.md#update)
+     - [`delete`](./StatefulWorkflow/exposed_queries_and_signals.md#delete)
+     - [`subscribe`](./StatefulWorkflow/exposed_queries_and_signals.md#subscribe)
+     - [`unsubscribe`](./StatefulWorkflow/exposed_queries_and_signals.md#unsubscribe)
+
+6. [Dynamic Data Loading and API Integration](./StatefulWorkflow/dynamic_data_loading_and_api_integration.md)
+   - [Loading Data Dynamically with `loadData`](./StatefulWorkflow/dynamic_data_loading_and_api_integration.md#loading-data-dynamically-with-loaddata)
+   - [Integrating with External APIs Using Temporal Activities](./StatefulWorkflow/dynamic_data_loading_and_api_integration.md#integrating-with-external-apis-using-temporal-activities)
+   - [Managing API Tokens and Secure API Access](./StatefulWorkflow/dynamic_data_loading_and_api_integration.md#managing-api-tokens-and-secure-api-access)
+   - [Propagating Configuration and Credentials to Child Workflows](./StatefulWorkflow/dynamic_data_loading_and_api_integration.md#propagating-configuration-and-credentials-to-child-workflows)
+
+7. [Child Workflow Lifecycle Management](./StatefulWorkflow/child_workflow_lifecycle_management.md)
+   - [Automatic Instantiation, Update, and Cancellation of Child Workflows](./StatefulWorkflow/child_workflow_lifecycle_management.md#automatic-instantiation-update-and-cancellation-of-child-workflows)
+   - [Handling State Changes and Synchronizing Child Workflows](./StatefulWorkflow/child_workflow_lifecycle_management.md#handling-state-changes-and-synchronizing-child-workflows)
+   - [Detecting and Preventing Redundant Workflows](./StatefulWorkflow/child_workflow_lifecycle_management.md#detecting-and-preventing-redundant-workflows)
+   - [Propagation of Responsibilities in Hierarchical Workflows](./StatefulWorkflow/child_workflow_lifecycle_management.md#propagation-of-responsibilities-in-hierarchical-workflows)
+
+8. [Subscriptions and Signal-Based Communication](./StatefulWorkflow/subscriptions_and_signal_based_communication.md)
+   - [Introduction to Subscriptions in `StatefulWorkflow`](./StatefulWorkflow/subscriptions_and_signal_based_communication.md#introduction-to-subscriptions-in-statefulworkflow)
+   - [Defining Selectors and Handling Wildcards](./StatefulWorkflow/subscriptions_and_signal_based_communication.md#defining-selectors-and-handling-wildcards)
+   - [Managing State Propagation with Signals](./StatefulWorkflow/subscriptions_and_signal_based_communication.md#managing-state-propagation-with-signals)
+   - [Preventing Recursive Loops and Redundant Updates](./StatefulWorkflow/subscriptions_and_signal_based_communication.md#preventing-recursive-loops-and-redundant-updates)
+
+9. [Handling Circular Relationships and Workflow Ancestry](./StatefulWorkflow/handling_circular_relationships_and_workflow_ancestry.md)
+   - [Overview of Circular Relationship Challenges](./StatefulWorkflow/handling_circular_relationships_and_workflow_ancestry.md#overview-of-circular-relationship-challenges)
+   - [Workflow Metadata and Ancestry Tracking](./StatefulWorkflow/handling_circular_relationships_and_workflow_ancestry.md#workflow-metadata-and-ancestry-tracking)
+   - [Detecting Circular Dependencies and Delegating Management](./StatefulWorkflow/handling_circular_relationships_and_workflow_ancestry.md#detecting-circular-dependencies-and-delegating-management)
+   - [Best Practices for Preventing Redundant Workflows](./StatefulWorkflow/handling_circular_relationships_and_workflow_ancestry.md#best-practices-for-preventing-redundant-workflows)
+
+10. [Security and API Token Management](./StatefulWorkflow/security_and_api_token_management.md)
+    - [Centralized Management of API Tokens](./StatefulWorkflow/security_and_api_token_management.md#centralized-management-of-api-tokens)
+    - [Signal-Based Propagation Across Workflow Hierarchies](./StatefulWorkflow/security_and_api_token_management.md#signal-based-propagation-across-workflow-hierarchies)
+    - [Dynamic and Controlled Propagation of Credentials](./StatefulWorkflow/security_and_api_token_management.md#dynamic-and-controlled-propagation-of-credentials)
+    - [Best Practices for Secure Workflow Communication](./StatefulWorkflow/security_and_api_token_management.md#best-practices-for-secure-workflow-communication)
+
+11. [Best Practices and Advanced Usage](./StatefulWorkflow/best_practices_and_advanced_usage.md)
+    - [Customizing `StatefulWorkflow` for Specific Use Cases](./StatefulWorkflow/best_practices_and_advanced_usage.md#customizing-statefulworkflow-for-specific-use-cases)
+    - [Performance Optimization Tips](./StatefulWorkflow/best_practices_and_advanced_usage.md#performance-optimization-tips)
+    - [Error Handling and Retry Strategies](./StatefulWorkflow/best_practices_and_advanced_usage.md#error-handling-and-retry-strategies)
+    - [Integrating with Other Workflow Management Systems](./StatefulWorkflow/best_practices_and_advanced_usage.md#integrating-with-other-workflow-management-systems)
+
+12. [Conclusion and Further Reading](./StatefulWorkflow/conclusion_and_further_reading.md)
+    - [Summary of Key Concepts](./StatefulWorkflow/conclusion_and_further_reading.md#summary-of-key-concepts)
+    - [Future Enhancements and Roadmap](./StatefulWorkflow/conclusion_and_further_reading.md#future-enhancements-and-roadmap)
+    - [Additional Resources and Documentation](./StatefulWorkflow/conclusion_and_further_reading.md#additional-resources-and-documentation)
 
 ---
-
-## Overview
-
-The `StatefulWorkflow` is an advanced tool designed for managing complex state and interactions within Temporal workflows. It provides built-in support for state management, automatic handling of child workflows, dynamic subscription and event handling, and much more. The goal is to make it easier to build robust, scalable workflows that require intricate state management.
-
-## StatefulWorkflow Features
-
-### 1. State Management
-
-- **Built-in State Management**: The `StatefulWorkflow` provides a state management mechanism that allows workflows to store, query, and update their state over time.
-- **Deep State Inspection**: Developers can query specific paths within the state, enabling precise control over state retrieval and manipulation.
-
-### 2. Child Workflow Management
-
-- **Automatic Child Workflow Handling**: Automatically manage the lifecycle of child workflows based on the current state, including starting new workflows, updating existing ones, and canceling obsolete workflows.
-- **Configurable Managed Paths**: Specify which paths in the state should be treated as collections of child workflows, along with the workflow types and identifier fields.
-
-### 3. Dynamic Subscription Handling
-
-- **Dynamic Subscription Management**: Support for dynamic subscriptions that listen for changes to specific paths within the state, allowing other workflows to be notified of state changes.
-- **Automatic Notification**: Automatically notify subscribed workflows when changes occur in the monitored paths, using configured signals.
-
-### 4. Hooks for Method Interception
-
-- **Before and After Hooks**: Run custom logic before and after specific methods, such as `execute` or `executeStateManagement`.
-- **Combined Hooks**: Run logic both before and after methods, useful for injecting behavior around critical workflow processes.
-
-### 5. Event Emission and Handling
-
-- **Event Emission**: The `StatefulWorkflow` extends `WorkflowClass`, which in turn extends `EventEmitter`, allowing it to emit and handle events within the workflow.
-- **Event Handling**: The `@On` decorator is used to bind methods to specific events, optionally filtered by workflow type or child workflow events.
-
-### 6. Error Handling with @OnError
-
-- **Custom Error Handling**: The `@OnError` decorator allows developers to specify custom error handling logic for specific methods or events.
-- **Global Error Handling**: If no specific error handler is defined, a global error handler can be used as a catch-all for the entire workflow.
-
-### 7. Support for continueAsNew
-
-- **Automatic Continuation**: The workflow can automatically continue as a new instance after a specified number of iterations or when a certain condition is met.
-- **State Preservation**: The framework handles the preservation and transfer of state between workflow instances seamlessly.
-
-### 8. Signal Forwarding to Child Workflows
-
-- **Automatic Signal Forwarding**: Signals received by the parent workflow can be automatically forwarded to all managed child workflows.
-- **Selective Forwarding**: Control which signals are forwarded to child workflows using the `@On` decorator with the `forwardToChildren` option.
-
-## Detailed Feature Usage
-
-### 1. State Management Usage
-
-#### Querying and Updating State
-```typescript
-import { StatefulWorkflow, Signal, Query } from './StatefulWorkflow';
-
-class MyStatefulWorkflow extends StatefulWorkflow {
-  @Query()
-  public getStateValue(key: string): any {
-    return this.state[key];
-  }
-
-  @Signal()
-  public updateStateValue(key: string, value: any): void {
-    this.state[key] = value;
-  }
-
-  protected async execute() {
-    // Workflow execution logic
-  }
-}
-```
-**Explanation**:
-- `getStateValue` allows querying specific keys in the workflow's state.
-- `updateStateValue` allows updating the state with new values.
-
-### 2. Child Workflow Management Usage
-
-#### Managing Child Workflows
-```typescript
-import { StatefulWorkflow } from './StatefulWorkflow';
-
-class MyStatefulWorkflow extends StatefulWorkflow {
-  protected configurePaths() {
-    this.configureManagedPaths([{ path: 'threads', workflowType: 'ThreadWorkflow', idAttribute: 'threadId' }]);
-  }
-
-  protected async execute() {
-    // Workflow execution logic
-  }
-}
-```
-**Explanation**:
-- `configurePaths` defines which paths in the state are treated as collections of child workflows.
-
-### 3. Dynamic Subscription Handling Usage
-
-#### Managing Subscriptions
-```typescript
-import { StatefulWorkflow, Signal } from './StatefulWorkflow';
-
-class MyStatefulWorkflow extends StatefulWorkflow {
-  @Signal()
-  public async subscribeToChanges(subscription: { workflowId: string; signalName: string; dataWatchPath: string }): Promise<void> {
-    await this.subscribe(subscription);
-  }
-
-  protected async execute() {
-    // Workflow execution logic
-  }
-}
-```
-**Explanation**:
-- `subscribeToChanges` dynamically subscribes another workflow to changes in the state.
-
-### 4. Hooks for Method Interception Usage
-
-#### Using Hooks
-```typescript
-import { StatefulWorkflow, Hook } from './StatefulWorkflow';
-
-class MyStatefulWorkflow extends StatefulWorkflow {
-  @Hook({ before: 'execute' })
-  protected async logBeforeExecution() {
-    console.log('Before executing...');
-  }
-
-  @Hook({ after: 'execute' })
-  protected async logAfterExecution() {
-    console.log('After executing...');
-  }
-
-  protected async execute() {
-    console.log('Executing main workflow logic...');
-  }
-}
-```
-**Explanation**:
-- `logBeforeExecution` runs before `execute`.
-- `logAfterExecution` runs after `execute`.
-
-### 5. Event Emission and Handling Usage
-
-#### Emitting and Handling Events
-```typescript
-import { StatefulWorkflow, On } from './StatefulWorkflow';
-
-class MyStatefulWorkflow extends StatefulWorkflow {
-  @On('customEvent')
-  public async handleCustomEvent(data: string) {
-    console.log(`Custom event received: ${data}`);
-  }
-
-  protected async execute() {
-    this.emit('customEvent', 'Hello, World!');
-  }
-}
-```
-**Explanation**:
-- The `handleCustomEvent` method is bound to the `customEvent` event and will be triggered when `customEvent` is emitted.
-
-### 6. Error Handling with @OnError Usage
-
-#### Handling Errors
-```typescript
-import { StatefulWorkflow, OnError } from './StatefulWorkflow';
-
-class MyStatefulWorkflow extends StatefulWorkflow {
-  @OnError('execute')
-  protected async handleError(err: Error) {
-    console.error('Error during execution:', err);
-  }
-
-  protected async execute() {
-    throw new Error('Something went wrong!');
-  }
-}
-```
-**Explanation**:
-- `handleError` is invoked if an error occurs during the `execute` method.
-
-### 7. Support for continueAsNew Usage
-
-#### Automatic Continuation
-```typescript
-import { StatefulWorkflow, Hook } from './StatefulWorkflow';
-
-class MyStatefulWorkflow extends StatefulWorkflow {
-  private iteration = 0;
-
-  @Hook({ after: 'execute' })
-  protected async checkForContinuation() {
-    if (this.iteration >= 10000) {
-      await this.continueAsNew();
-    }
-  }
-
-  protected async execute() {
-    this.iteration++;
-    // Execution logic
-  }
-}
-```
-**Explanation**:
-- `checkForContinuation` checks if the workflow should continue as new after a certain number of iterations.
-
-### 8. Signal Forwarding to Child Workflows Usage
-
-#### Forwarding Signals
-```typescript
-import { StatefulWorkflow, On } from './StatefulWorkflow';
-
-class ParentWorkflow extends StatefulWorkflow {
-  @On('pause', undefined, { forwardToChildren: true })
-  public async handlePause() {
-    console.log('Parent workflow paused.');
-  }
-
-  protected async execute() {
-    // Execution logic
-  }
-}
-```
-**Explanation**:
-- The `handlePause
-
-` method will handle the `pause` signal and forward it to all child workflows.
-
-### 9. Complete Usage Example
-
-#### Overview
-
-This example demonstrates how to use all the features provided by the `StatefulWorkflow`. The workflow simulates a project management system where tasks are dynamically managed, and their states are tracked across multiple child workflows.
-
-```typescript
-import {
-  StatefulWorkflow,
-  Signal,
-  Query,
-  Hook,
-  On,
-  OnError,
-} from './StatefulWorkflow';
-
-class ProjectManagementWorkflow extends StatefulWorkflow {
-  private projectName: string = '';
-  private taskUpdates: any[] = [];
-
-  // Managed Paths
-  protected configurePaths() {
-    this.configureManagedPaths([{ path: 'tasks', workflowType: 'TaskWorkflow', idAttribute: 'taskId' }]);
-  }
-
-  // Queries
-  @Query()
-  public getProjectName(): string {
-    return this.projectName;
-  }
-
-  @Query()
-  public getTaskUpdates(): any[] {
-    return this.taskUpdates;
-  }
-
-  // Signals
-  @Signal()
-  public updateProjectName(name: string): void {
-    this.projectName = name;
-  }
-
-  @Signal()
-  public updateTask(taskId: string, updates: any): void {
-    this.pendingChanges.push({ updates, entityName: 'tasks', strategy: 'merge' });
-  }
-
-  @Signal()
-  public deleteTask(taskId: string): void {
-    this.pendingChanges.push({ deletions: { taskId }, entityName: 'tasks' });
-  }
-
-  // Hooks
-  @Hook({ before: 'manageChildWorkflows' })
-  private async logBeforeTaskManagement() {
-    console.log('Managing tasks...');
-  }
-
-  @Hook({ after: 'manageChildWorkflows' })
-  private async logAfterTaskManagement() {
-    console.log('Tasks managed.');
-  }
-
-  // Error Handling
-  @OnError('manageChildWorkflows')
-  private async handleTaskManagementError(err: Error) {
-    console.error('Error during task management:', err);
-  }
-
-  // Event Handling
-  @On('childWorkflowComplete', 'TaskWorkflow')
-  private async onTaskComplete(workflowId: string, result: any) {
-    console.log(`Task ${workflowId} completed with result:`, result);
-    this.taskUpdates.push({ workflowId, result });
-  }
-
-  @On('childWorkflowFailed', 'TaskWorkflow')
-  private async onTaskFailed(workflowId: string, error: Error) {
-    console.error(`Task ${workflowId} failed with error:`, error);
-  }
-
-  @On('pause', undefined, { forwardToChildren: true })
-  private async onPause() {
-    console.log('Project management workflow paused.');
-  }
-
-  // Core Workflow Methods
-  protected async execute(): Promise<void> {
-    console.log(`Project Management Workflow for ${this.projectName} started.`);
-    // Execution logic
-  }
-
-  private async manageChildWorkflows(): Promise<void> {
-    // Automatically manage child workflows based on state changes
-    await this.executeStateManagement();
-  }
-}
-
-export default ProjectManagementWorkflow;
-```
-
-### Explanation of `ProjectManagementWorkflow` Example
-
-- **State Management**:
-  - Manages tasks as child workflows through the `tasks` path in the state.
-  - Dynamically tracks and updates the status of each task.
-  
-- **Child Workflow Management**:
-  - Automatically starts, updates, and cancels task workflows as they are added, modified, or removed.
-
-- **Hooks**:
-  - `logBeforeTaskManagement` and `logAfterTaskManagement` are used to log the task management process.
-  
-- **Error Handling**:
-  - `handleTaskManagementError` is triggered if there’s an error during task management.
-
-- **Event Handling**:
-  - `onTaskComplete` and `onTaskFailed` handle the completion or failure of task workflows.
-  
-- **Signal Forwarding**:
-  - The `pause` signal is automatically forwarded to all child task workflows.
-
-- **continueAsNew**:
-  - The workflow automatically continues as new after a certain number of iterations.
-
-
-## Conclusion
-
-The `StatefulWorkflow` provides a comprehensive, extensible foundation for building complex, stateful workflows with Temporal. By automatically handling state management, child workflows, signals, queries, events, and hooks, this framework enables developers to focus on business logic while providing a robust architecture for managing complex workflow interactions.
-
-Whether you're building simple stateful workflows or managing intricate nested workflows with dynamic states and child workflows, this framework offers the tools you need to succeed. The flexibility and power of `StatefulWorkflow` make it easy to build reliable, maintainable workflows for any application.
