@@ -8,12 +8,14 @@ import { condition } from '@temporalio/workflow';
   schema: User
 })
 export class ShouldExecuteStateful extends StatefulWorkflow {
-  protected maxIterations: number = 30;
+  protected maxIterations: number = 1000;
   protected managedPaths: ManagedPaths = {
     listings: {
       autoStartChildren: true,
       workflowType: 'ShouldExecuteStatefulChild',
       entityName: 'Listing'
+      // url: '/api/v1/listing',
+      // apiToken: true
     }
   };
 

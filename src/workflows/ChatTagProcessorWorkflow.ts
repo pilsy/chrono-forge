@@ -1,4 +1,4 @@
-import { ChronoFlow, Workflow } from '.';
+import { ChronoFlow, Workflow } from './Workflow';
 
 @ChronoFlow()
 export abstract class ChatTagProcessor extends Workflow {
