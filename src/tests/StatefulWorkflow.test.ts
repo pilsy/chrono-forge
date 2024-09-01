@@ -130,55 +130,114 @@ describe('StatefulWorkflow', () => {
     });
   });
 
-  it('Should initialise state from data params', async () => {
-    const data = {
-      id: uuid4(),
-      listings: [
-        {
-          id: uuid4(),
-          name: 'Awesome test listing'
-        }
-      ]
-    };
+  describe('Workflow State Management', () => {
+    it('Should initialise state from data params', async () => {
+      const data = {
+        id: uuid4(),
+        listings: [
+          {
+            id: uuid4(),
+            name: 'Awesome test listing'
+          }
+        ]
+      };
 
-    const handle = await execute(workflows.ShouldExecuteStateful, {
-      id: data.id,
-      entityName: 'User',
-      data
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: data.id,
+        entityName: 'User',
+        data
+      });
+
+      const expectedInitial = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
+
+      await new Promise((resolve) => {
+        setTimeout(async () => {
+          const state = await handle.query('state');
+          expect(state).toEqual(expectedInitial);
+          await handle.cancel();
+          resolve();
+        }, 2000);
+      });
     });
 
-    const expectedInitial = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
-
-    await new Promise(async (resolve) => {
-      setTimeout(async () => {
-        const state = await handle.query('state');
-        expect(state).toEqual(expectedInitial);
-        const expectedUpdated = normalizeEntities(
+    it('Should update state and child workflow correctly', async () => {
+      const data = {
+        id: uuid4(),
+        listings: [
           {
-            ...data,
-            update: 'fromUpdate',
-            listings: [{ ...data.listings[0], update: 'fromUpdate' }]
-          },
-          SchemaManager.getInstance().getSchema('User')
-        );
-        await handle.signal('update', {
-          data: { ...data, update: 'fromUpdate', listings: [{ ...data.listings[0], update: 'fromUpdate' }] },
-          entityName: 'User'
-        });
+            id: uuid4(),
+            name: 'Awesome test listing'
+          }
+        ]
+      };
+
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: data.id,
+        entityName: 'User',
+        data
+      });
+
+      const expectedInitial = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
+
+      // Initial state verification
+      await new Promise((resolve) => {
+        setTimeout(async () => {
+          const state = await handle.query('state');
+          expect(state).toEqual(expectedInitial);
+          resolve();
+        }, 2000);
+      });
+
+      // Update state
+      const expectedUpdated = normalizeEntities(
+        {
+          ...data,
+          update: 'fromUpdate',
+          listings: [{ ...data.listings[0], update: 'fromUpdate' }]
+        },
+        SchemaManager.getInstance().getSchema('User')
+      );
+
+      await handle.signal('update', {
+        data: { ...data, update: 'fromUpdate', listings: [{ ...data.listings[0], update: 'fromUpdate' }] },
+        entityName: 'User'
+      });
+
+      await new Promise((resolve) => {
         setTimeout(async () => {
           const updatedData = await handle.query('state');
           expect(updatedData).toEqual(expectedUpdated);
-          const client = getClient();
-          const updatedListingData = await (await client.workflow.getHandle(`Listing-${data.listings[0].id}`)).query('state');
-          expect(updatedListingData).toEqual({
-            Listing: expectedUpdated.Listing
-          });
-
-          await handle.cancel();
-          await resolve();
+          resolve();
         }, 2000);
-      }, 2000);
+      });
+
+      // Verify child workflow state
+      const client = getClient();
+      const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
+      const updatedListingData = await childHandle.query('state');
+      expect(updatedListingData).toEqual({
+        Listing: expectedUpdated.Listing
+      });
+
+      await childHandle.signal('update', {
+        data: {
+          id: data.listings[0].id,
+          updated: 'directly'
+        },
+        entityName: 'Listing',
+        strategy: '$merge'
+      });
+
+      await new Promise((resolve) => {
+        setTimeout(async () => {
+          const childUpdatedParentData = await handle.query('state');
+          expect(childUpdatedParentData).toEqual(expectedUpdated);
+          resolve();
+        }, 2500);
+      });
+
+      // Cleanup
+      await handle.cancel();
     });
-    // });
   });
 });

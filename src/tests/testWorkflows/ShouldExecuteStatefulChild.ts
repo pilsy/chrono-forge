@@ -8,7 +8,7 @@ import { condition } from '@temporalio/workflow';
   schema: Listing
 })
 export class ShouldExecuteStatefulChild extends StatefulWorkflow {
-  protected maxIterations: number = 3;
+  protected maxIterations: number = 30;
   protected managedPaths: ManagedPaths = {
     user: {
       autoStartChildren: false,
