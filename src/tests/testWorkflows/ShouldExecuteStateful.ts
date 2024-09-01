@@ -12,7 +12,8 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
   protected managedPaths: ManagedPaths = {
     listings: {
       autoStartChildren: true,
-      workflowType: 'ShouldExecuteStatefulChild'
+      workflowType: 'ShouldExecuteStatefulChild',
+      entityName: 'Listing'
     }
   };
 
@@ -21,7 +22,7 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
       await trace.getTracer('temporal_worker').startActiveSpan('test', (span) => {
         setTimeout(() => {
           resolve(params);
-        }, 1000);
+        }, 100);
       });
     });
   }

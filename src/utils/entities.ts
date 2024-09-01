@@ -174,7 +174,7 @@ export const handleUpdateEntities = (state: EntitiesState, entities: Record<stri
       }
     }
   }
-
+  // console.log(updateStatement);
   return updateStatement;
 };
 

@@ -229,7 +229,7 @@ export abstract class Workflow extends EventEmitter {
   }
 
   protected async condition(): Promise<any> {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:awaitCondition`);
+    this.log.debug(`[Workflow]:${this.constructor.name}:awaitCondition`);
     return await workflow.condition(() => this.pendingUpdate || this.status !== 'running', '1 day');
   }
 
@@ -400,7 +400,7 @@ export abstract class Workflow extends EventEmitter {
     (proto.constructor._signals || []).forEach(([signalName, signalMethod]: [string, string]) => {
       this.signalHandlers[signalName] = (this as any)[signalMethod]?.bind(this);
       workflow.setHandler(workflow.defineSignal(signalName), async (...args: any[]) => {
-        console.log(`Calling signal handler ${signalName} with args:`, { args });
+        // console.log(`Calling signal handler ${signalName}`);
         // @ts-ignore
         await this.signalHandlers[signalName](...(args as []));
         this.emit(signalName, ...args);

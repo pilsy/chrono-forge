@@ -1,4 +1,4 @@
-import { ChronoFlow } from '../../workflows/Workflow';
+import { After, ChronoFlow } from '../../workflows/Workflow';
 import { ManagedPaths, StatefulWorkflow } from '../../workflows/StatefulWorkflow';
 import { Listing } from '../testSchemas';
 import { trace } from '@opentelemetry/api';
@@ -8,7 +8,7 @@ import { condition } from '@temporalio/workflow';
   schema: Listing
 })
 export class ShouldExecuteStatefulChild extends StatefulWorkflow {
-  protected maxIterations: number = 1;
+  protected maxIterations: number = 3;
   protected managedPaths: ManagedPaths = {
     user: {
       autoStartChildren: false,
@@ -16,12 +16,17 @@ export class ShouldExecuteStatefulChild extends StatefulWorkflow {
     }
   };
 
+  // @After("update")
+  // async afterUpdate() {
+
+  // }
+
   async execute(params: any) {
     return new Promise(async (resolve) => {
       await trace.getTracer('temporal_worker').startActiveSpan('test', (span) => {
         setTimeout(() => {
           resolve(params);
-        }, 1000);
+        }, 100);
       });
     });
   }

@@ -13,6 +13,8 @@ import * as workflows from './testWorkflows';
 import { schema } from 'normalizr';
 import { logger } from '../utils/logger';
 import { OpenTelemetryActivityInboundInterceptor, makeWorkflowExporter } from '@temporalio/interceptors-opentelemetry/lib/worker';
+import { normalizeEntities } from '../utils/entities';
+import { getExternalWorkflowHandle } from '@temporalio/workflow';
 
 const workflowCoverage = new WorkflowCoverage();
 
@@ -25,7 +27,7 @@ describe('StatefulWorkflow', () => {
   let getClient;
   let execute: (workflowName: string, params: StatefulWorkflowParams, timeout: number) => ReturnType<client.workflow.start>;
 
-  jest.setTimeout(30000 * 2);
+  jest.setTimeout(30000 * 1);
 
   const mockActivities = {
     makeHTTPRequest: async () => '99'
@@ -145,24 +147,37 @@ describe('StatefulWorkflow', () => {
       data
     });
 
+    const expectedInitial = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
+
     await new Promise(async (resolve) => {
-      const state = await handle.query('state');
-      expect(state).toEqual({
-        Listing: {
-          [data.listings[0].id]: {
-            id: data.listings[0].id,
-            name: 'Awesome test listing'
-          }
-        },
-        User: {
-          [data.id]: {
-            id: data.id,
-            listings: [data.listings[0].id]
-          }
-        }
-      });
-      await handle.cancel();
-      await resolve();
+      setTimeout(async () => {
+        const state = await handle.query('state');
+        expect(state).toEqual(expectedInitial);
+        const expectedUpdated = normalizeEntities(
+          {
+            ...data,
+            update: 'fromUpdate',
+            listings: [{ ...data.listings[0], update: 'fromUpdate' }]
+          },
+          SchemaManager.getInstance().getSchema('User')
+        );
+        await handle.signal('update', {
+          data: { ...data, update: 'fromUpdate', listings: [{ ...data.listings[0], update: 'fromUpdate' }] },
+          entityName: 'User'
+        });
+        setTimeout(async () => {
+          const updatedData = await handle.query('state');
+          expect(updatedData).toEqual(expectedUpdated);
+          const client = getClient();
+          const updatedListingData = await (await client.workflow.getHandle(`Listing-${data.listings[0].id}`)).query('state');
+          expect(updatedListingData).toEqual({
+            Listing: expectedUpdated.Listing
+          });
+
+          await handle.cancel();
+          await resolve();
+        }, 2000);
+      }, 2000);
     });
     // });
   });
