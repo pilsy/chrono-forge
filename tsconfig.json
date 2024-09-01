@@ -17,7 +17,7 @@
     "isolatedModules": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "allowJs": false,
+    "allowJs": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
     "strictPropertyInitialization": true,
@@ -34,7 +34,7 @@
   "include": [
     "src/workflows/*.ts",
     "src/workflows/StatefulWorkflow.ts",
-    "src/SchemaConfig.ts",
+    "src/SchemaManager.ts",
     "src/utils/entities.ts",
     "src/utils/startChildPayload.ts",
     "src/index.ts",

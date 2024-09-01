@@ -1,7 +1,7 @@
-import { sleep } from "@temporalio/workflow";
-import { ChronoFlow, Workflow, Query } from "../../workflows/Workflow";
+import { sleep } from '@temporalio/workflow';
+import { ChronoFlow, Workflow, Query } from '../../workflows/Workflow';
 
-@ChronoFlow("ShouldBindQueriesCorrectly")
+@ChronoFlow()
 export class ShouldBindQueriesCorrectly extends Workflow {
   public status = 'initial';
 
@@ -11,7 +11,7 @@ export class ShouldBindQueriesCorrectly extends Workflow {
   }
 
   async execute() {
-    await sleep(5000);
+    await sleep(2500);
     return this.status;
   }
 }

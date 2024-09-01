@@ -2,21 +2,25 @@
 import * as workflow from '@temporalio/workflow';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { normalizeEntities, reducer, EntitiesState, UPDATE_ENTITIES, DELETE_ENTITIES } from '../utils/entities';
-import { detailedDiff, DetailedDiff } from 'deep-object-diff';
+import { detailedDiff, DetailedDiff, diff } from 'deep-object-diff';
 import { schema, denormalize, Schema } from 'normalizr';
 import { get, set } from 'dottie';
-import { isEmpty, isEqual } from 'lodash';
+import isEmpty from 'lodash.isempty';
+import isEqual from 'lodash.isequal';
 import { startChildPayload } from '../utils/startChildPayload';
-import { Workflow, WorkflowStatus, Signal, Query, Hook, Before, After, Property, Condition, Step, ContinueAsNew } from './Workflow';
-import { getSchema } from "../SchemaConfig";
-
+import { Workflow, Signal, Query, Hook, Before, After, Property, Condition, Step, ContinueAsNew } from './Workflow';
+import { SchemaManager } from '../SchemaManager';
 
 export type ManagedPath = {
-  schemaName?: string;
+  entityName?: string;
   path?: string;
   workflowType?: string;
   idAttribute?: string;
   autoStartChildren?: boolean;
+};
+
+export type ManagedPaths = {
+  [path: string]: ManagedPath;
 };
 
 export type Subscription = {
@@ -25,90 +29,153 @@ export type Subscription = {
   selector: string;
 };
 
+export type Entities = {
+  [entityName: string]: Schema;
+};
+
 export type StatefulWorkflowParams = {
-  pid?: string;
+  id: string;
+  entityName: string;
+  data?: Record<string, any>;
   state?: EntitiesState;
-  status?: WorkflowStatus;
-  entityName?: string;
+  status: string;
+  apiUrl?: string;
+  apiToken?: string;
   subscriptions?: Subscription[];
-  url?: string;
-  token?: string;
+};
+
+export type PendingChange = {
+  updates?: Record<string, any>[];
+  deletions?: Record<string, any>[];
+  entityName: string;
+  strategy?: '$set' | '$merge';
 };
 
 export abstract class StatefulWorkflow extends Workflow {
-  // @ts-ignore
-  protected schema: Schema;
+  // Normalizr schema for this workflow
+  private schema: Schema;
+
+  // Stateful is by default a long running, continueAsNew implementation
+  protected continueAsNew: boolean = true;
+
+  @Property({ set: false })
+  protected id: string;
+
+  @Property({ set: false })
+  protected entityName: string;
 
   @Property({ set: false })
   protected state: EntitiesState = {};
 
   @Property({ set: false })
-  protected pendingChanges: any[] = [];
+  protected pendingChanges: PendingChange[] = [];
 
   @Property({ set: false })
   protected subscriptions: Subscription[] = [];
 
   @Property({ set: false })
-  protected managedPaths: ManagedPath[] = [];
+  protected managedPaths: ManagedPaths = {};
+
+  @Property()
+  protected apiUrl?: string;
 
   @Property({ set: false })
-  protected token?: string;
+  protected apiToken?: string;
 
-  @Property({ set: false })
-  protected id?: string;
-
-  @Property({ set: false })
-  protected pid?: string;
-
-  @Property({ set: false })
-  protected entityName?: string;
-
-  @Property({ set: false })
-  protected url?: string;
-
-  @Signal('token')
-  public setToken(token: string): void {
-    if (token && this.token !== token) {
-      this.log.info(`Updating token...`);
-      this.token = token;
+  @Signal('apiToken')
+  public setApiToken(apiToken: string): void {
+    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:setApiToken`);
+    if (apiToken && this.apiToken !== apiToken) {
+      this.log.info(`Updating apiToken...`);
+      this.apiToken = apiToken;
       this.pendingUpdate = true;
     }
   }
 
-  protected abstract loadData?: () => Promise<any>;
+  constructor(
+    protected params: StatefulWorkflowParams,
+    protected options: { schema?: schema.Entity } = {}
+  ) {
+    super(params);
 
-  constructor(params?: StatefulWorkflowParams, protected options?: { schema?: Schema; schemaName?: string; [key: string]: any }) {
-    super(params, options);
-    Object.assign(this, params);
-    this.options = options;
-    if (this.options?.schema) {
-      this.schema = this.options.schema;
-      this.configureManagedPaths(this.options.schema);
-    } else if (this.options?.schemaName) {
-      const schemas = options?.schemas ?? getSchema();
-      if (schemas) {
-        this.schema = schemas[this.options?.schemaName as string];
-        if (this.schema) { // @ts-ignore
-          this.configureManagedPaths(this.schema);
+    this.state = params?.state as EntitiesState;
+    this.status = params?.status ?? 'running';
+    this.id = params.id;
+    this.entityName = params.entityName;
+
+    this.schema = params.entityName
+      ? (SchemaManager.getInstance().getSchema(params.entityName) as schema.Entity)
+      : (options.schema as schema.Entity);
+
+    if (params?.data && !isEmpty(params?.data)) {
+      this.pendingChanges.push({
+        updates: [params.data],
+        entityName: this.entityName,
+        strategy: '$merge'
+      });
+      this.pendingUpdate = true;
+    }
+
+    this.apiUrl = params.apiUrl;
+    this.apiToken = params.apiToken;
+
+    if (params?.subscriptions) {
+      for (const subscription of params.subscriptions) {
+        this.subscribe(subscription);
+      }
+    }
+  }
+
+  @Before('execute')
+  protected async processState(): Promise<void> {
+    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:processState`);
+
+    while (this.pendingChanges.length > 0) {
+      const change = this.pendingChanges.shift();
+
+      const previousState = this.state;
+      const newState = reducer(this.state, {
+        type: change?.deletions ? DELETE_ENTITIES : UPDATE_ENTITIES,
+        entities: normalizeEntities(change?.deletions || change?.updates, this.schema as schema.Entity)
+      });
+
+      if (newState) {
+        const differences = detailedDiff(previousState, newState);
+
+        if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
+          await this.processChildState(newState, differences, previousState);
+
+          this.state = newState;
         }
       }
     }
   }
 
+  // @Signal()
+  protected loadData?: () => Promise<any>;
+
   @Signal()
-  public update({ updates, entityName, strategy = '$merge' }: { updates: any; entityName: string; strategy?: string }): void {
+  public update({ data, updates, entityName, strategy = '$merge' }: PendingChange & { data?: Record<string, any> }): void {
+    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:update`);
+
+    if (!isEmpty(data)) {
+      updates = [normalizeEntities(data, this.schema)];
+      // strategy = '$set';
+    }
     this.pendingChanges.push({ updates, entityName, strategy });
   }
 
   @Signal()
-  public delete({ deletions, entityName }: { deletions: any; entityName: string }): void {
+  public delete({ deletions, entityName }: PendingChange): void {
+    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:delete`);
     this.pendingChanges.push({ deletions, entityName });
   }
 
   @Signal()
   public async subscribe(subscription: Subscription): Promise<void> {
+    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:subscribe`);
     const { workflowId, signalName, selector } = subscription;
-    if (!this.subscriptions.find(sub => sub.workflowId === workflowId && sub.selector === selector && sub.signalName === signalName)) {
+    if (!this.subscriptions.find((sub) => sub.workflowId === workflowId && sub.selector === selector && sub.signalName === signalName)) {
       this.subscriptions.push(subscription);
       this.handles[workflowId] = await workflow.getExternalWorkflowHandle(workflowId);
     }
@@ -116,111 +183,93 @@ export abstract class StatefulWorkflow extends Workflow {
 
   @Signal()
   public async unsubscribe(subscription: Subscription): Promise<void> {
-    const index = this.subscriptions.findIndex(sub => sub.workflowId === subscription.workflowId && sub.selector === subscription.selector && sub.signalName === subscription.signalName);
+    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:unsubscribe`);
+    const index = this.subscriptions.findIndex(
+      (sub) => sub.workflowId === subscription.workflowId && sub.selector === subscription.selector && sub.signalName === subscription.signalName
+    );
     if (index !== -1) {
       delete this.handles[subscription.workflowId];
       this.subscriptions.splice(index, 1);
     }
   }
 
-  protected initializeState(params: any): void {
-    if (this.options?.schema && params.data) {
-      this.state = normalizeEntities(params.data, this.options.schema as schema.Entity);
-    } else if (params.data) {
-      this.state = params.data;
-    }
-  }
-
-  @Before("execute")
-  protected async processState(): Promise<void> {
-    while (this.pendingChanges.length > 0) {
-      const change = this.pendingChanges.shift();
-      const previousState = this.state;
-      const newState = reducer(this.state, {
-        type: change?.deletions ? DELETE_ENTITIES : UPDATE_ENTITIES,
-        entities: normalizeEntities(change?.deletions || change?.updates, this.schema as schema.Entity),
-      });
-
-      if (newState) {
-        const differences = detailedDiff(previousState, newState);
-        if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
-          await this.processChildState(newState, differences, previousState);
-          this.state = newState;
-        }
-      }
-    }
-  }
-
   protected async processChildState(newState: EntitiesState, differences: DetailedDiff, previousState: EntitiesState): Promise<void> {
-    const denormalizedState = denormalize(
-      get(newState, `${this.entityName}.${this.id || this.pid}`),
-      this?.schema as Schema,
-      newState
+    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:processChildState`);
+    const newData = denormalize(get(newState, `${this.entityName}.${this.id}`), SchemaManager.getInstance().getSchemas() as Entities, newState);
+
+    const oldData = denormalize(
+      get(previousState, `${this.entityName}.${this.id}`),
+      SchemaManager.getInstance().getSchemas() as Entities,
+      previousState
     );
 
-    console.log(this.schema);
-    console.log(`denormalized`);
-    console.log(denormalizedState);
-    console.log(`differences`);
-    console.log(differences);
-
-    for (const config of this.managedPaths) {
-      const value = get(denormalizedState, config.path as string, false);
+    for (const [path, config] of Object.entries(this.managedPaths)) {
+      const value = get(newData, config.path as string, false);
       if (Array.isArray(value)) {
-        await this.processArrayItems(value, config, differences, previousState);
+        await this.processArrayItems(newState, value, config, differences, oldData);
       } else if (value && typeof value === 'object') {
-        await this.processItem(value, config,
-          get(differences, `added.${config.schemaName}.${value[config.idAttribute as string]}`)
-          || get(differences, `updated.${config.schemaName}.${value[config.idAttribute as string]}`), previousState
+        await this.processItem(
+          newState,
+          value,
+          config,
+          get(differences, `added.${config.entityName}.${value[config.idAttribute as string]}`) ||
+            get(differences, `updated.${config.entityName}.${value[config.idAttribute as string]}`),
+          previousState
         );
       }
     }
   }
 
-  protected async processArrayItems(items: any[], config: ManagedPath, differences: DetailedDiff, previousState: EntitiesState): Promise<void> {
+  protected async processArrayItems(
+    newState: EntitiesState,
+    items: any[],
+    config: ManagedPath,
+    differences: DetailedDiff,
+    previousState: EntitiesState
+  ): Promise<void> {
+    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:processArrayItem`);
     const currentItems = get(previousState, config.path as string, []);
-    for (const newItem of items) {
-      const difference = get(differences, `added.${config.schemaName as string}.${newItem[config.idAttribute as string]}`) as DetailedDiff ||
-        get(differences, `updated.${config.schemaName as string}.${newItem[config.idAttribute as string]}`) as DetailedDiff;
 
-      await this.processItem(newItem, config, difference, previousState);
+    for (const newItem of items) {
+      const difference =
+        (get(differences, `added.${config.entityName as string}.${newItem}`) as DetailedDiff) ||
+        (get(differences, `updated.${config.entityName as string}.${newItem}`) as DetailedDiff);
+
+      await this.processItem(newState, newItem, config, difference, previousState);
     }
 
     for (const currentItem of currentItems) {
-      if (get(differences, `deleted.${config.schemaName as string}.${currentItem[config.idAttribute as string]}`)) {
+      if (get(differences, `deleted.${config.entityName as string}.${currentItem[config.idAttribute as string]}`)) {
         await this.processDeletion(currentItem[config.idAttribute as string], config);
       }
     }
   }
 
   protected async processItem(
-    item: any,
+    newState: EntitiesState,
+    id: string,
     config: ManagedPath,
     difference: DetailedDiff,
     previousState: EntitiesState
   ): Promise<void> {
-    const id = item[config.idAttribute as string];
+    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:processItem`);
     const existingHandle = this.handles[id];
-
-    // Extract the relevant part of the state to compare
-    const previousItem = get(previousState, `${config.schemaName as string}.${id}`);
-    const newItem = get(this.state, `${config.schemaName as string}.${id}`);
-
-    console.log(previousItem);
-    console.log(newItem);
-
-    // Compare the previous and current state
+    const previousItem = get(previousState, `${config.entityName as string}.${id}`, {});
+    const newItem = get(newState, `${config.entityName as string}.${id}`);
     const hasStateChanged = !isEqual(previousItem, newItem);
 
-    // Proceed only if the state has changed
     if (hasStateChanged) {
       if (existingHandle && difference) {
-        console.log(`Updating a child process for ${config.schemaName}...`);
+        console.log(`Updating a child process for ${config.entityName}...`);
         // @ts-ignore
-        await this.updateChildWorkflow(existingHandle, item, config);
+        await this.updateChildWorkflow(existingHandle, newItem, config);
       } else if (!existingHandle && difference) {
-        console.log(`Starting a new child process for ${config.schemaName}...`);
-        await this.startChildWorkflow(config.workflowType!, id, item, config.schemaName!);
+        if (config.autoStartChildren) {
+          console.log(`Starting a new child process for ${config.entityName}...`);
+          await this.startChildWorkflow(config, newItem);
+        } else {
+          console.log(`Not starting a new child process for ${config.entityName}...`);
+        }
       }
     }
   }
@@ -237,42 +286,51 @@ export abstract class StatefulWorkflow extends Workflow {
     }
   }
 
-  protected async startChildWorkflow(
-    workflowType: string,
-    workflowId: string,
-    item: any,
-    schemaName: string
-  ): Promise<void> {
+  protected async startChildWorkflow(config: ManagedPath, data: any): Promise<void> {
+    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:startChildWorkflow`);
     try {
-      const childHandle = await workflow.startChild(workflowType, {
+      const { workflowType, entityName, idAttribute } = config;
+      const entitySchema = SchemaManager.getInstance().getSchema(entityName as string);
+      const { [idAttribute as string]: id } = data;
+      const workflowId = `${entityName}-${id}`;
+      const startPayload = {
         workflowId,
-        args: [item],
-      });
+        args: [
+          {
+            id,
+            state: data,
+            entityName,
+            subscriptions: [
+              {
+                workflowId: workflow.workflowInfo().workflowId,
+                signalName: 'update',
+                selector: '*'
+              }
+            ]
+          }
+        ]
+      };
+
+      this.log.debug(`Starting child workflow: ${JSON.stringify(startPayload)}`);
+      const childHandle = await workflow.startChild(workflowType as string, startPayload);
 
       this.handles[workflowId] = childHandle;
-      this.emit(`childStarted:${workflowType}`, childHandle.workflowId, item);
+      this.emit(`childStarted:${workflowType}`, childHandle.workflowId, data);
+      this.log.debug(`childStarted:${workflowType}-${childHandle.workflowId}`);
     } catch (err) {
       // Improved error handling
       if (err instanceof Error) {
-        console.error(
-          `[${this.constructor.name}] Failed to start new child workflow: ${err.message}`
-        );
+        console.error(`[${this.constructor.name}] Failed to start new child workflow: ${err.message}`);
       } else {
-        console.error(
-          `[${this.constructor.name}] An unknown error occurred while starting a new child workflow`
-        );
+        console.error(`[${this.constructor.name}] An unknown error occurred while starting a new child workflow`);
       }
     }
   }
 
-  protected async updateChildWorkflow(
-    handle: workflow.ChildWorkflowHandle<any>,
-    item: any,
-    config: ManagedPath
-  ): Promise<void> {
+  protected async updateChildWorkflow(handle: workflow.ChildWorkflowHandle<any>, item: any, config: ManagedPath): Promise<void> {
     try {
-      // Normalize the item using the provided schemaName
-      const normalizedState = normalizeEntities({ ...item }, config.schemaName as string).entities;
+      // Normalize the item using the provided entityName
+      const normalizedState = normalizeEntities({ ...item }, config.entityName as string).entities;
 
       // Send the update signal to the child workflow
       await handle.signal('update', { state: normalizedState });
@@ -281,102 +339,141 @@ export abstract class StatefulWorkflow extends Workflow {
       this.emit(`childUpdated:${config.workflowType}`, handle.workflowId, item);
     } catch (err) {
       if (err instanceof Error) {
-        console.error(
-          `[${this.constructor.name}] Failed to signal existing workflow handle: ${err.message}`
-        );
+        console.error(`[${this.constructor.name}] Failed to signal existing workflow handle: ${err.message}`);
       } else {
-        console.error(
-          `[${this.constructor.name}] An unknown error occurred while signaling the child workflow`
-        );
+        console.error(`[${this.constructor.name}] An unknown error occurred while signaling the child workflow`);
       }
     }
   }
 
-  protected configureManagedPaths(parentSchema: Schema & { schema?: { [key: string]: Schema & [{ _idAttribute: string; _key: string; }]; }; }): void {
-    this.log.debug(`[Workflow]:${this.constructor.name}:configureManagedPaths`);
+  protected configureManagedPaths(
+    parentSchema: Schema & { schema?: { [key: string]: Schema & [{ _idAttribute: string; _key: string }] } }
+  ): void {
+    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:configureManagedPaths`);
     if (!parentSchema.schema) {
       throw new Error("The provided schema does not have 'schema' defined.");
     }
     const childSchemas = parentSchema.schema;
-    for (const [path, schema] of Object.entries(childSchemas)) {
-      this.managedPaths.push({
+    for (const [path, _schema] of Object.entries(childSchemas)) {
+      const schema = _schema instanceof Array ? _schema[0] : _schema;
+      console.log(path, schema);
+      this.managedPaths[path] = {
         path,
-        idAttribute: schema[0]._idAttribute,
-        workflowType: `${schema[0]._key}Workflow`,
+        idAttribute: schema._idAttribute,
+        workflowType: `${schema._key}Workflow`,
         autoStartChildren: true,
-        schemaName: schema[0]._key,
-      });
+        entityName: schema._key,
+        ...(this.managedPaths[path] || {})
+      };
     }
   }
 
   protected abstract execute(...args: unknown[]): Promise<unknown>;
 
   protected async executeWorkflow(): Promise<any> {
-    const tracer = trace.getTracer('temporal-worker');
-    return tracer.startActiveSpan(`[StatefulWorkflow]:${this.constructor.name}`, async (span) => {
-      try {
-        span.setAttributes({ workflowId: workflow.workflowInfo().workflowId, workflowType: workflow.workflowInfo().workflowType });
+    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:executeWorkflow`);
+    return new Promise(async (resolve, reject) => {
+      await this.tracer.startActiveSpan(`[StatefulWorkflow]:${this.constructor.name}:executeWorkflow`, async (span) => {
+        if (this.schema) this.configureManagedPaths(this.schema);
+        try {
+          span.setAttributes({ workflowId: workflow.workflowInfo().workflowId, workflowType: workflow.workflowInfo().workflowType });
 
-        while (this.iteration <= this.maxIterations) {
-          await this.condition();
+          while (this.iteration <= this.maxIterations) {
+            this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:executeWorkflow:execute`);
+            await this.tracer.startActiveSpan(`[StatefulWorkflow]:${this.constructor.name}:executeWorkflow:execute`, async (executeSpan) => {
+              executeSpan.setAttributes({
+                workflowId: workflow.workflowInfo().workflowId,
+                workflowType: workflow.workflowInfo().workflowType,
+                iteration: this.iteration
+              });
 
-          if (this.status === 'paused') {
-            await this.handlePause();
+              await this.condition();
+
+              if (this.status === 'paused') {
+                await this.handlePause();
+              } else if (this.status === 'cancelled') {
+                throw new Error(`Cancelled`);
+              }
+
+              if (this.shouldLoadData()) {
+                await this.loadDataAndEnqueueChanges();
+              }
+
+              this.result = await this.execute();
+
+              if (this.isInTerminalState()) {
+                executeSpan.end();
+                span.end();
+                return this.status !== 'errored' ? resolve(this.result) : reject(this.result);
+              } else if (++this.iteration >= this.maxIterations) {
+                await this.handleMaxIterations();
+                executeSpan.end();
+                span.end();
+                resolve('Continued as a new workflow execution...');
+              } else {
+                this.pendingUpdate = false;
+              }
+
+              executeSpan.end();
+            });
           }
-
-          if (this.shouldLoadData()) {
-            await this.loadDataAndEnqueueChanges();
-          }
-
-          const result = await this.execute();
-          if (this.isInTerminalState()) {
-            span.end();
-            return result;
-          } else if (++this.iteration >= this.maxIterations) {
-            await this.handleMaxIterations();
-          } else {
-            this.pendingUpdate = false;
-          }
+        } catch (err) {
+          await this.handleExecutionError(err, span, reject);
         }
-      } catch (err) {
-        await this.handleExecutionError(err, span);
-      }
-      return;
+        resolve(this.result);
+      });
     });
   }
 
   // @ContinueAsNew()
-  // protected async continueAsNewHandler(): Promise<void> {
-  //   // @ts-ignore
-  //   await workflow.continueAsNew<typeof this>({
-  //     state: this.state,
-  //     status: this.status,
-  //     subscriptions: this.subscriptions,
-  //     id: this.id,
-  //     pid: this.pid,
-  //     entityName: this.entityName,
-  //     token: this.token,
-  //     url: this.url,
-  //   });
-  // }
+  protected async continueAsNewHandler(): Promise<void> {}
+
+  protected async handleMaxIterations(): Promise<void> {
+    const continueAsNewMethod = (this as any)._continueAsNewMethod;
+
+    if (continueAsNewMethod && typeof (this as any)[continueAsNewMethod] === 'function') {
+      return await (this as any)[continueAsNewMethod]();
+    } else {
+      // @ts-ignore
+      await workflow.continueAsNew<typeof this>({
+        state: this.state,
+        status: this.status,
+        subscriptions: this.subscriptions,
+        ...Object.keys(this.params).reduce(
+          (params, key: string) => ({
+            ...params, // @ts-ignore
+            [key as string]: this[key as string]
+          }),
+          {}
+        )
+        // id: this.id,
+        // pid: this.pid,
+        // entityName: this.entityName,
+        // token: this.token,
+        // url: this.url,
+      });
+    }
+  }
 
   protected async handlePause(): Promise<void> {
-    await Promise.all(this.subscriptions.map(async (sub) => {
-      try {
-        await this.handles[sub.workflowId].signal('pause');
-      } catch (err) {
-        console.error(err);
-      }
-    }));
+    await Promise.all(
+      this.subscriptions.map(async (sub) => {
+        try {
+          await this.handles[sub.workflowId].signal('pause');
+        } catch (err) {
+          console.error(err);
+        }
+      })
+    );
     await workflow.condition(() => this.status !== 'paused');
   }
 
   protected shouldLoadData(): boolean {
-    return typeof this.loadData === "function";
+    return typeof this.loadData === 'function';
   }
 
   protected async loadDataAndEnqueueChanges(): Promise<void> {
-    if (typeof this.loadData === "function") {
+    if (typeof this.loadData === 'function') {
       const updates = await this.loadData();
       this.pendingChanges.push({ updates, entityName: this.entityName, strategy: '$merge' });
     }

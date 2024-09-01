@@ -1,7 +1,7 @@
-import { condition } from "@temporalio/workflow";
-import { ChronoFlow, Workflow, Signal } from "../../workflows/Workflow";
+import { condition } from '@temporalio/workflow';
+import { ChronoFlow, Workflow, Signal } from '../../workflows/Workflow';
 
-@ChronoFlow("ShouldBindSignalsCorrectly")
+@ChronoFlow()
 export class ShouldBindSignalsCorrectly extends Workflow {
   public status = 'initial';
 
@@ -11,7 +11,7 @@ export class ShouldBindSignalsCorrectly extends Workflow {
   }
 
   async execute() {
-    await condition(() => this.status === 'updated', "60 seconds");
+    await condition(() => this.status === 'updated', '60 seconds');
     return this.status;
   }
 }

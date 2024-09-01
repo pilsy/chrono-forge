@@ -4,3 +4,4 @@ dist/
 src/.DS_Store
 .DS_Store
 chrono-forge-old
+/coverage

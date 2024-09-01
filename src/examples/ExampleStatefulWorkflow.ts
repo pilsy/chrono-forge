@@ -1,10 +1,9 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
-import { Signal, Query, Workflow, WorkflowClass, Hook } from './Chronicle';
+import { StatefulWorkflow } from '../workflows/StatefulWorkflow';
+import { ChronoFlow, Workflow, Signal, Query, Hook } from './Chronicle';
 
-// import { ChatTagProcessorWorkflow } from "./ChatTagProcessorWorkflow";
-
-@Workflow('ExampleTagProcessorWorkflow')
-export class ExampleTagProcessorWorkflow extends WorkflowClass {
+@ChronoFlow()
+export class ExampleTagProcessorWorkflow extends StatefulWorkflow {
   protected name: string;
   protected content: string;
 

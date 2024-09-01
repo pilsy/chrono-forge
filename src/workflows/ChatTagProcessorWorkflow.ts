@@ -1,10 +1,7 @@
-import {
-  Chronicle,
-  Workflow,
-} from './Chronicle';
+import { ChronoFlow, Workflow } from '.';
 
-@Workflow()
-export abstract class ChatTagProcessor extends Chronicle {
+@ChronoFlow()
+export abstract class ChatTagProcessor extends Workflow {
   protected name: string;
   protected content: string;
 

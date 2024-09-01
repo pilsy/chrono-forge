@@ -1,12 +1,12 @@
-import { ChronoFlow, Workflow, Before } from "../../workflows/Workflow";
+import { ChronoFlow, Workflow, Before } from '../../workflows/Workflow';
 
-@ChronoFlow("ShouldApplyBeforeHooksCorrectly")
+@ChronoFlow()
 export class ShouldApplyBeforeHooksCorrectly extends Workflow {
   public status = 'initial';
 
-  @Before("execute")
+  @Before('execute')
   setStatus() {
-    this.status = "beforeHookApplied";
+    this.status = 'beforeHookApplied';
   }
 
   async execute() {

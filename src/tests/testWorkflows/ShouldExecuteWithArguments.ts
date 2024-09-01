@@ -1,4 +1,4 @@
-import { ChronoFlow, Workflow } from "../../workflows/Workflow";
+import { ChronoFlow, Workflow } from '../../workflows/Workflow';
 
 @ChronoFlow()
 export class ShouldExecuteWithArguments extends Workflow {
