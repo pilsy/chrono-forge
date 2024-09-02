@@ -1,4 +1,4 @@
-[< Previous](./best_practices_and_advanced_usage.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./introduction.md)
+[< Previous](./best_practices_and_advanced_usage.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./introduction.md)
 
 ---
 
@@ -60,4 +60,4 @@ By leveraging these resources, developers can stay up-to-date with the latest de
 
 ---
 
-[< Previous](./best_practices_and_advanced_usage.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./introduction.md)
+[< Previous](./best_practices_and_advanced_usage.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./introduction.md)

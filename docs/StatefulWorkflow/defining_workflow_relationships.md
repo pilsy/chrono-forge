@@ -1,4 +1,4 @@
-[< Previous](./getting_started.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./state_management_and_data_normalization.md)
+[< Previous](./getting_started.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./state_management_and_data_normalization.md)
 
 ---
 
@@ -120,4 +120,4 @@ In this example:
 
 ---
 
-[< Previous](./getting_started.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./state_management_and_data_normalization.md)
+[< Previous](./getting_started.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./state_management_and_data_normalization.md)

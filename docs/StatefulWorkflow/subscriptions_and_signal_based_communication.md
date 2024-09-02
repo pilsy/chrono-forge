@@ -1,4 +1,4 @@
-[< Previous](./child_workflow_lifecycle_management.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./handling_circular_relationships_and_workflow_ancestry.md)
+[< Previous](./child_workflow_lifecycle_management.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./handling_circular_relationships_and_workflow_ancestry.md)
 
 ---
 
@@ -50,4 +50,4 @@ By preventing recursive loops and redundant updates, `StatefulWorkflow` maintain
 
 ---
 
-[< Previous](./child_workflow_lifecycle_management.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./handling_circular_relationships_and_workflow_ancestry.md)
+[< Previous](./child_workflow_lifecycle_management.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./handling_circular_relationships_and_workflow_ancestry.md)

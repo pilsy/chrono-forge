@@ -465,7 +465,6 @@ export abstract class Workflow extends EventEmitter {
     if (!hooks) return;
 
     const applyHook = async (methodName: string, originalMethod: () => any, ...args: any[]) => {
-      this.log.debug(`[HOOK]:${methodName}`);
       return new Promise(async (resolve, reject) => {
         // @ts-ignore
         await this.tracer.startActiveSpan(`Workflow:applyHooks[${methodName}]`, async (span) => {

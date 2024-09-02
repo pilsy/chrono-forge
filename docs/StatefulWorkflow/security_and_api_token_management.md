@@ -1,4 +1,4 @@
-[< Previous](./handling_circular_relationships_and_workflow_ancestry.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./best_practices_and_advanced_usage.md)
+[< Previous](./handling_circular_relationships_and_workflow_ancestry.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./best_practices_and_advanced_usage.md)
 
 ---
 
@@ -53,4 +53,4 @@ By following these best practices, developers can ensure that `StatefulWorkflow`
 
 ---
 
-[< Previous](./handling_circular_relationships_and_workflow_ancestry.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./best_practices_and_advanced_usage.md)
+[< Previous](./handling_circular_relationships_and_workflow_ancestry.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./best_practices_and_advanced_usage.md)

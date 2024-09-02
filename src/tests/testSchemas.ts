@@ -5,10 +5,24 @@ const schemaManager = SchemaManager.getInstance();
 schemaManager.setSchemas({
   User: {
     idAttribute: 'id',
-    listings: ['Listing']
+    listings: ['Listing'],
+    likes: ['Like'],
+    photos: ['Photo']
   },
   Listing: {
     idAttribute: 'id',
+    user: 'User',
+    photos: ['Photo']
+  },
+  Photo: {
+    idAttribute: 'id',
+    likes: ['Like'],
+    listing: 'Listing',
+    user: 'User'
+  },
+  Like: {
+    idAttribute: 'id',
+    photo: 'Photo',
     user: 'User'
   }
 });

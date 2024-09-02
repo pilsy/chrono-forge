@@ -1,4 +1,4 @@
-[< Previous](./security_and_api_token_management.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./conclusion_and_further_reading.md)
+[< Previous](./security_and_api_token_management.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./conclusion_and_further_reading.md)
 
 ---
 
@@ -55,4 +55,4 @@ By integrating `StatefulWorkflow` with other systems, developers can create more
 
 ---
 
-[< Previous](./security_and_api_token_management.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./conclusion_and_further_reading.md)
+[< Previous](./security_and_api_token_management.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./conclusion_and_further_reading.md)

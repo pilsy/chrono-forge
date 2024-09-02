@@ -1,4 +1,4 @@
-[< Previous](./defining_workflow_relationships.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./exposed_queries_and_signals.md)
+[< Previous](./defining_workflow_relationships.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./exposed_queries_and_signals.md)
 
 ---
 
@@ -62,4 +62,4 @@ These operations are managed internally by `StatefulWorkflow`, and developers ca
 
 ---
 
-[< Previous](./defining_workflow_relationships.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./exposed_queries_and_signals.md)
+[< Previous](./defining_workflow_relationships.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./exposed_queries_and_signals.md)

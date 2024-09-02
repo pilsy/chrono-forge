@@ -1,4 +1,4 @@
-[< Previous](./introduction.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./defining_workflow_relationships.md)
+[< Previous](./introduction.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./defining_workflow_relationships.md)
 
 ---
 
@@ -116,4 +116,4 @@ By familiarizing yourself with these concepts and the foundational setup require
 
 ---
 
-[< Previous](./introduction.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./defining_workflow_relationships.md)
+[< Previous](./introduction.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./defining_workflow_relationships.md)

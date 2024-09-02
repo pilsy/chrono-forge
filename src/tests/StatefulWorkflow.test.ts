@@ -188,6 +188,236 @@ describe('StatefulWorkflow', () => {
       await handle.cancel();
     });
 
+    it('Should correctly manage one parent User and three child Listing workflows', async () => {
+      // Initialize data for one User and three Listings
+      const userId = uuid4();
+      const listingIds = [uuid4(), uuid4(), uuid4()];
+      const data = {
+        id: userId,
+        listings: listingIds.map((id) => ({ id, name: `Listing ${id}` }))
+      };
+
+      // Start the User workflow
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: data.id,
+        entityName: 'User',
+        data
+      });
+
+      // Ensure the parent User workflow is initialized with the correct normalized state
+      const expectedInitialState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
+      await new Promise((resolve) => {
+        setTimeout(async () => {
+          const state = await handle.query('state');
+          expect(state).toEqual(expectedInitialState);
+          resolve();
+        }, 2000);
+      });
+
+      // Start child Listing workflows for each listing
+      const client = getClient();
+      const childHandles = await Promise.all(listingIds.map((id) => client.workflow.getHandle(`Listing-${id}`)));
+
+      // Ensure each child Listing workflow is initialized with the correct normalized state
+      for (const [index, childHandle] of childHandles.entries()) {
+        const listingState = await childHandle.query('state');
+        expect(listingState.Listing).toEqual({
+          [listingIds[index]]: { id: listingIds[index], name: `Listing ${listingIds[index]}` }
+        });
+      }
+
+      // Update one of the listings in the User parent workflow
+      const updatedListingData = { id: listingIds[0], name: 'Updated Listing Name' };
+      const updatedData = {
+        ...data,
+        listings: [{ ...updatedListingData }, ...data.listings.slice(1)]
+      };
+      await handle.signal('update', { data: updatedData, entityName: 'User' });
+
+      // Verify that the state in the User parent workflow is updated correctly
+      await new Promise((resolve) => {
+        setTimeout(async () => {
+          const updatedState = await handle.query('state');
+          expect(updatedState.Listing[listingIds[0]].name).toEqual('Updated Listing Name');
+          resolve();
+        }, 2000);
+      });
+
+      // Verify that the updated state is also reflected in the child Listing workflow
+      const updatedChildState = await childHandles[0].query('state');
+      expect(updatedChildState.Listing[listingIds[0]].name).toEqual('Updated Listing Name');
+
+      // Update another listing directly in the child workflow and check propagation back to the parent
+      const newDirectUpdate = { id: listingIds[1], name: 'Direct Child Update' };
+      await childHandles[1].signal('update', {
+        data: newDirectUpdate,
+        entityName: 'Listing',
+        strategy: '$merge'
+      });
+
+      await new Promise((resolve) => {
+        setTimeout(async () => {
+          const parentUpdatedState = await handle.query('state');
+          expect(parentUpdatedState.Listing[listingIds[1]].name).toEqual('Direct Child Update');
+          resolve();
+        }, 2000);
+      });
+
+      // Cleanup all workflows
+      await handle.cancel();
+      for (const childHandle of childHandles) {
+        await childHandle.cancel();
+      }
+    });
+
+    it('Should handle recursive relationships between User and Listings correctly', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const photoId = uuid4();
+      const likeId = uuid4();
+
+      // Initial data for User with Listing, Photo, and Like, forming a recursive structure
+      const data = {
+        id: userId,
+        listings: [
+          {
+            id: listingId,
+            user: userId,
+            photos: [{ id: photoId, user: userId, listing: listingId, likes: [{ id: likeId, user: userId, photo: photoId }] }]
+          }
+        ]
+      };
+
+      // Start the User workflow
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: data.id,
+        entityName: 'User',
+        data
+      });
+
+      // Ensure the User workflow is initialized with the correct normalized state
+      const expectedInitialState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
+      await new Promise((resolve) => {
+        setTimeout(async () => {
+          const state = await handle.query('state');
+          expect(state).toEqual(expectedInitialState);
+          resolve();
+        }, 2000);
+      });
+
+      // Start child Listing workflow
+      const client = getClient();
+      const listingHandle = await client.workflow.getHandle(`Listing-${listingId}`);
+
+      // Verify Listing workflow state
+      const listingState = await listingHandle.query('state');
+      expect(listingState.Listing).toEqual({
+        [listingId]: { id: listingId, user: userId, photos: [photoId] }
+      });
+
+      // Verify child Photo workflow state
+      const photoHandle = await client.workflow.getHandle(`Photo-${photoId}`);
+      const photoState = await photoHandle.query('state');
+      expect(photoState.Photo).toEqual({
+        [photoId]: { id: photoId, user: userId, listing: listingId, likes: [likeId] }
+      });
+
+      // Verify child Like workflow state
+      const likeHandle = await client.workflow.getHandle(`Like-${likeId}`);
+      const likeState = await likeHandle.query('state');
+      expect(likeState.Like).toEqual({
+        [likeId]: { id: likeId, user: userId, photo: photoId }
+      });
+
+      // Update Listing data and propagate to children
+      const updatedListingData = { id: listingId, user: userId, name: 'Updated Listing Name' };
+      await handle.signal('update', { data: { ...data, listings: [{ ...updatedListingData }] }, entityName: 'User' });
+
+      // Verify state update propagation in User
+      await new Promise((resolve) => {
+        setTimeout(async () => {
+          const updatedState = await handle.query('state');
+          expect(updatedState.Listing[listingId].name).toEqual('Updated Listing Name');
+          resolve();
+        }, 2000);
+      });
+
+      // Verify the state update is reflected in the Listing child workflow
+      const updatedListingState = await listingHandle.query('state');
+      expect(updatedListingState.Listing[listingId].name).toEqual('Updated Listing Name');
+
+      // Clean up
+      await handle.cancel();
+      await listingHandle.cancel();
+      await photoHandle.cancel();
+      await likeHandle.cancel();
+    });
+
+    it('Should handle circular references correctly when updating nested entities', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const photoId = uuid4();
+      const likeId = uuid4();
+
+      // Circular data structure where a user likes a photo that belongs to them via a listing
+      const data = {
+        id: userId,
+        listings: [
+          {
+            id: listingId,
+            user: userId,
+            photos: [{ id: photoId, user: userId, listing: listingId, likes: [{ id: likeId, user: userId, photo: photoId }] }]
+          }
+        ],
+        likes: [
+          {
+            id: likeId,
+            user: userId,
+            photo: photoId
+          }
+        ]
+      };
+
+      // Start User workflow
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: data.id,
+        entityName: 'User',
+        data
+      });
+
+      // Verify the User workflow is initialized correctly with normalized state
+      const expectedInitialState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
+      await new Promise((resolve) => {
+        setTimeout(async () => {
+          const state = await handle.query('state');
+          expect(state).toEqual(expectedInitialState);
+          resolve();
+        }, 2000);
+      });
+
+      // Start child Listing and Like workflows
+      const client = getClient();
+      const listingHandle = await client.workflow.getHandle(`Listing-${listingId}`);
+      const likeHandle = await client.workflow.getHandle(`Like-${likeId}`);
+
+      // Update the Like entity directly in the child workflow
+      await likeHandle.signal('update', { data: { id: likeId, user: userId, newField: 'direct update' }, entityName: 'Like' });
+
+      // Verify that the state in the parent User workflow is updated correctly
+      await new Promise((resolve) => {
+        setTimeout(async () => {
+          const parentUpdatedState = await handle.query('state');
+          expect(parentUpdatedState.Like[likeId].newField).toEqual('direct update');
+          resolve();
+        }, 2000);
+      });
+
+      // Clean up
+      await handle.cancel();
+      await listingHandle.cancel();
+      await likeHandle.cancel();
+    });
+
     it('Should correctly handle deep nested updates in the state', async () => {
       const data = { id: uuid4(), listings: [{ id: uuid4(), nested: { id: uuid4(), name: 'Nested Item' } }] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });

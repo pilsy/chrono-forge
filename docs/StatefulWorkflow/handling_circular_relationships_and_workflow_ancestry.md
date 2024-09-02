@@ -1,4 +1,4 @@
-[< Previous](./subscriptions_and_signal_based_communication.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./security_and_api_token_management.md)
+[< Previous](./subscriptions_and_signal_based_communication.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./security_and_api_token_management.md)
 
 ---
 
@@ -52,4 +52,4 @@ By following these best practices, developers can maintain efficient and effecti
 
 ---
 
-[< Previous](./subscriptions_and_signal_based_communication.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./security_and_api_token_management.md)
+[< Previous](./subscriptions_and_signal_based_communication.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./security_and_api_token_management.md)

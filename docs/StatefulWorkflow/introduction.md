@@ -1,4 +1,4 @@
-[< Previous](./conclusion_and_further_reading.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./getting_started.md)
+[< Previous](./conclusion_and_further_reading.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./getting_started.md)
 
 
 ---
@@ -29,5 +29,5 @@
 
 
 ---
-[< Previous](./conclusion_and_further_reading.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./getting_started.md)
+[< Previous](./conclusion_and_further_reading.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./getting_started.md)
 

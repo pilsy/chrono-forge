@@ -1,4 +1,4 @@
-[< Previous](./exposed_queries_and_signals.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./child_workflow_lifecycle_management.md)
+[< Previous](./exposed_queries_and_signals.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./child_workflow_lifecycle_management.md)
 
 ---
 
@@ -52,4 +52,4 @@ By managing configuration and credential propagation in this way, `StatefulWorkf
 
 ---
 
-[< Previous](./exposed_queries_and_signals.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./child_workflow_lifecycle_management.md)
+[< Previous](./exposed_queries_and_signals.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./child_workflow_lifecycle_management.md)

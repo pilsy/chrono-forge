@@ -1,4 +1,4 @@
-[< Previous](./dynamic_data_loading_and_api_integration.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./subscriptions_and_signal_based_communication.md)
+[< Previous](./dynamic_data_loading_and_api_integration.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./subscriptions_and_signal_based_communication.md)
 
 ---
 
@@ -56,4 +56,4 @@ By managing workflow metadata and detecting circular relationships, `StatefulWor
 
 ---
 
-[< Previous](./dynamic_data_loading_and_api_integration.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./subscriptions_and_signal_based_communication.md)
+[< Previous](./dynamic_data_loading_and_api_integration.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./subscriptions_and_signal_based_communication.md)

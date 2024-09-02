@@ -1,4 +1,4 @@
-[< Previous](./state_management_and_data_normalization.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./dynamic_data_loading_and_api_integration.md)
+[< Previous](./state_management_and_data_normalization.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./dynamic_data_loading_and_api_integration.md)
 
 ---
 
@@ -62,4 +62,4 @@ Signals in `StatefulWorkflow` allow external systems or other workflows to inter
 
 ---
 
-[< Previous](./state_management_and_data_normalization.md) | [Table of Contents](./StatefulWorkflow.md) | [Next >](./dynamic_data_loading_and_api_integration.md)
+[< Previous](./state_management_and_data_normalization.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./dynamic_data_loading_and_api_integration.md)

@@ -492,15 +492,11 @@ export abstract class StatefulWorkflow extends Workflow {
     const previousItem = get(previousState, `${config.entityName}.${itemId}`, {});
     const newItem = get(newState, `${config.entityName}.${itemId}`, {});
     const hasStateChanged = !isEqual(previousItem, newItem);
-    this.log.debug(`hasStateChanged: ${hasStateChanged}`);
-    console.log(differences);
 
     if (hasStateChanged) {
       if (existingHandle && 'result' in existingHandle) {
-        this.log.debug(`update child`);
         await this.updateChildWorkflow(existingHandle as workflow.ChildWorkflowHandle<any>, newItem, config);
       } else if (!existingHandle && !isEmpty(differences)) {
-        this.log.debug(`start child`);
         await this.startChildWorkflow(config, newItem);
       }
     }

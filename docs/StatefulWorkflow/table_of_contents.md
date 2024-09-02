@@ -6,28 +6,6 @@
 
 The core philosophy of `StatefulWorkflow` is to facilitate efficient, scalable, and flexible workflow management by abstracting away many of the tedious details associated with state handling, entity normalization, and data propagation. It allows developers to focus on implementing their business logic while the workflow itself manages the complexities of state updates, data consistency, and hierarchical relationships.
 
-### Key Functional Pillars of `StatefulWorkflow`
-
-1. **Automatic Child State Management**: `StatefulWorkflow` leverages its deep understanding of hierarchical relationships to automatically manage child workflows. This includes starting, updating, or canceling child workflows based on changes in the parent’s state. This automated approach simplifies complex workflows where parent entities must manage the lifecycle and synchronization of child entities.
-
-2. **Data Normalization and Denormalization**: Handling complex nested data structures can be challenging, especially in distributed workflows. `StatefulWorkflow` uses `normalizr` to normalize data into a flat structure for efficient storage and processing. This allows for easier updates, querying, and synchronization. When data is sent to subscribers or used in business logic, it is automatically denormalized back into a usable form.
-
-3. **Dynamic Data Loading from External APIs**: In many real-world applications, workflows need to interact with external services to fetch or update data. `StatefulWorkflow` provides an extensible mechanism for loading data from APIs using a `loadData` function that can be implemented by the developer. This data loading is tightly integrated into the workflow’s execution cycle, ensuring that the workflow state is always up-to-date.
-
-4. **Dynamic Parent-Child-Grandchild Relationship Handling**: The complexity of workflow management increases exponentially when dealing with multi-level parent-child relationships. `StatefulWorkflow` intelligently handles these relationships by detecting potential redundancies and circular dependencies. It can delegate the management of child workflows to appropriate ancestors if needed, ensuring efficient and clean state management across the hierarchy.
-
-5. **Subscription-Based State Synchronization**: A key challenge in hierarchical workflows is keeping the state synchronized across different levels and entities. `StatefulWorkflow` provides a powerful subscription system that allows workflows to subscribe to state changes from other workflows. This enables dynamic and selective propagation of updates, additions, or deletions based on flexible criteria such as paths and selectors.
-
-6. **API Token Management and Propagation**: Securely managing API tokens is crucial for workflows that interact with external systems. `StatefulWorkflow` includes built-in functionality for managing and propagating API tokens throughout the workflow hierarchy. This ensures that all workflows have consistent access to the necessary credentials while preventing security risks associated with token misuse or redundancy.
-
-### Benefits of Using `StatefulWorkflow`
-
-- **Simplifies Complex State Management**: By automating the management of child workflows and using normalized data structures, `StatefulWorkflow` reduces the burden on developers to manually handle intricate state transitions and updates.
-- **Promotes Scalability and Flexibility**: The dynamic handling of parent-child relationships and subscriptions enables workflows to adapt to changing states and requirements without extensive reconfiguration.
-- **Enhances Data Integrity and Consistency**: With its robust synchronization mechanisms and intelligent relationship management, `StatefulWorkflow` ensures that data remains consistent and accurate across all levels of the workflow hierarchy.
-- **Facilitates Integration with External APIs**: The `loadData` functionality allows workflows to seamlessly interact with external services, keeping the workflow state aligned with real-world data and ensuring a more reactive and responsive system.
-- **Ensures Security and Efficiency**: Through effective API token management and propagation, `StatefulWorkflow` ensures secure and efficient access to external resources without compromising on performance or security.
-
 `StatefulWorkflow` is designed to address the complexities of managing stateful, hierarchical workflows in distributed systems. By combining automatic state management, dynamic data loading, flexible subscription-based synchronization, and intelligent relationship handling, it offers a comprehensive solution for building robust and scalable workflows. This powerful class abstracts away the complexities associated with state propagation, API integration, and entity management, allowing developers to focus on delivering business value while leveraging Temporal.io’s workflow orchestration capabilities.
 
 ---
