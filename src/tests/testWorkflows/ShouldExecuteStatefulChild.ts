@@ -1,4 +1,4 @@
-import { After, ChronoFlow } from '../../workflows/Workflow';
+import { After, ChronoFlow } from '../../workflows';
 import { ManagedPaths, StatefulWorkflow } from '../../workflows/StatefulWorkflow';
 import { Listing } from '../testSchemas';
 import { trace } from '@opentelemetry/api';

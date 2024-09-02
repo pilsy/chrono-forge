@@ -5,8 +5,7 @@ import { WritableWebSocketStream } from '../utils/WritableWebSocketStream';
 import { TagBuffer } from '../src/utils/TagBuffer';
 import { Context } from '@temporalio/activity';
 import { WorkflowClient } from '@temporalio/client';
-import { ExampleTagProcessorWorkflow } from '../workflows/ExampleTagProcessorWorkflow';
-
+import { ChatTagProcessorWorkflow } from '../workflows';
 
 export class StreamingChatActivity {
   private mainBuffer: string = '';
@@ -17,7 +16,11 @@ export class StreamingChatActivity {
   private context: Context;
   private client: WorkflowClient;
 
-  constructor(private readonly host: string, private readonly port: number, sessionId: string) {
+  constructor(
+    private readonly host: string,
+    private readonly port: number,
+    sessionId: string
+  ) {
     this.sessionId = sessionId;
   }
 
@@ -57,7 +60,7 @@ export class StreamingChatActivity {
           }
         }
       );
-    })
+    });
   }
 
   private startHeartbeating() {
@@ -137,10 +140,10 @@ export class StreamingChatActivity {
 
   protected async processTagContent(tagBuffer: TagBuffer): Promise<string> {
     // console.log(`Starting workflow for tag ${JSON.stringify(tagBuffer.json())}`);
-    const processedContent = await this.client.execute('ExampleTagProcessorWorkflow', {
+    const processedContent = await this.client.execute('ChatTagProcessorWorkflow', {
       workflowId: tagBuffer.runId,
       taskQueue: 'test',
-      args: [tagBuffer.json()],
+      args: [tagBuffer.json()]
     });
     // console.log(`Got result of tag buffer ${JSON.stringify(tagBuffer.json())}`, processedContent);
     return processedContent;

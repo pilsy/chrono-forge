@@ -10,15 +10,18 @@ import { WorkflowClient } from '@temporalio/client';
 import { v4 as uuid4 } from 'uuid';
 import { SchemaManager } from '../SchemaManager';
 import * as workflows from './testWorkflows';
-import { schema } from 'normalizr';
 import { logger } from '../utils/logger';
 import { OpenTelemetryActivityInboundInterceptor, makeWorkflowExporter } from '@temporalio/interceptors-opentelemetry/lib/worker';
 import { normalizeEntities } from '../utils/entities';
 import { getExternalWorkflowHandle } from '@temporalio/workflow';
 import { cloneDeep } from 'lodash';
 import { get, set } from 'dottie';
+import { getExporter, getResource, getTracer } from '../utils/instrumentation';
 
 const workflowCoverage = new WorkflowCoverage();
+const tracer = getTracer('temporal_worker');
+const exporter = getExporter('temporal_worker');
+const resource = getResource('temporal_worker');
 
 describe('StatefulWorkflow', () => {
   let testEnv: TestWorkflowEnvironment;
@@ -36,14 +39,6 @@ describe('StatefulWorkflow', () => {
   };
 
   beforeAll(async () => {
-    Runtime.install({
-      telemetryOptions: {
-        metrics: { prometheus: { bindAddress: '0.0.0.0:8889' } },
-        logging: {}
-      },
-      logger
-    });
-
     testEnv = await TestWorkflowEnvironment.createLocal();
     const { client: workflowClient, nativeConnection: nc } = testEnv;
     client = workflowClient;
@@ -54,7 +49,14 @@ describe('StatefulWorkflow', () => {
         taskQueue: 'test',
         workflowsPath: path.resolve(__dirname, './testWorkflows'),
         activities: mockActivities,
-        debugMode: true
+        debugMode: true,
+        sinks: {
+          exporter: makeWorkflowExporter(exporter, resource)
+        },
+        interceptors: {
+          workflowModules: [require.resolve('./testWorkflows'), require.resolve('../workflows')],
+          activityInbound: [(ctx) => new OpenTelemetryActivityInboundInterceptor(ctx)]
+        }
       })
     );
 
@@ -83,7 +85,8 @@ describe('StatefulWorkflow', () => {
 
   afterAll(async () => {
     await shutdown();
-  });
+    await exporter.forceFlush();
+  }, 30000);
 
   describe('Workflow State Management', () => {
     it('Should use state provided in params', async () => {
@@ -286,6 +289,8 @@ describe('StatefulWorkflow', () => {
             photos: [{ id: photoId, user: userId, listing: listingId, likes: [{ id: likeId, user: userId, photo: photoId }] }]
           }
         ]
+        // photos: [{ id: photoId, user: userId, listing: listingId }]
+        // likes: [{ id: likeId, user: userId, photo: photoId }]
       };
 
       // Start the User workflow
@@ -297,9 +302,12 @@ describe('StatefulWorkflow', () => {
 
       // Ensure the User workflow is initialized with the correct normalized state
       const expectedInitialState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
+      console.dir(data, { depth: 12 });
+      console.dir(expectedInitialState, { depth: 12 });
       await new Promise((resolve) => {
         setTimeout(async () => {
           const state = await handle.query('state');
+          console.dir(state, { depth: 12 });
           expect(state).toEqual(expectedInitialState);
           resolve();
         }, 2000);
@@ -311,6 +319,9 @@ describe('StatefulWorkflow', () => {
 
       // Verify Listing workflow state
       const listingState = await listingHandle.query('state');
+      console.log('---- LISTING ----');
+      console.dir(listingState, { depth: 12 });
+
       expect(listingState.Listing).toEqual({
         [listingId]: { id: listingId, user: userId, photos: [photoId] }
       });
@@ -318,6 +329,7 @@ describe('StatefulWorkflow', () => {
       // Verify child Photo workflow state
       const photoHandle = await client.workflow.getHandle(`Photo-${photoId}`);
       const photoState = await photoHandle.query('state');
+      console.log(photoState);
       expect(photoState.Photo).toEqual({
         [photoId]: { id: photoId, user: userId, listing: listingId, likes: [likeId] }
       });
@@ -367,13 +379,6 @@ describe('StatefulWorkflow', () => {
             id: listingId,
             user: userId,
             photos: [{ id: photoId, user: userId, listing: listingId, likes: [{ id: likeId, user: userId, photo: photoId }] }]
-          }
-        ],
-        likes: [
-          {
-            id: likeId,
-            user: userId,
-            photo: photoId
           }
         ]
       };

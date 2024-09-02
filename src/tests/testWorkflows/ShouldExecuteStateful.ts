@@ -1,11 +1,11 @@
-import { ChronoFlow } from '../../workflows/Workflow';
+import { ChronoFlow } from '../../workflows';
 import { ManagedPaths, StatefulWorkflow } from '../../workflows/StatefulWorkflow';
 import { User } from '../testSchemas';
 import { trace } from '@opentelemetry/api';
 import { condition } from '@temporalio/workflow';
 
 @ChronoFlow({
-  schema: User
+  // schema: User
 })
 export class ShouldExecuteStateful extends StatefulWorkflow {
   protected maxIterations: number = 1000;
@@ -14,8 +14,16 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
       autoStartChildren: true,
       workflowType: 'ShouldExecuteStatefulChild',
       entityName: 'Listing'
-      // url: '/api/v1/listing',
-      // apiToken: true
+    },
+    photos: {
+      autoStartChildren: true,
+      workflowType: 'ShouldExecuteStatefulChild',
+      entityName: 'Photo'
+    },
+    likes: {
+      autoStartChildren: true,
+      workflowType: 'ShouldExecuteStatefulChild',
+      entityName: 'Like'
     }
   };
 

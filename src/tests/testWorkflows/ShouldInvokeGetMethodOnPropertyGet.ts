@@ -1,4 +1,4 @@
-import { Workflow, ChronoFlow, Property, Get } from '../../workflows/Workflow';
+import { Workflow, ChronoFlow, Property, Get } from '../../workflows';
 
 @ChronoFlow()
 export class ShouldInvokeGetMethodOnPropertyGet extends Workflow {

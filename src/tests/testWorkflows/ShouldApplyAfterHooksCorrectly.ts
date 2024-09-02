@@ -1,16 +1,16 @@
-import { ChronoFlow, Workflow, After } from "../../workflows/Workflow";
+import { ChronoFlow, Workflow, After } from '../../workflows';
 
 @ChronoFlow()
 export class ShouldApplyAfterHooksCorrectly extends Workflow {
   public status = 'initial';
 
-  @After("test")
+  @After('test')
   afterHook() {
-    this.status = "afterHookApplied";
+    this.status = 'afterHookApplied';
   }
 
   async test() {
-    this.status = "test";
+    this.status = 'test';
   }
 
   async execute() {

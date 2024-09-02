@@ -7,7 +7,8 @@ tsconfig.json
 .eslintrc.js
 .prettierrc
 README.md
-docs/
+docs/*
+coverage/*
 .dockerignore
 .gitignore
 .gitattributes

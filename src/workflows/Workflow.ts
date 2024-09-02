@@ -2,9 +2,9 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 /* eslint-disable no-restricted-imports */
 import * as workflow from '@temporalio/workflow';
-import EventEmitter from 'eventemitter3';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { log } from '@temporalio/workflow';
+import EventEmitter from 'eventemitter3';
 import type { Duration } from '@temporalio/common';
 
 export interface ChronoFlowOptions {
@@ -12,6 +12,42 @@ export interface ChronoFlowOptions {
   [key: string]: any;
 }
 
+/**
+ * `Workflow` Class
+ *
+ * This class serves as the base class for defining Temporal workflows. It provides a rich set of features,
+ * including signal and query handling, dynamic function execution, and seamless integration with Temporal's
+ * state management and child workflow orchestration.
+ *
+ * **Why Dynamic Function Assignment is Used:**
+ * Temporal workflows require named functions to register and execute workflows. Temporal does not natively
+ * recognize class constructors or instance methods as workflows. Instead, it relies on named functions that
+ * are callable within its environment.
+ *
+ * To bridge this gap, the `ChronoFlow` decorator dynamically generates and assigns named functions for each
+ * workflow class that extends this `Workflow` base class. This is accomplished using the JavaScript `Function`
+ * constructor, allowing the creation of functions with specific names derived from the class name. These
+ * dynamically created functions act as wrappers around the workflow class instances, ensuring that Temporal
+ * can register and invoke them by name.
+ *
+ * This approach allows developers to work with class-based workflows while still adhering to Temporal's requirement
+ * for named functions. It provides the flexibility of object-oriented programming and the power of Temporal's
+ * workflow orchestration, without compromising on the underlying system's requirements.
+ *
+ * **Benefits of This Approach:**
+ * - Enables Temporal to recognize and register class-based workflows.
+ * - Provides a clean and intuitive way to define workflows using TypeScript/JavaScript classes.
+ * - Supports advanced features such as signal handling, query execution, and continuation with dynamic function names.
+ *
+ * **Considerations:**
+ * - While this approach enables class-based workflows, it requires careful handling of function binding and context
+ *   (`this`) management. Developers extending this class must ensure that all signal, query, and method bindings are
+ *   correctly implemented to avoid runtime errors.
+ * - Extensive comments and documentation are provided to help understand the internal workings and customization points.
+ *
+ * Overall, this design choice is a balance between Temporal's system requirements and the flexibility of
+ * modern JavaScript/TypeScript programming practices.
+ */
 export const ChronoFlow = (options: ChronoFlowOptions = {}) => {
   return (constructor: any) => {
     const { name: optionalName, ...extraOptions } = options;
@@ -235,21 +271,35 @@ export abstract class Workflow extends EventEmitter {
   protected abstract execute(...args: unknown[]): Promise<unknown>;
 
   protected async signal(signalName: string, ...args: unknown[]): Promise<void> {
-    if (this.signalHandlers[signalName]) {
-      // @ts-ignore
-      await this.signalHandlers[signalName](...args);
-      await this.emitAsync(signalName, ...args);
-    } else {
-      throw new Error(`Signal ${signalName} is not defined on this workflow`);
-    }
+    await this.tracer.startActiveSpan(`Workflow:signal.${signalName}`, async (span) => {
+      try {
+        if (typeof this.signalHandlers[signalName] === 'function') {
+          // @ts-ignore
+          await this.signalHandlers[signalName](...args);
+          await this.emitAsync(signalName, ...args);
+        }
+      } catch (error: any) {
+        span.recordException(error);
+      } finally {
+        span.end();
+      }
+    });
   }
 
   protected async query(queryName: string, ...args: unknown[]): Promise<any> {
-    if (this.queryHandlers[queryName]) {
-      return await this.queryHandlers[queryName](...args);
-    } else {
-      throw new Error(`Query ${queryName} is not defined on this workflow`);
-    }
+    await this.tracer.startActiveSpan(`Workflow:query.${queryName}`, async (span) => {
+      let result: any;
+      try {
+        if (typeof this.queryHandlers[queryName] === 'function') {
+          result = await this.queryHandlers[queryName](...args);
+        }
+      } catch (error: any) {
+        span.recordException(error);
+      } finally {
+        span.end();
+      }
+      return result;
+    });
   }
 
   // @ts-ignore
@@ -301,6 +351,8 @@ export abstract class Workflow extends EventEmitter {
           }
         } catch (err) {
           await this.handleExecutionError(err, span, reject);
+        } finally {
+          span.end();
         }
         resolve(this.result);
       });
@@ -361,9 +413,11 @@ export abstract class Workflow extends EventEmitter {
           }
         }
         reject(err);
+        span.end();
       });
     } else {
       span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
+      span.end();
       reject(err);
     }
   }

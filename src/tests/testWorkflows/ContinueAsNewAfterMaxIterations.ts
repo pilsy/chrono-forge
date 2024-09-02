@@ -1,4 +1,4 @@
-import { ChronoFlow, Workflow } from "../../workflows/Workflow";
+import { ChronoFlow, Workflow } from '../../workflows';
 
 @ChronoFlow()
 export class ShouldExecuteWithArguments extends Workflow {
@@ -9,7 +9,5 @@ export class ShouldExecuteWithArguments extends Workflow {
     return `${one},${two},${three}`;
   }
 
-  protected async handleMaxIterations(): Promise<void> {
-    
-  }
+  protected async handleMaxIterations(): Promise<void> {}
 }

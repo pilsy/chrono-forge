@@ -1,5 +1,5 @@
 import { condition } from '@temporalio/workflow';
-import { ChronoFlow, Workflow, Signal } from '../../workflows/Workflow';
+import { ChronoFlow, Workflow, Signal } from '../../workflows';
 
 @ChronoFlow()
 export class ShouldBindSignalsCorrectly extends Workflow {

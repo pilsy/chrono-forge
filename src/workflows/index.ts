@@ -6,5 +6,5 @@ export const interceptors: WorkflowInterceptorsFactory = () => ({
   outbound: [new OpenTelemetryOutboundInterceptor()]
 });
 
-import { StatefulWorkflow } from './StatefulWorkflow';
-export { Workflow } from './Workflow';
+export * from './Workflow';
+export * from './StatefulWorkflow';

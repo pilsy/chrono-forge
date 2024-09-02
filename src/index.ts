@@ -4,6 +4,6 @@ export { StatefulWorkflow } from './workflows/StatefulWorkflow';
 
 export type { ManagedPath, Subscription, StatefulWorkflowParams } from './workflows/StatefulWorkflow';
 
-export * as SchemaConfig from './SchemaManager';
+export { SchemaManager } from './SchemaManager';
 
 export { startChildPayload } from './utils/startChildPayload';

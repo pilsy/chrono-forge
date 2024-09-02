@@ -9,8 +9,13 @@ import { Worker, Runtime, DefaultLogger, LogEntry } from '@temporalio/worker';
 import { WorkflowClient } from '@temporalio/client';
 import { v4 as uuid4 } from 'uuid';
 import * as workflows from './testWorkflows';
+import { makeWorkflowExporter, OpenTelemetryActivityInboundInterceptor } from '@temporalio/interceptors-opentelemetry/lib/worker';
+import { getExporter, getResource, getTracer } from '../utils/instrumentation';
 
 const workflowCoverage = new WorkflowCoverage();
+const tracer = getTracer('temporal_worker');
+const exporter = getExporter('temporal_worker');
+const resource = getResource('temporal_worker');
 
 describe('Workflow', () => {
   let testEnv: TestWorkflowEnvironment;
@@ -28,9 +33,9 @@ describe('Workflow', () => {
   };
 
   beforeAll(async () => {
-    Runtime.install({
-      logger: new DefaultLogger('WARN', (entry: LogEntry) => console.log(`[${entry.level}]`, entry.message))
-    });
+    // Runtime.install({
+    //   logger: new DefaultLogger('WARN', (entry: LogEntry) => console.log(`[${entry.level}]`, entry.message))
+    // });
 
     testEnv = await TestWorkflowEnvironment.createLocal();
     const { client: workflowClient, nativeConnection: nc } = testEnv;
@@ -41,7 +46,15 @@ describe('Workflow', () => {
         connection: nativeConnection,
         taskQueue: 'test',
         workflowsPath: path.resolve(__dirname, './testWorkflows'),
-        activities: mockActivities
+        activities: mockActivities,
+        debugMode: true,
+        sinks: {
+          exporter: makeWorkflowExporter(exporter, resource)
+        },
+        interceptors: {
+          workflowModules: [require.resolve('./testWorkflows'), require.resolve('../workflows')],
+          activityInbound: [(ctx) => new OpenTelemetryActivityInboundInterceptor(ctx)]
+        }
       })
     );
 
@@ -68,13 +81,8 @@ describe('Workflow', () => {
 
   afterAll(async () => {
     await shutdown();
-    // await new Promise(resolve => {
-    //   setTimeout(() => {
-    //     workflowCoverage.mergeIntoGlobalCoverage();
-    //     resolve();
-    //   }, 10000);
-    // })
-  });
+    await exporter.forceFlush();
+  }, 30000);
 
   describe('Workflow Execution', () => {
     it('Should call the execute() method with provided arguments', async () => {

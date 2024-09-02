@@ -1,6 +1,6 @@
 {
   "name": "chrono-forge",
-  "version": "0.3.0",
+  "version": "0.3.4",
   "description": "A powerful framework for temporal workflows, state management, and streaming activities, designed for seamless developer experience.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -45,6 +45,7 @@
     "immutability-helper": "^3.1.1",
     "lodash.isempty": "^4.4.0",
     "lodash.isequal": "^4.5.0",
+    "lodash.isobject": "^3.0.2",
     "normalizr": "^3.6.2"
   },
   "devDependencies": {
@@ -71,6 +72,7 @@
     "@types/dottie": "^2.0.7",
     "@types/jest": "^29.5.12",
     "@types/lodash": "^4.17.7",
+    "@types/lodash.isobject": "^3.0.9",
     "@types/node": "^18.x",
     "@types/uuid": "^9.0.2",
     "@types/ws": "^8.5.12",

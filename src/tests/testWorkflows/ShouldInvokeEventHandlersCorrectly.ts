@@ -1,5 +1,5 @@
-import { condition } from "@temporalio/workflow";
-import { ChronoFlow, Workflow, Signal } from "../../workflows/Workflow";
+import { condition } from '@temporalio/workflow';
+import { ChronoFlow, Workflow, Signal } from '../../workflows';
 
 @ChronoFlow()
 export class ShouldInvokeEventHandlersCorrectly extends Workflow {
@@ -11,8 +11,8 @@ export class ShouldInvokeEventHandlersCorrectly extends Workflow {
   }
 
   async execute() {
-    this.on("setStatus", () => this.status = "updatedByEvent");
-    await condition(() => this.status === 'updatedByEvent', "10 seconds");
+    this.on('setStatus', () => (this.status = 'updatedByEvent'));
+    await condition(() => this.status === 'updatedByEvent', '10 seconds');
     return this.status;
   }
 }

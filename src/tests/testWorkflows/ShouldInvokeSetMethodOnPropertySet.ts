@@ -1,4 +1,4 @@
-import { Workflow, ChronoFlow, Property, Set } from '../../workflows/Workflow';
+import { Workflow, ChronoFlow, Property, Set } from '../../workflows';
 
 @ChronoFlow()
 export class ShouldInvokeSetMethodOnPropertySet extends Workflow {

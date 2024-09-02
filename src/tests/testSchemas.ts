@@ -17,8 +17,8 @@ schemaManager.setSchemas({
   Photo: {
     idAttribute: 'id',
     likes: ['Like'],
-    listing: 'Listing',
-    user: 'User'
+    listing: 'Listing'
+    // user: 'User'
   },
   Like: {
     idAttribute: 'id',
@@ -28,6 +28,6 @@ schemaManager.setSchemas({
 });
 
 const schemas = schemaManager.getSchemas();
-const { User, Listing } = schemas;
-export { User, Listing };
+const { User, Listing, Photo, Like } = schemas;
+export { User, Listing, Photo, Like };
 export default schemas;
