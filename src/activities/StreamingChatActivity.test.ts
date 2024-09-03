@@ -7,7 +7,7 @@ import { TestWorkflowEnvironment, MockActivityEnvironment } from '@temporalio/te
 import { Worker, Runtime, DefaultLogger, LogEntry } from '@temporalio/worker';
 import { v4 as uuid4 } from 'uuid';
 import { WorkflowCoverage } from '@temporalio/nyc-test-coverage';
-import { ExampleTagProcessorWorkflow } from '../../workflows';
+import { ChatTagProcessorWorkflow } from '../workflows';
 
 const workflowCoverage = new WorkflowCoverage();
 
@@ -22,7 +22,7 @@ describe('StreamingChatActivity', () => {
 
   beforeAll(async () => {
     Runtime.install({
-      logger: new DefaultLogger('WARN', (entry: LogEntry) => console.log(`[${entry.level}]`, entry.message)),
+      logger: new DefaultLogger('WARN', (entry: LogEntry) => console.log(`[${entry.level}]`, entry.message))
     });
 
     testWorkerEnv = await TestWorkflowEnvironment.createLocal();
@@ -36,7 +36,7 @@ describe('StreamingChatActivity', () => {
         connection: nativeConnection,
         taskQueue: 'test',
         workflowsPath: require.resolve('../../workflows'),
-        activities,
+        activities
       })
     );
     void worker.run();
@@ -87,35 +87,38 @@ describe('StreamingChatActivity', () => {
     expect(receivedMessages.join('')).toEqual(expectedMessage);
   }
 
-  it('ExampleTagProcessorWorkflow with mock activity', async () => {
+  it('ChatTagProcessorWorkflow with mock activity', async () => {
     const { client } = testWorkerEnv;
     const content = 'the content to change';
-    const result = await client.workflow.execute('ExampleTagProcessorWorkflow', {
+    const result = await client.workflow.execute('ChatTagProcessorWorkflow', {
       workflowId: uuid4(),
       taskQueue: 'test',
-      args: [{
-        name: 'test',
-        content
-      }]
+      args: [
+        {
+          name: 'test',
+          content
+        }
+      ]
     });
     expect(result).toEqual(content.toUpperCase());
   });
 
   it('should connect to the websocket server, and correctly process 1 tag', async () => {
-    const messageSent     = "This is a test message that has <someTag>the content to change</someTag> in it!!!";
-    const expectedMessage = "This is a test message that has <someTag>THE CONTENT TO CHANGE</someTag> in it!!!";
+    const messageSent = 'This is a test message that has <someTag>the content to change</someTag> in it!!!';
+    const expectedMessage = 'This is a test message that has <someTag>THE CONTENT TO CHANGE</someTag> in it!!!';
     await runActivityWithMessage(messageSent, expectedMessage);
   }, 60000);
 
   it('should connect to the websocket server, and correctly process 2 tags', async () => {
-    const messageSent = "This is a test message that has <someTag>the content to change</someTag> in it with a <second>tag</second> in it!!!";
-    const expectedMessage = "This is a test message that has <someTag>THE CONTENT TO CHANGE</someTag> in it with a <second>TAG</second> in it!!!";
+    const messageSent = 'This is a test message that has <someTag>the content to change</someTag> in it with a <second>tag</second> in it!!!';
+    const expectedMessage =
+      'This is a test message that has <someTag>THE CONTENT TO CHANGE</someTag> in it with a <second>TAG</second> in it!!!';
     await runActivityWithMessage(messageSent, expectedMessage);
   }, 60000);
 
   it('should handle incomplete tags correctly', async () => {
-    const messageSent = "This is a test message with an <incomplete tag still open";
-    const expectedMessage = "This is a test message with an <incomplete tag still open";
+    const messageSent = 'This is a test message with an <incomplete tag still open';
+    const expectedMessage = 'This is a test message with an <incomplete tag still open';
     await runActivityWithMessage(messageSent, expectedMessage);
   }, 60000);
 
@@ -126,8 +129,8 @@ describe('StreamingChatActivity', () => {
   }, 60000);
 
   it('should handle multiple tags with nested structures', async () => {
-    const messageSent = "<outer><inner>nested content</inner> more outer content</outer>";
-    const expectedMessage = "<outer><inner>NESTED CONTENT</inner> more outer content</outer>";
+    const messageSent = '<outer><inner>nested content</inner> more outer content</outer>';
+    const expectedMessage = '<outer><inner>NESTED CONTENT</inner> more outer content</outer>';
     await runActivityWithMessage(messageSent, expectedMessage);
   }, 60000);
 

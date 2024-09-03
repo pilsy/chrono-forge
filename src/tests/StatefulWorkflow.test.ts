@@ -17,6 +17,7 @@ import { getExternalWorkflowHandle } from '@temporalio/workflow';
 import { cloneDeep } from 'lodash';
 import { get, set } from 'dottie';
 import { getExporter, getResource, getTracer } from '../utils/instrumentation';
+import { Photo } from './testSchemas';
 
 const workflowCoverage = new WorkflowCoverage();
 const tracer = getTracer('temporal_worker');
@@ -302,8 +303,6 @@ describe('StatefulWorkflow', () => {
 
       // Ensure the User workflow is initialized with the correct normalized state
       const expectedInitialState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
-      console.dir(data, { depth: 12 });
-      console.dir(expectedInitialState, { depth: 12 });
       await new Promise((resolve) => {
         setTimeout(async () => {
           const state = await handle.query('state');
@@ -319,9 +318,6 @@ describe('StatefulWorkflow', () => {
 
       // Verify Listing workflow state
       const listingState = await listingHandle.query('state');
-      console.log('---- LISTING ----');
-      console.dir(listingState, { depth: 12 });
-
       expect(listingState.Listing).toEqual({
         [listingId]: { id: listingId, user: userId, photos: [photoId] }
       });
@@ -424,18 +420,38 @@ describe('StatefulWorkflow', () => {
     });
 
     it('Should correctly handle deep nested updates in the state', async () => {
-      const data = { id: uuid4(), listings: [{ id: uuid4(), nested: { id: uuid4(), name: 'Nested Item' } }] };
-      const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
+      const id = uuid4();
+      const listingId = uuid4();
+      const photoId = uuid4();
+
+      const data = { id, listings: [{ id: listingId, photos: [{ id: photoId, name: 'Nested Item', listing: listingId }] }] };
+      const expectedInitialState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
+
+      const handle = await execute(workflows.ShouldExecuteStateful, { id, entityName: 'User', data });
+
+      await new Promise((resolve) => {
+        setTimeout(async () => {
+          const state = await handle.query('state');
+          expect(state).toEqual(expectedInitialState);
+          resolve();
+        }, 2000);
+      });
+
+      const updatedData = { ...data, listings: [{ ...data.listings[0], photos: [{ ...data.listings[0].photos[0], name: 'Updated Nested' }] }] };
+      const expectedUpdatedState = normalizeEntities(updatedData, SchemaManager.getInstance().getSchema('User'));
 
       await handle.signal('update', {
-        data: { ...data, listings: [{ ...data.listings[0], nested: { ...data.listings[0].nested, name: 'Updated Nested' } }] },
+        data,
         entityName: 'User'
       });
 
-      const updatedState = await handle.query('state');
-      expect(updatedState.User[data.id].listings).toContainEqual(
-        expect.objectContaining({ nested: { id: data.listings[0].nested.id, name: 'Updated Nested' } })
-      );
+      await new Promise((resolve) => {
+        setTimeout(async () => {
+          const state = await handle.query('state');
+          expect(state).toEqual(expectedUpdatedState);
+          resolve();
+        }, 2000);
+      });
 
       await handle.cancel();
     });
