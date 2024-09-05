@@ -24,8 +24,7 @@ import { LoggerProvider, BatchLogRecordProcessor, SimpleLogRecordProcessor, Cons
 import { OpenTelemetryTransportV3 } from '@opentelemetry/winston-transport';
 import { WinstonInstrumentation } from '@opentelemetry/instrumentation-winston';
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-grpc';
-
-import type { Logger } from 'winston';
+import { logger } from './logger';
 
 let contextManager: AsyncHooksContextManager;
 let loggerProvider: LoggerProvider;
@@ -68,16 +67,16 @@ export function initTracer(serviceName: string, environmentName: string, url: st
       new BatchSpanProcessor(exporter) // @ts-ignore
     );
 
-    if (prometheusPort) {
-      const meterProvider = new MeterProvider({ resource }); // @ts-ignore
-      meterProvider.addMetricReader(
-        // @ts-ignore
-        new PrometheusExporter({
-          // @ts-ignore
-          port: prometheusPort
-        })
-      );
-    }
+    // if (prometheusPort) {
+    //   const meterProvider = new MeterProvider({ resource }); // @ts-ignore
+    //   meterProvider.addMetricReader(
+    //     // @ts-ignore
+    //     new PrometheusExporter({
+    //       // @ts-ignore
+    //       port: prometheusPort
+    //     })
+    //   );
+    // }
 
     api.trace.setGlobalTracerProvider(provider);
     api.propagation.setGlobalPropagator(new W3CTraceContextPropagator());
@@ -164,7 +163,7 @@ export async function requestHook(span: Span, request: ClientRequest | IncomingM
     body += chunk.toString();
   });
   request.on('end', () => {
-    span.setAttribute('http.request.body', body);
+    logger.debug(body);
     request.removeAllListeners();
   });
 }
@@ -175,7 +174,7 @@ export async function responseHook(span: Span, response: IncomingMessage | Serve
     body += chunk.toString();
   });
   response.on('end', () => {
-    span.setAttribute('http.response.body', body);
+    logger.debug(body);
     response.removeAllListeners();
   });
 }

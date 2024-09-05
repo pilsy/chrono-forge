@@ -2,7 +2,7 @@
 import WebSocket from 'ws';
 import { pipeline, Transform } from 'stream';
 import { WritableWebSocketStream } from '../utils/WritableWebSocketStream';
-import { TagBuffer } from '../src/utils/TagBuffer';
+import { TagBuffer } from '../utils/TagBuffer';
 import { Context } from '@temporalio/activity';
 import { WorkflowClient } from '@temporalio/client';
 import { ChatTagProcessorWorkflow } from '../workflows';
@@ -13,8 +13,11 @@ export class StreamingChatActivity {
   private outputQueue: Promise<void> = Promise.resolve();
   private heartbeatInterval = 1000 * 10;
   private sessionId: string;
-  private context: Context;
-  private client: WorkflowClient;
+  private context: Context = Context.current();
+  // @ts-ignore
+  private client: WorkflowClient = global.client;
+
+  private abortController: AbortController = new AbortController();
 
   constructor(
     private readonly host: string,
@@ -23,6 +26,8 @@ export class StreamingChatActivity {
   ) {
     this.sessionId = sessionId;
   }
+
+  public abort = this.abortController.abort.bind(this);
 
   public async run() {
     // console.log(`Activity is running...`);
@@ -41,13 +46,23 @@ export class StreamingChatActivity {
     // Start heartbeating in the background
     this.startHeartbeating();
 
+    const stopHeartbeating = () => {
+      clearTimeout(this.heartbeatTimeout);
+    };
+
     // Pipe the server stream through the processing pipeline
     return await new Promise((resolve, reject) => {
       pipeline(
         serverStream,
         new Transform({
           transform: this.processChunk.bind(this, clientStream),
-          flush: this.flushRemainingBuffer.bind(this, clientStream)
+          flush: this.flushRemainingBuffer.bind(this, clientStream),
+          signal: this.abortController.signal,
+          autoDestroy: true,
+          destroy(error, callback) {
+            stopHeartbeating();
+            callback(null);
+          }
         }),
         clientStream,
         (err) => {
@@ -63,10 +78,12 @@ export class StreamingChatActivity {
     });
   }
 
+  private heartbeatTimeout?: any = null;
+
   private startHeartbeating() {
     const heartbeat = () => {
       this.context.heartbeat();
-      setTimeout(heartbeat, this.heartbeatInterval);
+      this.heartbeatTimeout = setTimeout(heartbeat, this.heartbeatInterval);
     };
     heartbeat();
   }
@@ -97,7 +114,8 @@ export class StreamingChatActivity {
 
           this.queueOutput(async () => {
             const processedContent = await this.processTagContent(activeTagBuffer);
-            return this.writeToStream(clientStream, `<${activeTagBuffer.name}>${processedContent}</${activeTagBuffer.name}>`);
+            return this.writeToStream(clientStream, processedContent);
+            // return this.writeToStream(clientStream, `<${activeTagBuffer.name}>${processedContent}</${activeTagBuffer.name}>`);
           });
         }
       } else {

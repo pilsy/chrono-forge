@@ -1,7 +1,7 @@
 import { ChronoFlow, Workflow } from './Workflow';
 
 @ChronoFlow()
-export abstract class ChatTagProcessor extends Workflow {
+export class ChatTagProcessorWorkflow extends Workflow {
   protected name: string;
   protected content: string;
 
@@ -11,11 +11,16 @@ export abstract class ChatTagProcessor extends Workflow {
     this.content = content;
   }
 
-  // The main execution flow for a tag processor
   protected async execute(): Promise<string> {
-    return await this.processTag(this.name, this.content);
+    if (this.name === 'outer') {
+      return (
+        ' ' +
+        this.content
+          .split(' ')
+          .map((content) => 'X')
+          .join(' ')
+      );
+    }
+    return this.content.toUpperCase();
   }
-
-  // Abstract method to be implemented by specific tag processors
-  protected abstract processTag(name: string, content: string): Promise<string>;
 }

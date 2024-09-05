@@ -12,6 +12,13 @@ import * as workflows from './testWorkflows';
 import { makeWorkflowExporter, OpenTelemetryActivityInboundInterceptor } from '@temporalio/interceptors-opentelemetry/lib/worker';
 import { getExporter, getResource, getTracer } from '../utils/instrumentation';
 
+const sleep = async (duration = 2000) =>
+  new Promise((resolve) => {
+    setTimeout(async () => {
+      resolve();
+    }, duration);
+  });
+
 const workflowCoverage = new WorkflowCoverage();
 const tracer = getTracer('temporal_worker');
 const exporter = getExporter('temporal_worker');
@@ -25,6 +32,7 @@ describe('Workflow', () => {
   let shutdown;
   let getClient;
   let execute;
+  let signalWithStart;
 
   jest.setTimeout(30000);
 
@@ -70,12 +78,20 @@ describe('Workflow', () => {
   beforeEach(() => {
     const client = getClient();
 
-    execute = (workflowName: string, exec = true, ...args) =>
-      client.workflow[exec ? 'execute' : 'start'](workflowName, {
+    execute = (workflowName: string, exec = 'start', ...args) =>
+      client.workflow[exec](workflowName, {
         taskQueue: 'test',
         workflowExecutionTimeout: 10000,
         workflowId: `test-${uuid4()}`,
-        args
+        [exec === 'signalWithStart' ? 'signalArgs' : 'args']: args
+      });
+
+    signalWithStart = (workflowName: string, options) =>
+      client.workflow.signalWithStart(workflowName, {
+        taskQueue: 'test',
+        workflowExecutionTimeout: 10000,
+        workflowId: `test-${uuid4()}`,
+        ...options
       });
   });
 
@@ -84,10 +100,27 @@ describe('Workflow', () => {
     await exporter.forceFlush();
   }, 30000);
 
+  describe('SignalWithStart', () => {
+    it('Should call the execute() method with provided arguments', async () => {
+      const args = [];
+      const handle = await signalWithStart('ShouldSignalWithStartAndArguments', {
+        workflowType: 'ShouldSignalWithStartAndArguments',
+        workflowId: uuid4(),
+        signal: 'start',
+        signalArgs: [{ foo: true }],
+        workflowArgs: [{ sone: true }]
+      });
+      await sleep();
+      const result = await handle.query('data');
+
+      expect(result).toBe(args.join(','));
+    });
+  });
+
   describe('Workflow Execution', () => {
     it('Should call the execute() method with provided arguments', async () => {
       const args = ['one', 'two', 'three'];
-      const result = await execute(workflows.ShouldExecuteWithArguments, true, ...args);
+      const result = await execute(workflows.ShouldExecuteWithArguments, 'execute', ...args);
 
       expect(result).toBe(args.join(','));
     });
@@ -95,7 +128,7 @@ describe('Workflow', () => {
 
   describe('Property Decorators', () => {
     it.skip('Should automatically create signals and queries for properties with default get/set', async () => {
-      const handle = await execute(workflows.ShouldCreateDefaultPropertyAccessors, false);
+      const handle = await execute(workflows.ShouldCreateDefaultPropertyAccessors);
 
       // Test setting a value
       await handle.signal('status', 'updated status');
@@ -108,7 +141,7 @@ describe('Workflow', () => {
     });
 
     it.skip('Should create signals and queries with custom names', async () => {
-      const handle = await execute(workflows.ShouldCreateCustomPropertyAccessors, false);
+      const handle = await execute(workflows.ShouldCreateCustomPropertyAccessors);
 
       // Test setting a value via custom signal
       await handle.signal('customSetSignal', 'custom value');
@@ -121,14 +154,14 @@ describe('Workflow', () => {
     });
 
     it.skip('Should disable setting a value when set is false', async () => {
-      const handle = await execute(workflows.ShouldDisableSetForProperty, false);
+      const handle = await execute(workflows.ShouldDisableSetForProperty);
 
       // Attempting to set a value should throw an error
       await expect(handle.signal('signalReadonlyProperty', 'new value')).rejects.toThrowError();
     });
 
     it.skip('Should invoke @Set decorated method when setting a value', async () => {
-      const handle = await execute(workflows.ShouldInvokeSetMethodOnPropertySet, false);
+      const handle = await execute(workflows.ShouldInvokeSetMethodOnPropertySet);
 
       // Set a value using the signal
       await handle.signal('signalValue', 'setting via @Set decorator');
@@ -138,7 +171,7 @@ describe('Workflow', () => {
     });
 
     it.skip('Should invoke @Get decorated method when getting a value', async () => {
-      const handle = await execute(workflows.ShouldInvokeGetMethodOnPropertyGet, false);
+      const handle = await execute(workflows.ShouldInvokeGetMethodOnPropertyGet);
 
       // Get a value using the query
       const queryResult = await handle.query('queryValue');
@@ -151,21 +184,21 @@ describe('Workflow', () => {
 
   describe('Signal Handling', () => {
     it('Should bind signals correctly', async () => {
-      const handle = await execute(workflows.ShouldBindSignalsCorrectly, false);
+      const handle = await execute(workflows.ShouldBindSignalsCorrectly);
       await handle.signal('setStatus', 'updated');
 
       expect(await handle.result()).toBe('updated');
     });
 
     it('Should bind named signals correctly', async () => {
-      const handle = await execute(workflows.ShouldBindNamedSignalsCorrectly, false);
+      const handle = await execute(workflows.ShouldBindNamedSignalsCorrectly);
       await handle.signal('status', 'updated');
 
       expect(await handle.result()).toBe('updated');
     });
 
     it('Should emit an event on signal invocation', async () => {
-      const handle = await execute(workflows.ShouldEmitEventOnSignal, false);
+      const handle = await execute(workflows.ShouldEmitEventOnSignal);
       await handle.signal('setStatus', 'updated');
 
       expect(await handle.result()).toBe('updatedByEvent');
@@ -174,7 +207,7 @@ describe('Workflow', () => {
 
   describe('Query Handling', () => {
     it('Should bind queries correctly', async () => {
-      const handle = await execute(workflows.ShouldBindQueriesCorrectly, false);
+      const handle = await execute(workflows.ShouldBindQueriesCorrectly);
       const queryResult = await handle.query('getStatus');
 
       expect(queryResult).toBe('initial');

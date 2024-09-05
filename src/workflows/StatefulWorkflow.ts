@@ -11,61 +11,7 @@ import isObject from 'lodash.isobject';
 import { startChildPayload } from '../utils/startChildPayload';
 import { Workflow, Signal, Query, Hook, Before, After, Property, Condition, Step, ContinueAsNew } from './Workflow';
 import { SchemaManager } from '../SchemaManager';
-
-const limitRecursion = (ob: Record<string, any>, root: Record<string, any>) => {
-  const seen = new WeakSet();
-
-  const recurse = (obj: Record<string, any>, rootEntities: Record<string, any>) => {
-    if (!obj || typeof obj !== 'object') return obj;
-
-    // Check if we have already processed this object
-    if (seen.has(obj)) {
-      return obj?.id || null; // Return the ID or null to stop recursion
-    }
-    seen.add(obj); // Mark this object as processed
-
-    const rootEntity = rootEntities[rootEntities.length - 1];
-
-    return Object.entries(obj).reduce((acc, [key, value]): any => {
-      if (rootEntity.schema[key]) {
-        const subEntity = rootEntity.schema[key] instanceof Array ? rootEntity.schema[key][0] : rootEntity.schema[key];
-        const subEntities = rootEntity.schema[key] instanceof Array ? obj[key] : obj[key];
-
-        if (rootEntities[0] !== subEntity) {
-          rootEntities.push(subEntity);
-          if (!subEntities || subEntities === null) {
-            return acc;
-          }
-          return {
-            ...acc,
-            [key]: Array.isArray(subEntities)
-              ? subEntities.map((s: any): any => (typeof s !== 'string' && typeof s !== 'number' && s !== null ? recurse(s, rootEntities) : s))
-              : typeof subEntities === 'string' || typeof subEntities === 'number' || subEntities === null
-                ? subEntities
-                : recurse(subEntities, rootEntities)
-          };
-        }
-        return {
-          ...acc,
-          [key]: Array.isArray(subEntities)
-            ? // @ts-ignore
-              subEntities.map((s: any): any => (isObject(s) ? s?.id : s))
-            : isObject(subEntities)
-              ? // @ts-ignore
-                subEntities?.id
-              : subEntities
-        };
-      }
-
-      return { ...acc, [key]: value };
-    }, {});
-  };
-
-  if (Array.isArray(ob)) {
-    return ob.map((o) => recurse(o, [root]));
-  }
-  return recurse(ob, [root]);
-};
+import { limitRecursion } from '../utils/limitRecursion';
 
 export type ManagedPath = {
   entityName?: string;
@@ -80,15 +26,15 @@ export type ManagedPaths = {
 };
 
 export type Subscription = {
-  workflowId: string; // ID of the subscribing workflow
-  signalName: string; // Signal name to be triggered on matching change
-  selector: string; // Selector for matching state changes; can contain wildcards
-  parent?: string; // Workflow ID of the parent workflow, if applicable
-  child?: string; // Workflow ID of the child workflow, if applicable
-  ancestorWorkflowIds?: string[]; // List of ancestor workflow IDs to avoid recursive loops
-  condition?: (state: any) => boolean; // Optional: A custom condition function that decides whether to propagate the signal.
-  entityName?: string; // Optional: The entity name related to this subscription.
-  subscriptionId?: string; // Unique identifier for this subscription to distinguish multiple subscriptions to the same workflow.
+  workflowId: string;
+  signalName: string;
+  selector: string;
+  parent?: string;
+  child?: string;
+  ancestorWorkflowIds?: string[];
+  condition?: (state: any) => boolean;
+  entityName?: string;
+  subscriptionId?: string;
 };
 
 export type Entities = {
@@ -164,7 +110,8 @@ export abstract class StatefulWorkflow extends Workflow {
   @Property()
   protected apiUrl?: string;
 
-  protected ancestorWorkflowIds: string[] = []; // Keeps track of ancestor workflows to prevent circular relationships
+  @Property()
+  protected ancestorWorkflowIds: string[] = [];
 
   constructor(
     protected params: StatefulWorkflowParams,
@@ -173,7 +120,7 @@ export abstract class StatefulWorkflow extends Workflow {
     super(params);
 
     this.state = params?.state as EntitiesState;
-    this.status = params?.status ?? 'running';
+    this.status = params?.status ?? 'init';
     this.id = params.id;
     this.entityName = params.entityName;
 
@@ -346,6 +293,9 @@ export abstract class StatefulWorkflow extends Workflow {
 
           this.state = newState;
           this.pendingUpdate = false;
+
+          // we need to only call this once, but directly after the very first time the stack changes are calculated...
+          this.emit('ready');
         }
       }
     }
@@ -597,7 +547,7 @@ export abstract class StatefulWorkflow extends Workflow {
       // Prepare start payload with ancestor workflow IDs
       const startPayload = {
         workflowId,
-        cancellationType: workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_REQUESTED,
+        cancellationType: workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_COMPLETED,
         parentClosePolicy: workflow.ParentClosePolicy.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
         startToCloseTimeout: '1 day',
         args: [
@@ -612,7 +562,7 @@ export abstract class StatefulWorkflow extends Workflow {
                 selector: '*'
               }
             ],
-            ancestorWorkflowIds: [...this.ancestorWorkflowIds, workflow.workflowInfo().workflowId] // Include current workflowId
+            ancestorWorkflowIds: [...this.ancestorWorkflowIds, workflow.workflowInfo().workflowId]
           }
         ]
       };
