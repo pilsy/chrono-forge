@@ -6,6 +6,7 @@ import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { log } from '@temporalio/workflow';
 import EventEmitter from 'eventemitter3';
 import type { Duration } from '@temporalio/common';
+import { get } from 'dottie';
 
 export interface ChronoFlowOptions {
   name?: string;
@@ -64,15 +65,40 @@ export const ChronoFlow = (options: ChronoFlowOptions = {}) => {
     }
 
     return new Function(
+      'workflow',
       'constructor',
       'extraOptions',
+      'tracer',
       `
       return async function ${workflowName}(...args) {
-        const instance = new constructor(...args);
-        return await instance.executeWorkflow(...args, extraOptions);
+        return await new Promise((resolve, reject) => {
+          tracer.startActiveSpan('[Workflow]:${workflowName}', async (span) => {
+            span.setAttributes({ workflowId: workflow.workflowInfo().workflowId, workflowType: workflow.workflowInfo().workflowType });
+            try {
+              const instance = new constructor(...args);
+              await instance.bindEventHandlers();
+              await instance.emitAsync('hooks');
+              await instance.emitAsync('init');
+              if (!instance.continueAsNew) {
+                instance
+                  .execute(...args, extraOptions)
+                  .then(resolve)
+              } else {
+                instance
+                  .executeWorkflow(...args, extraOptions)
+                  .then(resolve)
+              }
+            } catch(e) {
+              span.recordException(e);
+              reject(e);
+            } finally {
+              span.end();
+            }
+          });
+        });
       };
     `
-    )(constructor, extraOptions);
+    )(workflow, constructor, extraOptions, trace.getTracer('temporal_worker'));
   };
 };
 
@@ -191,10 +217,10 @@ export const Condition = (timeout?: string) => {
 
 export const On = (event: string) => {
   return (target: any, propertyKey: string) => {
-    if (!target.constructor.prototype._eventHandlers) {
-      target.constructor.prototype._eventHandlers = [];
+    if (!target.constructor._eventHandlers) {
+      target.constructor._eventHandlers = [];
     }
-    target.constructor.prototype._eventHandlers.push({ event, method: propertyKey });
+    target.constructor._eventHandlers.push({ event, method: propertyKey });
   };
 };
 
@@ -215,10 +241,17 @@ export const Step = (options: { name?: string; on?: () => boolean; before?: stri
 };
 
 export abstract class Workflow extends EventEmitter {
+  private _hooksBound = false;
+  private _eventsBound = false;
+  private _signalsBound = false;
+  private _queriesBound = false;
+  private _propertiesBound = false;
+
+  protected args?: any[];
   protected result: any;
   protected signalHandlers: { [key: string]: (args: any[]) => Promise<void> } = {};
   protected queryHandlers: { [key: string]: (...args: any[]) => any } = {};
-  protected tracer = trace.getTracer('temporal-worker');
+  protected tracer = trace.getTracer('temporal_worker');
   protected handles: { [workflowId: string]: ReturnType<typeof workflow.getExternalWorkflowHandle> | workflow.ChildWorkflowHandle<any> } = {};
   protected log = log;
 
@@ -256,16 +289,12 @@ export abstract class Workflow extends EventEmitter {
   }
 
   @Property()
-  protected pendingUpdate = false;
+  protected pendingUpdate = true;
 
   constructor(...args: unknown[]) {
     super();
-    this.bindHooks();
-  }
-
-  protected async condition(): Promise<any> {
-    this.log.debug(`[Workflow]:${this.constructor.name}:awaitCondition`);
-    return await workflow.condition(() => this.pendingUpdate || this.status !== 'running', '1 day');
+    this.args = args;
+    this.steps = Object.getPrototypeOf(this).constructor._steps || [];
   }
 
   protected abstract execute(...args: unknown[]): Promise<unknown>;
@@ -287,7 +316,7 @@ export abstract class Workflow extends EventEmitter {
   }
 
   protected async query(queryName: string, ...args: unknown[]): Promise<any> {
-    await this.tracer.startActiveSpan(`Workflow:query.${queryName}`, async (span) => {
+    return await this.tracer.startActiveSpan(`Workflow:query.${queryName}`, async (span) => {
       let result: any;
       try {
         if (typeof this.queryHandlers[queryName] === 'function') {
@@ -302,60 +331,53 @@ export abstract class Workflow extends EventEmitter {
     });
   }
 
+  protected async condition(): Promise<any> {
+    this.log.debug(`[Workflow]:${this.constructor.name}:awaitCondition`);
+    return await workflow.condition(() => this.pendingUpdate || this.status !== 'running', '1 day');
+  }
+
   // @ts-ignore
   protected async executeWorkflow(...args): Promise<any> {
     return new Promise(async (resolve, reject) => {
-      await this.tracer.startActiveSpan(`[Workflow]:${this.constructor.name}`, async (span) => {
-        try {
-          span.setAttributes({ workflowId: workflow.workflowInfo().workflowId, workflowType: workflow.workflowInfo().workflowType });
+      try {
+        while (this.iteration <= this.maxIterations && !this.isInTerminalState()) {
+          await this.condition();
 
-          if (!this.continueAsNew) {
-            return this.execute(...args)
-              .then(resolve)
-              .catch(reject);
+          if (this.status === 'paused') {
+            await this.emitAsync('paused');
+            await workflow.condition(() => this.status !== 'paused');
           }
 
-          while (this.iteration <= this.maxIterations && !this.isInTerminalState()) {
-            await this.condition();
+          if (this.status === 'cancelled') {
+            break;
+          }
 
-            if (this.status === 'paused') {
-              await this.emitAsync('paused');
-              await workflow.condition(() => this.status !== 'paused');
+          if (!this.isInTerminalState()) this.result = await this.execute();
+
+          if (!this.steps || this.steps.length === 0) {
+            if (this.isInTerminalState()) {
+              return this.status !== 'errored' ? resolve(this.result) : reject(this.result);
             }
-
-            if (this.status === 'cancelled') {
-              break;
-            }
-
-            if (!this.isInTerminalState()) this.result = await this.execute();
-
-            if (!this.steps || this.steps.length === 0) {
-              if (this.isInTerminalState()) {
-                span.end();
-                return this.status !== 'errored' ? resolve(this.result) : reject(this.result);
-              }
-            } else {
-              await this.executeSteps();
-              if (this.isInTerminalState()) {
-                span.end();
-                return this.status !== 'errored' ? resolve(this.result) : reject(this.result);
-              }
-            }
-
-            if (++this.iteration >= this.maxIterations) {
-              await this.handleMaxIterations();
-              resolve('Continued as a new workflow execution...');
-            } else {
-              this.pendingUpdate = false;
+          } else {
+            await this.executeSteps();
+            if (this.isInTerminalState()) {
+              return this.status !== 'errored' ? resolve(this.result) : reject(this.result);
             }
           }
-        } catch (err) {
-          await this.handleExecutionError(err, span, reject);
-        } finally {
-          span.end();
+
+          if (++this.iteration >= this.maxIterations) {
+            await this.handleMaxIterations();
+            resolve('Continued as a new workflow execution...');
+          } else {
+            this.pendingUpdate = false;
+            await this.emitAsync('ready');
+          }
         }
+
         resolve(this.result);
-      });
+      } catch (err) {
+        await this.handleExecutionError(err, reject);
+      }
     });
   }
 
@@ -396,10 +418,9 @@ export abstract class Workflow extends EventEmitter {
     }
   }
 
-  protected async handleExecutionError(err: any, span: any, reject: (err: Error) => void): Promise<void> {
+  protected async handleExecutionError(err: any, reject: (err: Error) => void): Promise<void> {
     this.log.debug(`[Workflow]:${this.constructor.name}:handleExecutionError`);
     if (workflow.isCancellation(err)) {
-      span.setAttribute('cancelled', true);
       await workflow.CancellationScope.nonCancellable(async () => {
         for (const handle of Object.values(this.handles)) {
           try {
@@ -413,11 +434,8 @@ export abstract class Workflow extends EventEmitter {
           }
         }
         reject(err);
-        span.end();
       });
     } else {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
-      span.end();
       reject(err);
     }
   }
@@ -444,78 +462,30 @@ export abstract class Workflow extends EventEmitter {
     }
   }
 
-  private bindHooks() {
+  private async bindEventHandlers() {
     const proto = Object.getPrototypeOf(this);
-
-    this.steps = proto.constructor._steps || [];
-    this.applyHooks(proto.constructor._hooks);
-
-    (proto.constructor._signals || []).forEach(([signalName, signalMethod]: [string, string]) => {
-      this.signalHandlers[signalName] = (this as any)[signalMethod]?.bind(this);
-      workflow.setHandler(workflow.defineSignal(signalName), async (...args: any[]) => {
-        // @ts-ignore
-        await this.signalHandlers[signalName](...(args as []));
-        this.emit(signalName, ...args);
-      });
-    });
-
-    (proto.constructor._queries || []).forEach(([queryName, queryMethod]: [string, string]) => {
-      this.queryHandlers[queryName] = (this as any)[queryMethod]?.bind(this);
-      workflow.setHandler(workflow.defineQuery(queryName), this.queryHandlers[queryName]);
-    });
-
-    (proto.constructor._properties || []).forEach(
-      ({
-        propertyKey,
-        get,
-        set,
-        queryName,
-        signalName
-      }: {
-        propertyKey: string;
-        get: boolean | string;
-        set: boolean | string;
-        queryName: string;
-        signalName: string;
-      }) => {
-        if (get) {
-          const getter =
-            proto.constructor._getters && proto.constructor._getters[propertyKey]
-              ? (this as any)[proto.constructor._getters[propertyKey]].bind(this)
-              : () => (this as any)[propertyKey];
-
-          this.queryHandlers[queryName] = getter;
-          workflow.setHandler(workflow.defineQuery(typeof get === 'string' ? get : propertyKey), this.queryHandlers[queryName]);
-        }
-
-        if (set) {
-          const setter =
-            proto.constructor._setters && proto.constructor._setters[propertyKey]
-              ? (this as any)[proto.constructor._setters[propertyKey]].bind(this)
-              : (value: any) => {
-                  (this as any)[propertyKey] = value;
-                };
-
-          this.signalHandlers[signalName] = setter;
-          workflow.setHandler(workflow.defineSignal(typeof set === 'string' ? set : propertyKey), async (...args: any[]) => {
-            // @ts-ignore
-            await this.signalHandlers[signalName](...(args as []));
-            this.emit(signalName, ...args);
-          });
-        }
-      }
-    );
-
+    if (!!proto._eventsBound) {
+      return;
+    }
     (proto.constructor._eventHandlers || []).forEach((handler: { event: string; method: string }) => {
       this.on(handler.event, async (...args: any[]) => {
         if (typeof (this as any)[handler.method] === 'function') {
-          await (this as any)[handler.method](...args);
+          return await (this as any)[handler.method](...args);
         }
       });
     });
+    this._eventsBound = true;
   }
 
-  private applyHooks(hooks: { before: { [name: string]: string[] }; after: { [name: string]: string[] } }) {
+  @On('hooks')
+  private async bindHooks() {
+    const proto = Object.getPrototypeOf(this);
+    if (!!proto._hooksBound) {
+      return;
+    }
+    this._hooksBound = true;
+
+    const hooks: { before: { [name: string]: string[] }; after: { [name: string]: string[] } } = proto.constructor._hooks;
     if (!hooks) return;
 
     const applyHook = async (methodName: string, originalMethod: () => any, ...args: any[]) => {
@@ -564,6 +534,77 @@ export abstract class Workflow extends EventEmitter {
         return await applyHook(methodName, originalMethod, ...args);
       };
     }
+  }
+
+  @On('init')
+  protected async bindProperties() {
+    const proto = Object.getPrototypeOf(this);
+    if (!!proto._propertiesBound) {
+      return;
+    }
+    (proto.constructor._properties || []).forEach(
+      ({
+        propertyKey,
+        get: g,
+        set: s,
+        queryName,
+        signalName
+      }: {
+        propertyKey: string;
+        get: boolean | string;
+        set: boolean | string;
+        queryName: string;
+        signalName: string;
+      }) => {
+        if (g) {
+          const getter = get(proto, `constructor._getters.${propertyKey}`, () => (this as any)[propertyKey]);
+          // @ts-ignore
+          this.queryHandlers[propertyKey] = getter.bind(this);
+        }
+
+        if (s) {
+          const setter = get(proto, `constructor._setters.${propertyKey}`, (value: any) => {
+            (this as any)[propertyKey] = value;
+          });
+          // @ts-ignore
+          this.signalHandlers[propertyKey] = setter.bind(this);
+        }
+      }
+    );
+    this._propertiesBound = true;
+  }
+
+  @On('init')
+  protected bindQueries() {
+    const proto = Object.getPrototypeOf(this);
+    if (!!proto._queriesBound) {
+      return;
+    }
+    (Object.getPrototypeOf(this).constructor._queries || []).forEach(([queryName, queryMethod]: [string, string]) => {
+      this.queryHandlers[queryName] =
+        queryMethod && typeof (this as any)[queryMethod] === 'function' ? (this as any)[queryMethod]?.bind(this) : this.queryHandlers[queryName];
+    });
+    for (const [name, method] of Object.entries(this.queryHandlers)) {
+      workflow.setHandler(workflow.defineQuery(name), method);
+    }
+    this._queriesBound = true;
+  }
+
+  @On('init')
+  protected bindSignals() {
+    const proto = Object.getPrototypeOf(this);
+    if (!!proto._signalsBound) {
+      return;
+    }
+    (Object.getPrototypeOf(this).constructor._signals || []).forEach(([signalName, signalMethod]: [string, string]) => {
+      this.signalHandlers[signalName] = this.signalHandlers[signalName] || (this as any)[signalMethod]?.bind(this);
+      workflow.setHandler(workflow.defineSignal(signalName), async (...args: any[]) => {
+        await this.emitAsync(signalName, args);
+        // @ts-ignore
+        return await this.signalHandlers[signalName](...(args as []));
+      });
+    });
+    this._signalsBound = true;
   }
 }
 

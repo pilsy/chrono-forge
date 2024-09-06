@@ -8,13 +8,12 @@ type Status = 'requested' | 'pending' | 'connected' | 'connecting' | 'closed' | 
 
 const MAX_ITERATIONS = 10000;
 
-// Define local activities for reading files
 const { readFile, readPositionFile } = proxyActivities<{
   readFile: (filePath: string) => Promise<string>;
   readPositionFile: (positionFilePath: string) => Promise<string>;
 }>({
   startToCloseTimeout: '5s',
-  local: true, // Indicates that these are local activities
+  local: true
 });
 
 @Workflow()
@@ -67,8 +66,8 @@ export class StreamingChatWorkflow extends WorkflowClass {
             args: [this.host, this.port, this.sessionId],
             retry: {
               initialInterval: '1s',
-              maximumAttempts: 3,
-            },
+              maximumAttempts: 3
+            }
           });
 
           this.status = 'connected';

@@ -107,13 +107,13 @@ describe('Workflow', () => {
         workflowType: 'ShouldSignalWithStartAndArguments',
         workflowId: uuid4(),
         signal: 'start',
-        signalArgs: [{ foo: true }],
-        workflowArgs: [{ sone: true }]
+        signalArgs: [{ a: 1 }],
+        workflowArgs: [{ a: 1 }]
       });
       await sleep();
       const result = await handle.query('data');
 
-      expect(result).toBe(args.join(','));
+      expect(result).toEqual({ a: 1 });
     });
   });
 
@@ -185,7 +185,7 @@ describe('Workflow', () => {
   describe('Signal Handling', () => {
     it('Should bind signals correctly', async () => {
       const handle = await execute(workflows.ShouldBindSignalsCorrectly);
-      await handle.signal('setStatus', 'updated');
+      await handle.signal('status', 'updated');
 
       expect(await handle.result()).toBe('updated');
     });
@@ -199,7 +199,7 @@ describe('Workflow', () => {
 
     it('Should emit an event on signal invocation', async () => {
       const handle = await execute(workflows.ShouldEmitEventOnSignal);
-      await handle.signal('setStatus', 'updated');
+      await handle.signal('status', 'updatedByEvent');
 
       expect(await handle.result()).toBe('updatedByEvent');
     });
@@ -217,17 +217,17 @@ describe('Workflow', () => {
 
   describe('Hook Handling', () => {
     it('Should apply @Before hook correctly', async () => {
-      const result = await execute(workflows.ShouldApplyBeforeHooksCorrectly);
+      const result = await execute(workflows.ShouldApplyBeforeHooksCorrectly, 'execute');
       expect(result).toBe('beforeHookApplied');
     });
 
     it('Should apply before @Hook correctly', async () => {
-      const result = await execute(workflows.ShouldApplyBeforeHooksCorrectly);
+      const result = await execute(workflows.ShouldApplyBeforeHooksCorrectly, 'execute');
       expect(result).toBe('beforeHookApplied');
     });
 
     it('Should apply @After hook correctly', async () => {
-      const result = await execute(workflows.ShouldApplyAfterHooksCorrectly);
+      const result = await execute(workflows.ShouldApplyAfterHooksCorrectly, 'execute');
       expect(result).toBe('afterHookApplied');
     });
   });

@@ -150,61 +150,50 @@ export abstract class StatefulWorkflow extends Workflow {
   protected async executeWorkflow(): Promise<any> {
     this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:executeWorkflow`);
     return new Promise(async (resolve, reject) => {
-      await this.tracer.startActiveSpan(`[StatefulWorkflow]:${this.constructor.name}:executeWorkflow`, async (span) => {
-        if (this.schema) this.configureManagedPaths(this.schema);
-        try {
-          span.setAttributes({ workflowId: workflow.workflowInfo().workflowId, workflowType: workflow.workflowInfo().workflowType });
+      if (this.schema) this.configureManagedPaths(this.schema);
+      try {
+        while (this.iteration <= this.maxIterations) {
+          this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:executeWorkflow:execute`);
+          await this.tracer.startActiveSpan(`[StatefulWorkflow]:${this.constructor.name}:executeWorkflow:execute`, async (executeSpan) => {
+            try {
+              executeSpan.setAttributes({
+                workflowId: workflow.workflowInfo().workflowId,
+                workflowType: workflow.workflowInfo().workflowType,
+                iteration: this.iteration
+              });
 
-          while (this.iteration <= this.maxIterations) {
-            this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:executeWorkflow:execute`);
-            await this.tracer.startActiveSpan(`[StatefulWorkflow]:${this.constructor.name}:executeWorkflow:execute`, async (executeSpan) => {
-              try {
-                executeSpan.setAttributes({
-                  workflowId: workflow.workflowInfo().workflowId,
-                  workflowType: workflow.workflowInfo().workflowType,
-                  iteration: this.iteration
-                });
+              await this.condition();
 
-                await this.condition();
-
-                if (this.status === 'paused') {
-                  await this.handlePause();
-                } else if (this.status === 'cancelled') {
-                  throw new Error(`Cancelled`);
-                }
-
-                if (this.shouldLoadData()) {
-                  await this.loadDataAndEnqueueChanges();
-                }
-
-                this.result = await this.execute();
-
-                if (this.isInTerminalState()) {
-                  executeSpan.end();
-                  span.end();
-                  return this.status !== 'errored' ? resolve(this.result) : reject(this.result);
-                } else if (++this.iteration >= this.maxIterations) {
-                  await this.handleMaxIterations();
-                  executeSpan.end();
-                  span.end();
-                  resolve('Continued as a new workflow execution...');
-                } else {
-                  this.pendingUpdate = false;
-                }
-              } catch (e: any) {
-                throw e;
-              } finally {
-                executeSpan.end();
+              if (this.status === 'paused') {
+                await this.handlePause();
+              } else if (this.status === 'cancelled') {
+                throw new Error(`Cancelled`);
               }
-            });
-          }
-        } catch (err) {
-          await this.handleExecutionError(err, span, reject);
-        } finally {
-          span.end();
+
+              if (this.shouldLoadData()) {
+                await this.loadDataAndEnqueueChanges();
+              }
+
+              this.result = await this.execute();
+
+              if (this.isInTerminalState()) {
+                return this.status !== 'errored' ? resolve(this.result) : reject(this.result);
+              } else if (++this.iteration >= this.maxIterations) {
+                await this.handleMaxIterations();
+                resolve('Continued as a new workflow execution...');
+              } else {
+                this.pendingUpdate = false;
+              }
+            } catch (e: any) {
+              throw e;
+            } finally {
+              executeSpan.end();
+            }
+          });
         }
-        resolve(this.result);
-      });
+      } catch (err) {
+        await this.handleExecutionError(err, reject);
+      }
     });
   }
 
