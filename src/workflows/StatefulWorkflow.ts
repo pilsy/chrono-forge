@@ -137,14 +137,14 @@ export abstract class StatefulWorkflow extends Workflow {
 
     this.params = params;
     this.options = options;
-    this.id = params.id;
-    this.state = params?.state as EntitiesState;
-    this.status = params?.status ?? 'init';
-    this.entityName = params.entityName;
-
     this.schema = params.entityName
       ? (SchemaManager.getInstance().getSchema(params.entityName) as schema.Entity)
       : (options.schema as schema.Entity);
+
+    this.id = params?.id;
+    this.state = params?.state as EntitiesState;
+    this.status = params?.status ?? 'init';
+    this.entityName = params.entityName;
 
     if (params?.data && !isEmpty(params?.data)) {
       this.pendingChanges.push({
@@ -293,6 +293,20 @@ export abstract class StatefulWorkflow extends Workflow {
         const differences = detailedDiff(previousState, newState);
 
         if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
+          const created = get(differences.added, `${this.entityName}.${this.id}`, false);
+          const updated = get(differences.updated, `${this.entityName}.${this.id}`, false);
+          const deleted = get(differences.deleted, `${this.entityName}.${this.id}`, false);
+
+          if (created) {
+            await this.emit('created', created, newState, previousState);
+          } else if (updated) {
+            await this.emit('updated', updated, newState, previousState);
+          } else if (deleted) {
+            if (!(await this.emit('deleted', deleted, newState, previousState))) {
+              return await this.cancel();
+            }
+          }
+
           await this.processChildState(newState, differences, previousState || {});
           if (this.iteration !== 0) {
             await this.processSubscriptions(newState, differences, previousState || {});
