@@ -428,6 +428,7 @@ export abstract class Workflow extends EventEmitter {
 
   protected async handleExecutionError(err: any, reject: (err: Error) => void): Promise<void> {
     this.log.debug(`[Workflow]:${this.constructor.name}:handleExecutionError`);
+    this.log.error(`${err?.message}: ${err?.stack}`);
     if (workflow.isCancellation(err)) {
       await workflow.CancellationScope.nonCancellable(async () => {
         for (const handle of Object.values(this.handles)) {

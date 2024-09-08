@@ -53,6 +53,7 @@ export type StatefulWorkflowParams = {
   apiToken?: string;
   subscriptions?: Subscription[];
   autoStartChildren?: boolean;
+  ancestorWorkflowIds?: string[];
 };
 
 export type StatefulWorkflowOptions = {
@@ -137,14 +138,18 @@ export abstract class StatefulWorkflow extends Workflow {
 
     this.params = params;
     this.options = options;
-    this.schema = params.entityName
+    this.entityName = (params?.entityName || options?.schemaName) as string;
+    this.schema = this.entityName
       ? (SchemaManager.getInstance().getSchema(params.entityName) as schema.Entity)
       : (options.schema as schema.Entity);
 
     this.id = params?.id;
     this.state = params?.state as EntitiesState;
     this.status = params?.status ?? 'init';
-    this.entityName = params.entityName;
+
+    if (params?.ancestorWorkflowIds) {
+      this.ancestorWorkflowIds = params.ancestorWorkflowIds;
+    }
 
     if (params?.data && !isEmpty(params?.data)) {
       this.pendingChanges.push({
@@ -573,7 +578,8 @@ export abstract class StatefulWorkflow extends Workflow {
                 selector: '*'
               }
             ],
-            ancestorWorkflowIds: [...this.ancestorWorkflowIds, workflow.workflowInfo().workflowId]
+            ancestorWorkflowIds: [...this.ancestorWorkflowIds, workflow.workflowInfo().workflowId],
+            apiToken: this.apiToken
           }
         ]
       };
