@@ -1,18 +1,12 @@
-import { proxyActivities, workflow, condition } from '@temporalio/workflow';
+import { proxyActivities, proxyLocalActivities, workflow, condition, sleep, continueAsNew } from '@temporalio/workflow';
 import { StatefulWorkflow } from 'chrono-forge';
-import EventEmitter from 'eventemitter3';
 import * as dottie from 'dottie';
-
-// Activity proxy setup
-const activities = proxyActivities({
-  startToCloseTimeout: '1 minute',
-  retry: { maximumAttempts: 3, initialInterval: 5000, maximumInterval: 10000 },
-  heartbeatTimeout: 60000
-}) as Record<string, (...args: any[]) => Promise<any>>;
+import { registry } from './WorkflowRegistry';
+import SchemaManager from './SchemaManager'; // Import SchemaManager
 
 export type DSLDefinition = {
-  state: Record<string, any>;
-  plan: DSLStatement;
+  state: Record<string, any>; // Managed by SchemaManager
+  plan: DSLStatement; // Execution plan
 };
 
 export type DSLStatement = { when?: (dsl: DSLDefinition) => Promise<boolean>; until?: (dsl: DSLDefinition) => Promise<boolean> } & (
@@ -24,13 +18,12 @@ export type DSLStatement = { when?: (dsl: DSLDefinition) => Promise<boolean>; un
 
 export type Sequence = { elements: DSLStatement[] };
 export type Parallel = { branches: DSLStatement[] };
-export type Execute = { name: string; taskQueue?: string; needs?: string[]; provides?: string[]; result?: string };
+export type Execute = { name: string; taskQueue?: string; needs?: string[]; provides?: string[]; result?: string; handler?: string };
 export type Loop = { condition: string; body: DSLStatement[] };
 
-// Main Dynamic Execution Engine using StatefulWorkflow
-class DynamicExecutionEngine extends StatefulWorkflow {
+export class DynamicExecutionEngine extends StatefulWorkflow {
   private dsl: DSLDefinition;
-  private bindings: Record<string, any> = {};
+  private schemaManager: SchemaManager;
   private queriesQueue: any[] = [];
   private signalsQueue: any[] = [];
   private processing: boolean = false;
@@ -38,30 +31,19 @@ class DynamicExecutionEngine extends StatefulWorkflow {
   constructor(dsl: DSLDefinition) {
     super();
     this.dsl = dsl;
+    this.schemaManager = SchemaManager.getInstance(); // Initialize SchemaManager instance
     this.initialize();
   }
 
   initialize() {
-    // Initialize state and bindings
-    Object.keys(this.dsl.state).forEach((key) => {
-      this.bindings[key] = this.evaluateVariable(this.dsl.state[key]);
-    });
+    // Set initial state in SchemaManager
+    this.schemaManager.setState(this.dsl.state);
 
-    // Dynamically create query and signal handlers for provided paths
+    // Setup dynamic queries and signals
     this.setupDynamicQueriesAndSignals();
-
-    // Setup event-driven execution model for signals and queries
-    this.on('signal', async (signalName, args) => {
-      await this.handleSignal(signalName, args);
-    });
-
-    this.on('query', async (queryName, args, resolve) => {
-      await this.handleQuery(queryName, args, resolve);
-    });
   }
 
   setupDynamicQueriesAndSignals() {
-    // Go through each statement and set up queries/signals for each 'provides'
     const setup = (statement: DSLStatement) => {
       if ('execute' in statement) {
         const { provides = [] } = statement.execute;
@@ -69,19 +51,16 @@ class DynamicExecutionEngine extends StatefulWorkflow {
           const queryName = `query_${path}`;
           const signalName = `signal_${path}`;
 
-          // Setup Query handler to get value from state at 'path'
-          this.queryHandlers[queryName] = () => dottie.get(this.bindings, path);
-
-          // Setup Signal handler to set value in state at 'path'
+          // Use SchemaManager to get and set state dynamically
+          this.queryHandlers[queryName] = () => this.schemaManager.getState(path);
           this.signalHandlers[signalName] = async (newValue: any) => {
-            dottie.set(this.bindings, path, newValue);
+            this.schemaManager.dispatch({ type: 'UPDATE_ENTITY', entityName: path, entity: newValue });
           };
 
-          // Register Query and Signal with Temporal workflow
           workflow.setHandler(workflow.defineQuery(queryName), this.queryHandlers[queryName]);
           workflow.setHandler(workflow.defineSignal(signalName), async (...args: any[]) => {
             await this.signalHandlers[signalName](...(args as []));
-            this.emit(signalName, ...args); // Emit event for further handling if needed
+            this.enqueueSignal(signalName);
           });
         });
       } else if ('sequence' in statement) {
@@ -89,25 +68,30 @@ class DynamicExecutionEngine extends StatefulWorkflow {
       } else if ('parallel' in statement) {
         statement.parallel.branches.forEach(setup);
       } else if ('loop' in statement) {
-        setup(statement.loop.body as any); // Assuming loop.body is a single statement for simplicity
+        statement.loop.body.forEach(setup);
       }
     };
 
-    // Initiate setup for the entire DSL plan
     setup(this.dsl.plan);
   }
 
-  async handleSignal(signalName: string, args: any[]) {
-    if (this.signalsQueue.some((signal) => signal === signalName)) return;
+  private enqueueSignal(signalName: string) {
     this.signalsQueue.push(signalName);
+  }
+
+  private enqueueQuery(queryName: string, args: any[], resolve: Function) {
+    this.queriesQueue.push({ queryName, args, resolve });
+  }
+
+  async handleSignal(signalName: string, args: any[]) {
+    this.enqueueSignal(signalName);
     if (!this.processing) {
       await this.processQueue();
     }
   }
 
   async handleQuery(queryName: string, args: any[], resolve: Function) {
-    if (this.queriesQueue.some((query) => query.queryName === queryName)) return;
-    this.queriesQueue.push({ queryName, args, resolve });
+    this.enqueueQuery(queryName, args, resolve);
     if (!this.processing) {
       await this.processQueue();
     }
@@ -115,18 +99,25 @@ class DynamicExecutionEngine extends StatefulWorkflow {
 
   async processQueue() {
     this.processing = true;
-    while (this.signalsQueue.length || this.queriesQueue.length) {
-      if (this.signalsQueue.length) {
+
+    while (true) {
+      // Use Temporal's condition to wait until there's something in the queues to process
+      await condition(() => this.signalsQueue.length > 0 || this.queriesQueue.length > 0, '1 minute');
+
+      // Process signals
+      while (this.signalsQueue.length > 0) {
         const signal = this.signalsQueue.shift();
-        await this.executeSignalHandler(signal);
+        await this.executeSignalHandler(signal!);
       }
 
-      if (this.queriesQueue.length) {
-        const { queryName, args, resolve } = this.queriesQueue.shift();
+      // Process queries
+      while (this.queriesQueue.length > 0) {
+        const { queryName, args, resolve } = this.queriesQueue.shift()!;
         const result = await this.executeQueryHandler(queryName, args);
         resolve(result);
       }
     }
+
     this.processing = false;
   }
 
@@ -139,6 +130,20 @@ class DynamicExecutionEngine extends StatefulWorkflow {
     console.log(`Processing query: ${queryName}`);
     // Implement additional query handling logic as needed
     return {}; // Return result based on query logic
+  }
+
+  async invokeActivityOnTaskQueue(activityName: string, args: any[], taskQueue?: string): Promise<any> {
+    const activityConfig = registry.getAllActivities().find((a) => a.name === activityName && a.taskQueue === taskQueue);
+
+    if (!activityConfig) {
+      throw new Error(`Activity ${activityName} not found for task queue: ${taskQueue}`);
+    }
+
+    const activityProxy = activityConfig.isLocal
+      ? proxyLocalActivities({ taskQueue: taskQueue || 'default', startToCloseTimeout: '1 minute' })
+      : proxyActivities({ taskQueue: taskQueue || 'default', startToCloseTimeout: '1 minute' });
+
+    return await activityProxy[activityName](...args);
   }
 
   async execute(statement: DSLStatement, bindings: Record<string, any>): Promise<void> {
@@ -157,74 +162,68 @@ class DynamicExecutionEngine extends StatefulWorkflow {
         await this.execute(statement.loop.body, bindings);
       }
     } else if ('execute' in statement) {
-      const { name, taskQueue, needs = [], provides = [], result } = statement.execute;
+      const { name, taskQueue, needs = [], provides = [], result, handler } = statement.execute;
 
-      // Use 'dottie' to resolve 'needs' paths from bindings
-      const resolvedArgs = needs.map((path) => dottie.get(bindings, path));
-      console.log(`Executing activity: ${name} on task queue: ${taskQueue || 'default'} with args: ${resolvedArgs}`);
+      const resolvedArgs = needs.map((path) => this.schemaManager.getState(path));
 
-      const activityResult = await this.invokeActivityOnTaskQueue(name, resolvedArgs, taskQueue);
+      // If a custom handler is defined, create a new function dynamically
+      if (handler) {
+        const handlerFn = new Function('args', 'bindings', handler).bind(this);
+        try {
+          const handlerResult = await handlerFn(resolvedArgs, bindings);
 
-      // Use 'dottie' to set 'provides' paths in bindings
-      provides.forEach((path, index) => {
-        dottie.set(bindings, path, activityResult[index]);
-      });
+          // If 'provides' paths are defined, set the result in state using SchemaManager
+          provides.forEach((path, index) => {
+            this.schemaManager.dispatch({ type: 'UPDATE_ENTITY', entityName: path, entity: handlerResult[index] });
+          });
 
-      // Optionally store the last activity's result in 'result'
-      if (result) {
-        bindings[result] = activityResult;
+          // If a 'result' key is defined, store the handler's output
+          if (result) {
+            this.schemaManager.dispatch({ type: 'UPDATE_ENTITY', entityName: result, entity: handlerResult });
+          }
+        } catch (error) {
+          console.error(`Error executing handler for ${name}:`, error);
+        }
+      } else {
+        // Use proxy activities to invoke Temporal activities
+        console.log(`Executing activity: ${name} on task queue: ${taskQueue || 'default'} with args: ${resolvedArgs}`);
+        try {
+          const activityResult = await this.invokeActivityOnTaskQueue(name, resolvedArgs, taskQueue);
+
+          // Set the results in the state using SchemaManager
+          provides.forEach((path, index) => {
+            this.schemaManager.dispatch({ type: 'UPDATE_ENTITY', entityName: path, entity: activityResult[index] });
+          });
+
+          // Optionally store the last activity's result in 'result'
+          if (result) {
+            this.schemaManager.dispatch({ type: 'UPDATE_ENTITY', entityName: result, entity: activityResult });
+          }
+        } catch (error) {
+          console.error(`Error executing activity ${name} on task queue ${taskQueue || 'default'}:`, error);
+        }
       }
     }
-  }
-
-  async invokeActivityOnTaskQueue(activityName: string, args: any[], taskQueue?: string): Promise<any> {
-    const activityProxy = proxyActivities({
-      taskQueue: taskQueue || 'default',
-      startToCloseTimeout: '1 minute',
-      retry: { maximumAttempts: 3, initialInterval: 5000, maximumInterval: 10000 },
-      heartbeatTimeout: 60000
-    });
-
-    return await activityProxy[activityName](...args);
   }
 
   async runExecutionLoop() {
     while (true) {
       console.log('Executing workflow root...');
-      await this.execute(this.dsl.plan, this.bindings);
+      await this.execute(this.dsl.plan, this.schemaManager.getState()); // Use SchemaManager to get current state
 
       if (this.shouldContinueAsNew()) {
-        await workflow.continueAsNew();
+        await continueAsNew();
       }
 
-      await workflow.sleep('1m'); // Sleep to prevent tight loop execution
+      await workflow.sleep('1m');
     }
   }
 
   shouldContinueAsNew(): boolean {
-    return this.bindings['iteration'] >= 100;
+    return this.schemaManager.getState()['iteration'] >= 100;
   }
 
   private evaluateVariable(expression: string): any {
-    // Logic to evaluate initial state variables or expressions
     return expression;
   }
 }
-
-// Usage Example
-const dslDocument: DSLDefinition = {
-  state: { 'user.preferences.mealType': 'vegetarian', 'user.preferences.cuisine': 'italian' },
-  plan: {
-    sequence: {
-      elements: [
-        {
-          execute: { name: 'generateMealPlan', needs: ['user.preferences.mealType'], provides: ['meals.generated'], taskQueue: 'task-queue-1' }
-        },
-        { execute: { name: 'sendNotification', needs: ['meals.generated'], provides: ['notifications.sent'], taskQueue: 'task-queue-2' } }
-      ]
-    }
-  }
-};
-
-const engine = new DynamicExecutionEngine(dslDocument);
-await engine.runExecutionLoop();
