@@ -52,6 +52,11 @@ export type StatefulWorkflowParams = {
   subscriptions?: Subscription[];
 };
 
+export type StatefulWorkflowOptions = {
+  schema?: schema.Entity;
+  schemaName?: string;
+};
+
 export type PendingChange = {
   updates?: Record<string, any>;
   deletions?: Record<string, any>;
@@ -115,13 +120,13 @@ export abstract class StatefulWorkflow extends Workflow {
 
   constructor(
     protected params: StatefulWorkflowParams,
-    protected options: { schema?: schema.Entity } = {}
+    protected options: StatefulWorkflowOptions
   ) {
     super(params);
 
+    this.id = params.id;
     this.state = params?.state as EntitiesState;
     this.status = params?.status ?? 'init';
-    this.id = params.id;
     this.entityName = params.entityName;
 
     this.schema = params.entityName

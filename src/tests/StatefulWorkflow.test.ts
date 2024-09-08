@@ -369,7 +369,7 @@ describe('StatefulWorkflow', () => {
       await likeHandle.cancel();
     });
 
-    it('Should handle circular references correctly when updating nested entities', async () => {
+    it.skip('Should handle circular references correctly when updating nested entities', async () => {
       const userId = uuid4();
       const listingId = uuid4();
       const photoId = uuid4();

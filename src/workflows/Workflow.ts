@@ -7,11 +7,7 @@ import { log } from '@temporalio/workflow';
 import EventEmitter from 'eventemitter3';
 import type { Duration } from '@temporalio/common';
 import { get } from 'dottie';
-
-export interface ChronoFlowOptions {
-  name?: string;
-  [key: string]: any;
-}
+import { registry } from '../WorkflowRegistry';
 
 /**
  * `Workflow` Class
@@ -49,9 +45,16 @@ export interface ChronoFlowOptions {
  * Overall, this design choice is a balance between Temporal's system requirements and the flexibility of
  * modern JavaScript/TypeScript programming practices.
  */
-export const ChronoFlow = (options: ChronoFlowOptions = {}) => {
-  return (constructor: any) => {
-    const { name: optionalName, ...extraOptions } = options;
+
+export interface ChronoFlowOptions {
+  name?: string;
+  taskQueue?: string;
+  [key: string]: any;
+}
+
+export function ChronoFlow(options?: ChronoFlowOptions) {
+  return function (constructor: any) {
+    const { name: optionalName, taskQueue, ...extraOptions } = options || {};
     const workflowName = optionalName || constructor.name;
 
     if (!(constructor.prototype instanceof Workflow)) {
@@ -64,7 +67,7 @@ export const ChronoFlow = (options: ChronoFlowOptions = {}) => {
       constructor = DynamicChronoFlow;
     }
 
-    return new Function(
+    const construct = new Function(
       'workflow',
       'constructor',
       'extraOptions',
@@ -99,8 +102,13 @@ export const ChronoFlow = (options: ChronoFlowOptions = {}) => {
       };
     `
     )(workflow, constructor, extraOptions, trace.getTracer('temporal_worker'));
+
+    // Register the workflow class in the WorkflowRegistry
+    registry.registerWorkflow(workflowName, construct, taskQueue || 'default');
+
+    return construct;
   };
-};
+}
 
 export const ContinueAsNew = () => {
   return (target: any, propertyKey: string) => {

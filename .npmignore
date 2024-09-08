@@ -13,3 +13,4 @@ coverage/*
 .gitignore
 .gitattributes
 jest.config.js
+src/workflows/prototypes/*
