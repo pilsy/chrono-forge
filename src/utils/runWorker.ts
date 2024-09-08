@@ -1,6 +1,6 @@
 // createWorker.ts
 import { Worker } from '@temporalio/worker';
-import { registry } from './WorkflowRegistry';
+import { registry } from '../WorkflowRegistry';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -18,7 +18,7 @@ type WorkerInstance = {
   run: () => Promise<void>;
   stop: () => Promise<void>;
   on: (event: 'error' | 'stopped' | 'shutdown', listener: (error?: Error) => void) => void;
-  shutdo: () => Promise<void>;
+  shutdown: () => Promise<void>;
 };
 
 async function createWorker({
@@ -30,7 +30,7 @@ async function createWorker({
   restartOnFailure = false,
   maxRestartAttempts = 3
 }: CreateWorkerOptions): Promise<WorkerInstance> {
-  const registeredWorkflows = registry.getAllRegisteredWorkflows();
+  const registeredWorkflows = registry.getAllWorkflows();
   const registeredActivities = registry.getAllActivities();
 
   let generatedContent = `
@@ -108,7 +108,7 @@ async function createWorker({
   };
 
   // Step 7: Graceful Shutdown Logic
-  const shutdo = async (): Promise<void> => {
+  const shutdown = async (): Promise<void> => {
     console.log('Initiating graceful shutdown...');
     if (workerInstance) {
       await workerInstance.shutdown(); // Ensure no new tasks are accepted
@@ -118,8 +118,8 @@ async function createWorker({
   };
 
   // Handle process signals for graceful shutdown
-  process.on('SIGINT', shutdo);
-  process.on('SIGTERM', shutdo);
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 
   // Step 8: Start the worker after a delay (if specified)
   setTimeout(createAndRunWorker, startupDelay);
@@ -133,7 +133,7 @@ async function createWorker({
         console.log('Worker stopped');
       }
     },
-    shutdo,
+    shutdown,
     on: (event, listener) => {
       if (event === 'error') {
         errorHandlers.push(listener);

@@ -1,6 +1,7 @@
 export type DSLDefinition = {
+  variables: Record<string, any>;
   state: Record<string, any>;
-  plan: Statement;
+  plan: DSLStatement;
 };
 
 export type DSLStatement = { when?: (dsl: DSLDefinition) => Promise<boolean>; until?: (dsl: DSLDefinition) => Promise<boolean> } & (
@@ -9,16 +10,16 @@ export type DSLStatement = { when?: (dsl: DSLDefinition) => Promise<boolean>; un
   | { parallel: Parallel }
 );
 
-export type Sequence = { elements: Statement[] };
-export type Parallel = { branches: Statement[] };
+export type Sequence = { elements: DSLStatement[] };
+export type Parallel = { branches: DSLStatement[] };
 export type Execute = { name: string; code?: string; needs?: string[]; provides?: string[]; result?: string };
 
 export async function DSLInterpreter(dsl: DSLDefinition): Promise<unknown> {
   const bindings = dsl.variables as Record<string, string>;
-  return await execute(dsl.root, bindings);
+  return await execute(dsl.plan, bindings);
 }
 
-export async function execute(statement: Statement, bindings: Record<string, string | undefined>): Promise<void> {
+export async function execute(statement: DSLStatement, bindings: Record<string, string | undefined>): Promise<void> {
   if ('parallel' in statement) {
     await Promise.all(statement.parallel.branches.map((el) => execute(el, bindings)));
   } else if ('sequence' in statement) {

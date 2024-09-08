@@ -6,8 +6,6 @@ tsconfig.json
 .eslintignore
 .eslintrc.js
 .prettierrc
-README.md
-docs/*
 coverage/*
 .dockerignore
 .gitignore

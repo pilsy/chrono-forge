@@ -32,5 +32,16 @@
     "sourceMap": true
   },
   "include": ["src/**/*.ts", "src/**/*.test.ts"],
-  "exclude": ["node_modules", "dist", "src/tests"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/tests",
+    "src/examples",
+    "src/workflows/StreamingChatWorkflow.ts",
+    "src/workflows/DSLInterpreter.ts",
+    "src/workflows/DynamicExecutionEngine.ts",
+    "src/workflows/ChronoGraph.ts",
+    "src/utils/runWorker.ts",
+    "src/decorators/Worker.ts"
+  ]
 }

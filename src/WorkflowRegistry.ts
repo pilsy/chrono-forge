@@ -36,7 +36,7 @@ export class WorkflowRegistry implements WorkflowRegistryInterface {
   public registerWorkflow(name: string, workflowClass: WorkflowConstructor, taskQueue: string): void {
     if (!this.workflows.has(name)) {
       this.workflows.set(name, { workflowClass, taskQueue });
-      console.log(`Registered workflow: ${name} on task queue: ${taskQueue}`);
+      // console.log(`Registered workflow: ${name} on task queue: ${taskQueue}`);
     } else {
       console.warn(`Workflow ${name} is already registered.`);
     }
@@ -53,7 +53,7 @@ export class WorkflowRegistry implements WorkflowRegistryInterface {
   public registerActivity(name: string, activityFn: ActivityFunction, isLocal: boolean, taskQueue: string): void {
     if (!this.activities.has(name)) {
       this.activities.set(name, { activityFn, isLocal, taskQueue });
-      console.log(`Registered ${isLocal ? 'local' : 'remote'} activity: ${name} on task queue: ${taskQueue}`);
+      // console.log(`Registered ${isLocal ? 'local' : 'remote'} activity: ${name} on task queue: ${taskQueue}`);
     } else {
       console.warn(`Activity ${name} is already registered.`);
     }

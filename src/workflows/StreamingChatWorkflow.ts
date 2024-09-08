@@ -1,8 +1,8 @@
 import * as wf from '@temporalio/workflow';
-import { StreamingChatActivity } from './StreamingChatActivity';
-import { Workflow, WorkflowClass, Signal, Query } from './Chronicle';
+import { StreamingChatActivity } from '../activities/StreamingChatActivity';
 import { log } from '@temporalio/workflow';
 import { proxySinks, proxyActivities } from '@temporalio/workflow';
+import { ChronoFlow, Workflow, Signal, Query } from '.';
 
 type Status = 'requested' | 'pending' | 'connected' | 'connecting' | 'closed' | 'errored';
 
@@ -12,18 +12,17 @@ const { readFile, readPositionFile } = proxyActivities<{
   readFile: (filePath: string) => Promise<string>;
   readPositionFile: (positionFilePath: string) => Promise<string>;
 }>({
-  startToCloseTimeout: '5s',
-  local: true
+  startToCloseTimeout: '5s'
 });
 
-@Workflow()
-export class StreamingChatWorkflow extends WorkflowClass {
-  private host: string;
-  private port: number;
-  private sessionId: string;
-  private status: Status = 'requested';
-  private desiredStatus: Status = 'requested';
-  private iteration = 0;
+@ChronoFlow()
+export class StreamingChatWorkflow extends Workflow {
+  protected host: string;
+  protected port: number;
+  protected sessionId: string;
+  protected status: Status = 'requested';
+  protected desiredStatus: Status = 'requested';
+  protected iteration = 0;
 
   constructor(host: string, port: number, sessionId: string) {
     super();
@@ -62,7 +61,7 @@ export class StreamingChatWorkflow extends WorkflowClass {
       try {
         if (this.status !== 'closed') {
           this.status = 'pending';
-          await wf.execute(StreamingChatActivity, {
+          await wf.executeChild(StreamingChatActivity, {
             args: [this.host, this.port, this.sessionId],
             retry: {
               initialInterval: '1s',
@@ -98,7 +97,7 @@ export class StreamingChatWorkflow extends WorkflowClass {
     }
 
     if (this.iteration >= MAX_ITERATIONS) {
-      await wf.continueAsNew<typeof StreamingChatWorkflowClass>(this.host, this.port, this.sessionId);
+      await wf.continueAsNew<typeof StreamingChatWorkflow>(this.host, this.port, this.sessionId);
     }
   }
 
