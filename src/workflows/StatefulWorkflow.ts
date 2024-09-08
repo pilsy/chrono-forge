@@ -19,6 +19,8 @@ export type ManagedPath = {
   workflowType?: string;
   idAttribute?: string;
   autoStartChildren?: boolean;
+  cancellationType?: workflow.ChildWorkflowCancellationType;
+  parentClosePolicy?: workflow.ParentClosePolicy;
 };
 
 export type ManagedPaths = {
@@ -50,11 +52,14 @@ export type StatefulWorkflowParams = {
   apiUrl?: string;
   apiToken?: string;
   subscriptions?: Subscription[];
+  autoStartChildren?: boolean;
 };
 
 export type StatefulWorkflowOptions = {
   schema?: schema.Entity;
   schemaName?: string;
+  autoStartChildren?: boolean;
+  apiUrl?: string;
 };
 
 export type PendingChange = {
@@ -103,6 +108,9 @@ export abstract class StatefulWorkflow extends Workflow {
   @Property({ set: false })
   protected state: EntitiesState = {};
 
+  @Property()
+  protected pendingUpdate: boolean = false;
+
   @Property({ set: false })
   protected pendingChanges: PendingChange[] = [];
 
@@ -118,12 +126,17 @@ export abstract class StatefulWorkflow extends Workflow {
   @Property()
   protected ancestorWorkflowIds: string[] = [];
 
-  constructor(
-    protected params: StatefulWorkflowParams,
-    protected options: StatefulWorkflowOptions
-  ) {
+  @Property({ set: false })
+  protected params: StatefulWorkflowParams;
+
+  @Property({ set: false })
+  protected options: StatefulWorkflowOptions;
+
+  constructor(params: StatefulWorkflowParams, options: StatefulWorkflowOptions) {
     super(params);
 
+    this.params = params;
+    this.options = options;
     this.id = params.id;
     this.state = params?.state as EntitiesState;
     this.status = params?.status ?? 'init';
@@ -142,8 +155,8 @@ export abstract class StatefulWorkflow extends Workflow {
       this.pendingUpdate = true;
     }
 
-    this.apiUrl = params.apiUrl;
-    this.apiToken = params.apiToken;
+    this.apiUrl = params?.apiUrl || options?.apiUrl;
+    this.apiToken = params?.apiToken;
 
     if (params?.subscriptions) {
       for (const subscription of params.subscriptions) {
@@ -324,22 +337,6 @@ export abstract class StatefulWorkflow extends Workflow {
     }
   }
 
-  protected async handleUpdateSubscription(newState: EntitiesState, config: ManagedPath, item: any, itemDiff: any): Promise<void> {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:handleUpdateSubscription`);
-
-    const workflowId = `${config.entityName}-${item[config.idAttribute as string]}`;
-    const handle = this.handles[workflowId];
-
-    if (this.ancestorWorkflowIds.includes(workflowId)) {
-      this.log.warn(`[${this.constructor.name}] Circular update detected for workflowId: ${workflowId}. Skipping subscription update.`);
-      return;
-    }
-
-    if (handle && 'result' in handle) {
-      await this.updateChildWorkflow(handle as workflow.ChildWorkflowHandle<any>, item, config);
-    }
-  }
-
   protected getUpdatedDataForSubscription(newState: EntitiesState, selector: string): any {
     // Implement logic to extract updated data from the new state based on the selector
     return get(newState, selector);
@@ -517,7 +514,7 @@ export abstract class StatefulWorkflow extends Workflow {
 
     if (hasStateChanged) {
       if (existingHandle && 'result' in existingHandle) {
-        await this.updateChildWorkflow(existingHandle as workflow.ChildWorkflowHandle<any>, newItem, config);
+        await this.updateChildWorkflow(existingHandle as workflow.ChildWorkflowHandle<any>, newItem, newState, config);
       } else if (!existingHandle && !isEmpty(differences)) {
         await this.startChildWorkflow(config, newItem, newState);
       }
@@ -527,11 +524,17 @@ export abstract class StatefulWorkflow extends Workflow {
   protected async startChildWorkflow(config: ManagedPath, state: any, newState: any): Promise<void> {
     this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:startChildWorkflow`);
     try {
-      const { workflowType, entityName, idAttribute } = config;
+      const {
+        workflowType,
+        entityName,
+        idAttribute,
+        cancellationType = workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_COMPLETED,
+        parentClosePolicy = workflow.ParentClosePolicy.PARENT_CLOSE_POLICY_REQUEST_CANCEL
+      } = config;
       const entitySchema = SchemaManager.getInstance().getSchema(entityName as string);
       const { [idAttribute as string]: id } = state;
       const workflowId = `${entityName}-${id}`;
-      const data = denormalize(state, entitySchema, newState);
+      const data = limitRecursion(denormalize(state, entitySchema, newState), entitySchema);
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {
         this.log.warn(`[${this.constructor.name}] Circular dependency detected for workflowId: ${workflowId}. Skipping child workflow start.`);
@@ -541,13 +544,13 @@ export abstract class StatefulWorkflow extends Workflow {
       // Prepare start payload with ancestor workflow IDs
       const startPayload = {
         workflowId,
-        cancellationType: workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_COMPLETED,
-        parentClosePolicy: workflow.ParentClosePolicy.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
-        startToCloseTimeout: '1 day',
+        cancellationType,
+        parentClosePolicy,
+        startToCloseTimeout: '1 minute',
         args: [
           {
             id,
-            data: limitRecursion(data, entitySchema),
+            data,
             entityName,
             subscriptions: [
               {
@@ -574,19 +577,28 @@ export abstract class StatefulWorkflow extends Workflow {
     }
   }
 
-  protected async updateChildWorkflow(handle: workflow.ChildWorkflowHandle<any>, item: any, config: ManagedPath): Promise<void> {
+  protected async updateChildWorkflow(handle: workflow.ChildWorkflowHandle<any>, state: any, newState: any, config: ManagedPath): Promise<void> {
     this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:updateChildWorkflow`);
     try {
-      const normalizedState = normalizeEntities({ ...item }, config.entityName as string).entities;
-      const workflowId = handle.workflowId; // Extract the workflow ID
+      const {
+        workflowType,
+        entityName,
+        idAttribute,
+        cancellationType = workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_COMPLETED,
+        parentClosePolicy = workflow.ParentClosePolicy.PARENT_CLOSE_POLICY_REQUEST_CANCEL
+      } = config;
+      const entitySchema = SchemaManager.getInstance().getSchema(entityName as string);
+      const { [idAttribute as string]: id } = state;
+      const workflowId = `${entityName}-${id}`;
+      const data = limitRecursion(denormalize(state, entitySchema, newState), entitySchema);
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {
         this.log.warn(`[${this.constructor.name}] Circular update detected for workflowId: ${workflowId}. Skipping child workflow update.`);
         return;
       }
 
-      await handle.signal('update', { data: item, entityName: config.entityName, strategy: '$merge' });
-      this.emit(`childUpdated:${config.workflowType}`, handle.workflowId, item);
+      await handle.signal('update', { data, entityName: config.entityName, strategy: '$merge' });
+      this.emit(`childUpdated:${config.workflowType}`, handle.workflowId, data);
     } catch (err) {
       if (err instanceof Error) {
         this.log.error(`[${this.constructor.name}] Failed to signal existing workflow handle: ${err.message}`);
@@ -673,7 +685,7 @@ export abstract class StatefulWorkflow extends Workflow {
         path,
         idAttribute: schema._idAttribute,
         workflowType: `${schema._key}Workflow`,
-        autoStartChildren: true,
+        autoStartChildren: typeof this.options?.autoStartChildren === 'boolean' ? this.options?.autoStartChildren : true,
         entityName: schema._key,
         ...(this.managedPaths[path] || {})
       };
