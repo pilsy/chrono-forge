@@ -107,7 +107,7 @@ describe('StatefulWorkflow', () => {
       const normalizedData = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
 
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', state: normalizedData });
-
+      await sleep();
       await new Promise(async (resolve) => {
         const state = await handle.query('state');
         expect(state).toEqual(normalizedData);

@@ -59,7 +59,7 @@ export function ChronoFlow(options?: ChronoFlowOptions) {
 
     if (!(constructor.prototype instanceof Workflow)) {
       abstract class DynamicChronoFlow extends Workflow {
-        constructor(params: any) {
+        constructor(params: any, options: ChronoFlowOptions = {}) {
           super(params, options);
           Object.assign(this, new constructor(params, options));
         }
@@ -78,17 +78,17 @@ export function ChronoFlow(options?: ChronoFlowOptions) {
           tracer.startActiveSpan('[Workflow]:${workflowName}', async (span) => {
             span.setAttributes({ workflowId: workflow.workflowInfo().workflowId, workflowType: workflow.workflowInfo().workflowType });
             try {
-              const instance = new constructor(...args);
+              const instance = new constructor(args, extraOptions);
               await instance.bindEventHandlers();
               await instance.emitAsync('hooks');
               await instance.emitAsync('init');
               if (!instance.continueAsNew) {
                 instance
-                  .execute(...args, extraOptions)
+                  .execute(...args)
                   .then(resolve)
               } else {
                 instance
-                  .executeWorkflow(...args, extraOptions)
+                  .executeWorkflow(...args)
                   .then(resolve)
               }
             } catch(e) {
@@ -255,7 +255,6 @@ export abstract class Workflow extends EventEmitter {
   private _queriesBound = false;
   private _propertiesBound = false;
 
-  protected args?: any[];
   protected result: any;
   protected signalHandlers: { [key: string]: (args: any[]) => Promise<void> } = {};
   protected queryHandlers: { [key: string]: (...args: any[]) => any } = {};
@@ -299,9 +298,13 @@ export abstract class Workflow extends EventEmitter {
   @Property()
   protected pendingUpdate = true;
 
-  constructor(...args: unknown[]) {
+  constructor(
+    protected args: any,
+    protected options: ChronoFlowOptions
+  ) {
     super();
     this.args = args;
+    this.options = options;
     this.steps = Object.getPrototypeOf(this).constructor._steps || [];
   }
 
@@ -345,7 +348,7 @@ export abstract class Workflow extends EventEmitter {
   }
 
   // @ts-ignore
-  protected async executeWorkflow(...args): Promise<any> {
+  protected async executeWorkflow(...args: unknown[]): Promise<any> {
     return new Promise(async (resolve, reject) => {
       try {
         while (this.iteration <= this.maxIterations && !this.isInTerminalState()) {
@@ -367,7 +370,9 @@ export abstract class Workflow extends EventEmitter {
               return this.status !== 'errored' ? resolve(this.result) : reject(this.result);
             }
           } else {
-            await this.executeSteps();
+            if (!this.isInTerminalState()) {
+              await this.executeSteps();
+            }
             if (this.isInTerminalState()) {
               return this.status !== 'errored' ? resolve(this.result) : reject(this.result);
             }
@@ -378,7 +383,6 @@ export abstract class Workflow extends EventEmitter {
             resolve('Continued as a new workflow execution...');
           } else {
             this.pendingUpdate = false;
-            await this.emitAsync('ready');
           }
         }
 

@@ -1,12 +1,12 @@
-import { ChronoFlow, Workflow } from './Workflow';
+import { ChronoFlow, ChronoFlowOptions, Workflow } from './Workflow';
 
 @ChronoFlow()
 export class ChatTagProcessorWorkflow extends Workflow {
   protected name: string;
   protected content: string;
 
-  constructor({ name, content }: { name: string; content: string }) {
-    super();
+  constructor({ name, content }: { name: string; content: string }, options: ChronoFlowOptions = {}) {
+    super({ name, content }, options);
     this.name = name;
     this.content = content;
   }

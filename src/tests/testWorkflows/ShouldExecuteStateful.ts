@@ -5,7 +5,7 @@ import { trace } from '@opentelemetry/api';
 import { condition } from '@temporalio/workflow';
 
 @ChronoFlow({
-  // schema: User
+  schema: User
 })
 export class ShouldExecuteStateful extends StatefulWorkflow {
   protected maxIterations: number = 1000;
@@ -24,6 +24,11 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
       autoStartChildren: true,
       workflowType: 'ShouldExecuteStatefulChild',
       entityName: 'Like'
+    },
+    photo: {
+      autoStartChildren: true,
+      workflowType: 'ShouldExecuteStatefulChild',
+      entityName: 'Photo'
     }
   };
 
@@ -31,8 +36,9 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
     return new Promise(async (resolve) => {
       await trace.getTracer('temporal_worker').startActiveSpan('test', (span) => {
         setTimeout(() => {
+          // console.log(this);
           resolve(params);
-        }, 100);
+        }, 1000);
       });
     });
   }

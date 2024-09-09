@@ -1,6 +1,6 @@
 {
   "name": "chrono-forge",
-  "version": "0.4.5",
+  "version": "0.5.3",
   "description": "A powerful framework for temporal workflows, state management, and streaming activities, designed for seamless developer experience.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

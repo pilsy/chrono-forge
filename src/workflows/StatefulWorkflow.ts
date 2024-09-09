@@ -9,7 +9,7 @@ import isEmpty from 'lodash.isempty';
 import isEqual from 'lodash.isequal';
 import isObject from 'lodash.isobject';
 import { startChildPayload } from '../utils/startChildPayload';
-import { Workflow, Signal, Query, Hook, Before, After, Property, Condition, Step, ContinueAsNew } from './Workflow';
+import { Workflow, Signal, Query, Hook, Before, After, Property, Condition, Step, ContinueAsNew, ChronoFlowOptions } from './Workflow';
 import { SchemaManager } from '../SchemaManager';
 import { limitRecursion } from '../utils/limitRecursion';
 
@@ -78,14 +78,16 @@ export abstract class StatefulWorkflow extends Workflow {
     return await workflow.condition(() => this.pendingUpdate || !!this.pendingChanges.length || this.status !== 'running', '1 day');
   }
 
-  protected loadData?: () => Promise<any>;
   protected shouldLoadData(): boolean {
-    return typeof this.loadData === 'function';
+    // @ts-ignore
+    return typeof this?.loadData === 'function';
   }
-  protected abstract execute(...args: unknown[]): Promise<unknown>;
+  protected abstract execute(args?: unknown, options?: ChronoFlowOptions): Promise<unknown>;
 
   protected continueAsNew: boolean = true;
   protected async continueAsNewHandler(): Promise<void> {}
+
+  protected iteration = 0;
 
   @Property({ set: false })
   protected apiToken?: string;
@@ -110,7 +112,7 @@ export abstract class StatefulWorkflow extends Workflow {
   protected state: EntitiesState = {};
 
   @Property()
-  protected pendingUpdate: boolean = false;
+  protected pendingUpdate: boolean = true;
 
   @Property({ set: false })
   protected pendingChanges: PendingChange[] = [];
@@ -133,38 +135,47 @@ export abstract class StatefulWorkflow extends Workflow {
   @Property({ set: false })
   protected options: StatefulWorkflowOptions;
 
-  constructor(params: StatefulWorkflowParams, options: StatefulWorkflowOptions) {
-    super(params);
+  constructor(args: any[], options: StatefulWorkflowOptions) {
+    super(args, options);
 
-    this.params = params;
+    this.params = args[0];
     this.options = options;
-    this.entityName = (params?.entityName || options?.schemaName) as string;
+    this.entityName = (this.params?.entityName || options?.schemaName) as string;
     this.schema = this.entityName
-      ? (SchemaManager.getInstance().getSchema(params.entityName) as schema.Entity)
+      ? (SchemaManager.getInstance().getSchema(this.params.entityName) as schema.Entity)
       : (options.schema as schema.Entity);
 
-    this.id = params?.id;
-    this.state = params?.state as EntitiesState;
-    this.status = params?.status ?? 'init';
+    this.id = this.params?.id;
+    // this.state = (this.params?.state as EntitiesState) || {};
+    this.status = this.params?.status ?? 'init';
 
-    if (params?.ancestorWorkflowIds) {
-      this.ancestorWorkflowIds = params.ancestorWorkflowIds;
+    if (this.params?.ancestorWorkflowIds) {
+      this.ancestorWorkflowIds = this.params.ancestorWorkflowIds;
+    }
+    this.pendingUpdate = true;
+
+    this.state = {};
+    if (this.params?.state && !isEmpty(this.params?.state)) {
+      this.pendingChanges.push({
+        updates: this.params.state as EntitiesState,
+        entityName: this.entityName,
+        strategy: '$set'
+      });
     }
 
-    if (params?.data && !isEmpty(params?.data)) {
+    if (this.params?.data && !isEmpty(this.params?.data)) {
       this.pendingChanges.push({
-        updates: normalizeEntities(params.data, this.schema),
+        updates: normalizeEntities(this.params.data, this.schema),
         entityName: this.entityName,
         strategy: '$merge'
       });
-      this.pendingUpdate = true;
     }
 
-    this.apiUrl = params?.apiUrl || options?.apiUrl;
-    this.apiToken = params?.apiToken;
+    this.apiUrl = this.params?.apiUrl || options?.apiUrl;
+    this.apiToken = this.params?.apiToken;
 
-    if (params?.subscriptions) {
-      for (const subscription of params.subscriptions) {
+    if (this.params?.subscriptions) {
+      for (const subscription of this.params.subscriptions) {
         this.subscribe(subscription);
       }
     }
@@ -285,44 +296,44 @@ export abstract class StatefulWorkflow extends Workflow {
   protected async processState(): Promise<void> {
     this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:processState`);
 
+    const previousState = this.state;
+
+    let newState;
     while (this.pendingChanges.length > 0) {
       const change = this.pendingChanges.shift();
-
-      const previousState = this.state;
-      const newState = reducer(this.state, {
+      newState = reducer(newState || this.state, {
         type: change?.deletions ? DELETE_ENTITIES : UPDATE_ENTITIES,
         entities: change?.deletions || change?.updates
       });
+    }
+    if (newState) {
+      const differences = detailedDiff(previousState, newState);
 
-      if (newState) {
-        const differences = detailedDiff(previousState, newState);
+      if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
+        const created = get(differences.added, `${this.entityName}.${this.id}`, false);
+        const updated = get(differences.updated, `${this.entityName}.${this.id}`, false);
+        const deleted = get(differences.deleted, `${this.entityName}.${this.id}`, false);
 
-        if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
-          const created = get(differences.added, `${this.entityName}.${this.id}`, false);
-          const updated = get(differences.updated, `${this.entityName}.${this.id}`, false);
-          const deleted = get(differences.deleted, `${this.entityName}.${this.id}`, false);
-
-          if (created) {
-            await this.emit('created', created, newState, previousState);
-          } else if (updated) {
-            await this.emit('updated', updated, newState, previousState);
-          } else if (deleted) {
-            if (!(await this.emit('deleted', deleted, newState, previousState))) {
-              return await this.cancel();
-            }
+        if (created) {
+          await this.emit('created', created, newState, previousState);
+        } else if (updated) {
+          await this.emit('updated', updated, newState, previousState);
+        } else if (deleted) {
+          if (!(await this.emit('deleted', deleted, newState, previousState))) {
+            return await this.cancel();
           }
-
-          await this.processChildState(newState, differences, previousState || {});
-          if (this.iteration !== 0) {
-            await this.processSubscriptions(newState, differences, previousState || {});
-          }
-
-          this.state = newState;
-          this.pendingUpdate = false;
-
-          // we need to only call this once, but directly after the very first time the stack changes are calculated...
-          this.emit('ready');
         }
+
+        await this.processChildState(newState, differences, previousState || {});
+        if (this.iteration !== 0) {
+          await this.processSubscriptions(newState, differences, previousState || {});
+        }
+
+        this.state = newState;
+        this.pendingUpdate = false;
+
+        // we need to only call this once, but directly after the very first time the stack changes are calculated...
+        this.emit('ready');
       }
     }
   }
@@ -548,8 +559,17 @@ export abstract class StatefulWorkflow extends Workflow {
         entityName,
         idAttribute,
         cancellationType = workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_COMPLETED,
-        parentClosePolicy = workflow.ParentClosePolicy.PARENT_CLOSE_POLICY_REQUEST_CANCEL
+        parentClosePolicy = workflow.ParentClosePolicy.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
+        autoStartChildren
       } = config;
+
+      if (!config.autoStartChildren) {
+        this.log.warn(
+          `${workflowType} with entityName ${entityName} not configured to autoStartChildren...\n${JSON.stringify(config, null, 2)}`
+        );
+        return;
+      }
+
       const entitySchema = SchemaManager.getInstance().getSchema(entityName as string);
       const { [idAttribute as string]: id } = state;
       const workflowId = `${entityName}-${id}`;
@@ -575,17 +595,18 @@ export abstract class StatefulWorkflow extends Workflow {
               {
                 workflowId: workflow.workflowInfo().workflowId,
                 signalName: 'update',
-                selector: '*'
+                selector: '*',
+                ancestorWorkflowIds: [...this.ancestorWorkflowIds, workflow.workflowInfo().workflowId]
               }
             ],
-            ancestorWorkflowIds: [...this.ancestorWorkflowIds, workflow.workflowInfo().workflowId],
             apiToken: this.apiToken
+            // ancestorWorkflowIds: this.ancestorWorkflowIds
           }
         ]
       };
 
       this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:startChildWorkflow(${workflowType})`);
-      this.handles[workflowId] = await workflow.startChild('ShouldExecuteStatefulChild', startPayload);
+      this.handles[workflowId] = await workflow.startChild(String(workflowType), startPayload);
       this.emit(`childStarted:${workflowType}`, workflowId, data);
     } catch (err) {
       if (err instanceof Error) {
@@ -605,8 +626,17 @@ export abstract class StatefulWorkflow extends Workflow {
         entityName,
         idAttribute,
         cancellationType = workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_COMPLETED,
-        parentClosePolicy = workflow.ParentClosePolicy.PARENT_CLOSE_POLICY_REQUEST_CANCEL
+        parentClosePolicy = workflow.ParentClosePolicy.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
+        autoStartChildren
       } = config;
+
+      if (!config.autoStartChildren) {
+        this.log.warn(
+          `${workflowType} with entityName ${entityName} not configured to autoStartChildren...\n${JSON.stringify(config, null, 2)}`
+        );
+        return;
+      }
+
       const entitySchema = SchemaManager.getInstance().getSchema(entityName as string);
       const { [idAttribute as string]: id } = state;
       const workflowId = `${entityName}-${id}`;
@@ -685,8 +715,15 @@ export abstract class StatefulWorkflow extends Workflow {
   }
 
   protected async loadDataAndEnqueueChanges(): Promise<void> {
-    if (typeof this.loadData === 'function') {
-      const updates = await this.loadData();
+    // @ts-ignore
+    if (typeof this?.loadData === 'function') {
+      // @ts-ignore
+      let { data, updates } = await this.loadData();
+      if (data && !updates) {
+        updates = normalizeEntities(data, this.entityName);
+      } else if (!updates) {
+        console.log(`No data or updates returned from loadData(), skipping state change...`);
+      }
       this.pendingChanges.push({ updates, entityName: this.entityName, strategy: '$merge' });
     }
   }
