@@ -196,9 +196,7 @@ A complete overview of the `StatefulWorkflow` class and its features is availabl
 
 The `Workflow` class offers various features to streamline the development of Temporal workflows. Each feature is designed to address common workflow development challenges such as error handling, state management, and inter-workflow communication.
 
-- [Signal Handling](./docs
-
-/Workflow/signal_handling.md)
+- [Signal Handling](./docs/Workflow/signal_handling.md)
 - [Query Handling](./docs/Workflow/query_handling.md)
 - [Execution Control and Flow Management](./docs/Workflow/execution_control.md)
 - [Error Handling with `@OnError`](./docs/Workflow/error_handling.md)
