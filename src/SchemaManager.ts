@@ -50,6 +50,10 @@ export class SchemaManager extends EventEmitter {
   private processing = false;
   private queue: EntityAction[] = [];
 
+  get pendingChanges() {
+    return this.queue;
+  }
+
   // Undo/Redo History Management
   private history: EntitiesState[] = []; // History stack for undo operations
   private future: EntitiesState[] = []; // Future stack for redo operations
@@ -115,12 +119,12 @@ export class SchemaManager extends EventEmitter {
    * This function handles the action queue and ensures that actions are processed sequentially.
    * @param action The action to dispatch.
    */
-  async dispatch(action: EntityAction): Promise<void> {
+  async dispatch(action: EntityAction, sync = true): Promise<void> {
     this.queue.push(action); // Queue the action
 
-    if (!this.processing) {
+    if (sync && !this.processing) {
       this.processing = true; // Mark processing as in progress
-      await this.processActions(); // Start processing the queue
+      await this.processChanges(); // Start processing the queue
     }
   }
 
@@ -128,29 +132,27 @@ export class SchemaManager extends EventEmitter {
    * Processes actions from the queue in a synchronous loop.
    * Handles state changes, history management for undo/redo, and event emission for state changes.
    */
-  private async processActions(): Promise<void> {
-    let newState = this.state;
+  async processChanges(): Promise<void> {
+    const previousState = this.state;
 
-    while (this.queue.length > 0) {
-      const actionsToProcess = this.queue.splice(0, this.queue.length);
+    let newState;
+    while (this.pendingChanges.length > 0) {
+      const change = this.pendingChanges.shift();
+      newState = reducer(newState || this.state, change as EntityAction);
+    }
 
-      // Process each action in the queue using the reducer
-      for (const action of actionsToProcess) {
-        this.pushToHistory(newState); // Save the current state before each action for undo
-        newState = reducer(newState, action); // Process the action using the reducer
-        this.future = []; // Clear the future stack after a new action
+    if (newState) {
+      const differences = detailedDiff(this.state, newState);
+      if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
+        this.pushToHistory(previousState);
+        this.future.length = 0;
+        this.state = { ...newState };
+
+        this.emitStateChangeEvents(differences, previousState, newState);
       }
     }
 
-    // Check for differences between the current state and the new state
-    const differences = detailedDiff(this.state, newState);
-
-    if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
-      this.emitStateChangeEvents(differences, this.state, newState); // Emit events
-      this.state = { ...newState }; // Update the state
-    }
-
-    this.processing = false; // Mark processing as complete
+    this.processing = false;
   }
 
   /**

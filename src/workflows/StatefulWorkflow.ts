@@ -1,7 +1,15 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 import * as workflow from '@temporalio/workflow';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
-import { normalizeEntities, reducer, EntitiesState, UPDATE_ENTITIES, DELETE_ENTITIES } from '../utils/entities';
+import {
+  normalizeEntities,
+  reducer,
+  EntitiesState,
+  UPDATE_ENTITIES,
+  DELETE_ENTITIES,
+  updateNormalizedEntities,
+  deleteNormalizedEntities
+} from '../utils/entities';
 import { detailedDiff, DetailedDiff, diff } from 'deep-object-diff';
 import { schema, denormalize, Schema } from 'normalizr';
 import dottie, { get, set, flatten, transform } from 'dottie';
@@ -71,6 +79,7 @@ export type PendingChange = {
 };
 
 export abstract class StatefulWorkflow extends Workflow {
+  private schemaManager = SchemaManager.getInstance();
   private schema: Schema;
 
   protected async condition(): Promise<any> {
@@ -108,14 +117,22 @@ export abstract class StatefulWorkflow extends Workflow {
   @Property({ set: false })
   protected entityName: string;
 
-  @Property({ set: false })
-  protected state: EntitiesState = {};
+  @Property()
+  get state() {
+    return this.schemaManager.getState();
+  }
+
+  set state(state: EntitiesState) {
+    this.schemaManager.setState(state);
+  }
 
   @Property()
   protected pendingUpdate: boolean = true;
 
-  @Property({ set: false })
-  protected pendingChanges: PendingChange[] = [];
+  @Query('pendingChanges')
+  get pendingChanges() {
+    return this.schemaManager.pendingChanges;
+  }
 
   @Property({ set: false })
   protected subscriptions: Subscription[] = [];
@@ -141,9 +158,7 @@ export abstract class StatefulWorkflow extends Workflow {
     this.params = args[0];
     this.options = options;
     this.entityName = (this.params?.entityName || options?.schemaName) as string;
-    this.schema = this.entityName
-      ? (SchemaManager.getInstance().getSchema(this.params.entityName) as schema.Entity)
-      : (options.schema as schema.Entity);
+    this.schema = this.entityName ? (this.schemaManager.getSchema(this.params.entityName) as schema.Entity) : (options.schema as schema.Entity);
 
     this.id = this.params?.id;
     // this.state = (this.params?.state as EntitiesState) || {};
@@ -151,24 +166,6 @@ export abstract class StatefulWorkflow extends Workflow {
 
     if (this.params?.ancestorWorkflowIds) {
       this.ancestorWorkflowIds = this.params.ancestorWorkflowIds;
-    }
-    this.pendingUpdate = true;
-
-    this.state = {};
-    if (this.params?.state && !isEmpty(this.params?.state)) {
-      this.pendingChanges.push({
-        updates: this.params.state as EntitiesState,
-        entityName: this.entityName,
-        strategy: '$set'
-      });
-    }
-
-    if (this.params?.data && !isEmpty(this.params?.data)) {
-      this.pendingChanges.push({
-        updates: normalizeEntities(this.params.data, this.schema),
-        entityName: this.entityName,
-        strategy: '$merge'
-      });
     }
 
     this.apiUrl = this.params?.apiUrl || options?.apiUrl;
@@ -178,6 +175,17 @@ export abstract class StatefulWorkflow extends Workflow {
       for (const subscription of this.params.subscriptions) {
         this.subscribe(subscription);
       }
+    }
+
+    this.schemaManager.on('stateChange', this.stateChanged.bind(this));
+    this.pendingUpdate = true;
+
+    if (this.params?.state && !isEmpty(this.params?.state)) {
+      this.schemaManager.setState(this.params.state);
+    }
+
+    if (this.params?.data && !isEmpty(this.params?.data)) {
+      this.schemaManager.dispatch(updateNormalizedEntities(normalizeEntities(this.params.data, this.schema), '$merge'), false);
     }
   }
 
@@ -238,14 +246,22 @@ export abstract class StatefulWorkflow extends Workflow {
     if (!isEmpty(data)) {
       updates = normalizeEntities(data, entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName));
     }
-    this.pendingChanges.push({ updates, entityName, strategy });
-    this.pendingUpdate = true;
+    if (updates) {
+      this.pendingUpdate = true;
+      this.schemaManager.dispatch(updateNormalizedEntities(updates, strategy), false);
+    }
   }
 
   @Signal()
-  public delete({ deletions, entityName }: PendingChange): void {
+  public delete({ data, deletions, entityName }: PendingChange & { data?: Record<string, any> }): void {
     this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:delete`);
-    this.pendingChanges.push({ deletions, entityName });
+    if (!isEmpty(data)) {
+      deletions = normalizeEntities(data, entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName));
+    }
+    if (deletions) {
+      this.pendingUpdate = true;
+      this.schemaManager.dispatch(deleteNormalizedEntities(deletions), false);
+    }
   }
 
   @Signal()
@@ -295,46 +311,46 @@ export abstract class StatefulWorkflow extends Workflow {
   @Before('execute')
   protected async processState(): Promise<void> {
     this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:processState`);
-
-    const previousState = this.state;
-
-    let newState;
-    while (this.pendingChanges.length > 0) {
-      const change = this.pendingChanges.shift();
-      newState = reducer(newState || this.state, {
-        type: change?.deletions ? DELETE_ENTITIES : UPDATE_ENTITIES,
-        entities: change?.deletions || change?.updates
-      });
+    if (this.pendingChanges.length) {
+      await this.schemaManager.processChanges();
     }
-    if (newState) {
-      const differences = detailedDiff(previousState, newState);
+  }
 
-      if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
-        const created = get(differences.added, `${this.entityName}.${this.id}`, false);
-        const updated = get(differences.updated, `${this.entityName}.${this.id}`, false);
-        const deleted = get(differences.deleted, `${this.entityName}.${this.id}`, false);
+  protected async stateChanged({
+    newState,
+    previousState,
+    differences
+  }: {
+    newState: EntitiesState;
+    previousState: EntitiesState;
+    differences: DetailedDiff;
+  }): Promise<void> {
+    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:stateChanged`);
 
-        if (created) {
-          await this.emit('created', created, newState, previousState);
-        } else if (updated) {
-          await this.emit('updated', updated, newState, previousState);
-        } else if (deleted) {
-          if (!(await this.emit('deleted', deleted, newState, previousState))) {
-            return await this.cancel();
-          }
+    if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
+      const created = get(differences.added, `${this.entityName}.${this.id}`, false);
+      const updated = get(differences.updated, `${this.entityName}.${this.id}`, false);
+      const deleted = get(differences.deleted, `${this.entityName}.${this.id}`, false);
+
+      if (created) {
+        await this.emit('created', created, newState, previousState);
+      } else if (updated) {
+        await this.emit('updated', updated, newState, previousState);
+      } else if (deleted) {
+        if (!(await this.emit('deleted', deleted, newState, previousState))) {
+          return await this.cancel();
         }
-
-        await this.processChildState(newState, differences, previousState || {});
-        if (this.iteration !== 0) {
-          await this.processSubscriptions(newState, differences, previousState || {});
-        }
-
-        this.state = newState;
-        this.pendingUpdate = false;
-
-        // we need to only call this once, but directly after the very first time the stack changes are calculated...
-        this.emit('ready');
       }
+
+      await this.processChildState(newState, differences, previousState || {});
+      if (this.iteration !== 0) {
+        await this.processSubscriptions(newState, differences, previousState || {});
+      }
+
+      this.pendingUpdate = false;
+
+      // we need to only call this once, but directly after the very first time the stack changes are calculated...
+      this.emit('ready');
     }
   }
 
@@ -724,7 +740,7 @@ export abstract class StatefulWorkflow extends Workflow {
       } else if (!updates) {
         console.log(`No data or updates returned from loadData(), skipping state change...`);
       }
-      this.pendingChanges.push({ updates, entityName: this.entityName, strategy: '$merge' });
+      this.schemaManager.dispatch(updateNormalizedEntities(updates, '$merge'), false);
     }
   }
 
