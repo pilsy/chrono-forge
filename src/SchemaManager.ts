@@ -1,79 +1,99 @@
-import { schema as NormalizrSchema, normalize, denormalize } from 'normalizr';
-import type { Schema as NormalizrSchemaType } from 'normalizr';
-import EventEmitter from 'eventemitter3'; // Import EventEmitter
-import reducer, { EntitiesState, EntityAction } from './utils/entities'; // Import the reducer and initialState
-import { DetailedDiff, detailedDiff } from 'deep-object-diff'; // Assuming a library for detailed diff calculation
-import { isEmpty } from 'lodash'; // Assuming lodash for utility functions
-import isObject from 'lodash.isobject';
-import { limitRecursion } from './utils/limitRecursion'; // Import the limitRecursion function
+import EventEmitter from 'eventemitter3';
+import { normalize, denormalize, schema } from 'normalizr';
+import {
+  EntitiesState,
+  EntityAction,
+  reducer,
+  updateNormalizedEntity,
+  updateNormalizedEntities,
+  deleteNormalizedEntity,
+  deleteNormalizedEntities,
+  normalizeEntities,
+  clearEntities
+} from './utils/entities';
+import { DetailedDiff, detailedDiff } from 'deep-object-diff';
+import { isEmpty, cloneDeep } from 'lodash';
+import { limitRecursion } from './utils/limitRecursion';
 
-type SchemaDefinition = {
+/**
+ * Types for defining schemas and managing entities.
+ */
+export type SchemasDefinition = {
+  [schemaName: string]: SchemaDefinition;
+};
+
+export type SchemaDefinition = {
   idAttribute?: string | ((entity: any, parent?: any, key?: string) => any);
 } & Record<string, string | [string]>;
 
 /**
- * Example usage
- *
- * ```typescript
- * import SchemaManager from './SchemaManager';
- *
- * const schemaConfig = {
- *   User: {
- *     idAttribute: 'username',
- *     articles: 'Article'
- *   },
- *   Article: {
- *     author: 'User',
- *     comments: ['Comment']
- *   },
- *   Comment: {
- *     commenter: 'User'
- *   }
- * };
- *
- * const schemaManager = SchemaManager.getInstance();
- * schemaManager.setSchemas(schemaConfig);
- *
- * const userSchema = schemaManager.getSchema('User');
- *
- * // Subscribe to changes for a specific entity path
- * SchemaManager.on('User.user1', ({ newState, previousState, changes }) => {
- *   console.log('User entity "user1" has changed!', { changes });
- * });
- *
- * // Dispatch an action
- * SchemaManager.dispatch({
- *   type: 'entities.upsertEntity',
- *   entityName: 'User',
- *   entity: { id: 'user1', name: 'John Doe' }
- * });
- * ```
+ * Singleton class to manage schemas, entities, and provide undo/redo functionality.
+ * This class is responsible for setting up schemas using Normalizr, managing state updates,
+ * handling undo and redo operations, and providing event-driven notifications for state changes.
  */
 export class SchemaManager extends EventEmitter {
   private static instance: SchemaManager;
-  private schemas: { [key: string]: NormalizrSchema.Entity } = {};
-  private state: EntitiesState = {}; // Holds the current state
-  private iteration: number = 0; // Tracks the number of state changes
-  private queue: EntityAction[] = []; // Queue to hold actions
-  private processing = false; // Indicates if the processing loop is running
 
+  /**
+   * Returns the singleton instance of SchemaManager.
+   * @returns The SchemaManager instance.
+   */
+  public static getInstance(): SchemaManager {
+    if (!this.instance) {
+      this.instance = new SchemaManager();
+    }
+    return this.instance;
+  }
+
+  private schemas: { [key: string]: schema.Entity } = {};
+  private state: EntitiesState = {};
+  private processing = false;
+  private queue: EntityAction[] = [];
+
+  // Undo/Redo History Management
+  private history: EntitiesState[] = []; // History stack for undo operations
+  private future: EntitiesState[] = []; // Future stack for redo operations
+  private maxHistory = 50; // Limit to keep the history stack manageable
+
+  /**
+   * Private constructor to enforce singleton pattern.
+   */
   private constructor() {
     super();
   }
 
   /**
+   * Gets the maximum size of the undo history stack.
+   */
+  get maxHistorySize() {
+    return this.maxHistory;
+  }
+
+  /**
+   * Sets the maximum size of the undo history stack.
+   * Ensures the max size is within a valid range (0-500).
+   * @param maxHistorySize The new maximum history size.
+   */
+  set maxHistorySize(maxHistorySize) {
+    this.maxHistory = maxHistorySize >= 0 && maxHistorySize < 500 ? maxHistorySize : 50;
+    this.history.length = this.history.length > this.maxHistory ? this.maxHistory : this.history.length;
+  }
+
+  /**
    * Sets schemas based on the provided configuration.
    * @param schemaConfig The schema configuration to set.
+   * @returns The current schemas.
    */
-  setSchemas(schemaConfig: { [key: string]: SchemaDefinition }): void {
+  setSchemas(schemaConfig: { [key: string]: SchemaDefinition }): typeof this.schemas {
     this.schemas = this.createSchemas(schemaConfig);
+    return this.schemas;
   }
 
   /**
    * Retrieves all schemas.
    * @returns The current schemas.
    */
-  getSchemas(): { [key: string]: NormalizrSchema.Entity } {
+  getSchemas(): { [key: string]: schema.Entity } {
     return this.schemas;
   }
 
@@ -81,8 +101,9 @@ export class SchemaManager extends EventEmitter {
    * Retrieves a specific schema by name.
    * @param schemaName The name of the schema to retrieve.
    * @returns The schema.
+   * @throws Error if the schema is not defined.
    */
-  getSchema(schemaName: string): NormalizrSchema.Entity {
+  getSchema(schemaName: string): schema.Entity {
     if (!this.schemas[schemaName]) {
       throw new Error(`Schema ${schemaName} not defined!`);
     }
@@ -90,14 +111,8 @@ export class SchemaManager extends EventEmitter {
   }
 
   /**
-   * Clears all schemas.
-   */
-  clearSchemas(): void {
-    this.schemas = {};
-  }
-
-  /**
    * Asynchronously dispatches an action to update the state.
+   * This function handles the action queue and ensures that actions are processed sequentially.
    * @param action The action to dispatch.
    */
   async dispatch(action: EntityAction): Promise<void> {
@@ -111,22 +126,19 @@ export class SchemaManager extends EventEmitter {
 
   /**
    * Processes actions from the queue in a synchronous loop.
+   * Handles state changes, history management for undo/redo, and event emission for state changes.
    */
   private async processActions(): Promise<void> {
     let newState = this.state;
 
     while (this.queue.length > 0) {
-      // Splice the items in the queue right NOW to a locally scoped variable
       const actionsToProcess = this.queue.splice(0, this.queue.length);
 
-      // Reduce over the spliced actions to compute the new state
+      // Process each action in the queue using the reducer
       for (const action of actionsToProcess) {
-        // Normalize the entity before sending it to reducer
-        const { entity, entityName, ...rest } = action;
-        const schema = this.schemas[entityName as string];
-        const normalizedEntity = normalize(entity, schema);
-
-        newState = reducer(newState, { ...rest, entity: normalizedEntity });
+        this.pushToHistory(newState); // Save the current state before each action for undo
+        newState = reducer(newState, action); // Process the action using the reducer
+        this.future = []; // Clear the future stack after a new action
       }
     }
 
@@ -134,12 +146,8 @@ export class SchemaManager extends EventEmitter {
     const differences = detailedDiff(this.state, newState);
 
     if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
-      // Loop over the changes and emit events for subscribed paths
-      this.emitStateChangeEvents(differences, this.state, newState);
-
-      // Update the state and increment the iteration count
-      this.iteration++;
-      this.state = { ...newState }; // Update state with new iteration
+      this.emitStateChangeEvents(differences, this.state, newState); // Emit events
+      this.state = { ...newState }; // Update the state
     }
 
     this.processing = false; // Mark processing as complete
@@ -147,6 +155,7 @@ export class SchemaManager extends EventEmitter {
 
   /**
    * Emits state change events for specific paths.
+   * Also emits a generic event for all state changes.
    * @param differences The differences between the old and new state.
    * @param previousState The previous state.
    * @param newState The new state.
@@ -156,7 +165,11 @@ export class SchemaManager extends EventEmitter {
 
     changedPaths.forEach((changeType) => {
       const entities = differences[changeType];
+      if (!entities || typeof entities !== 'object') return; // Ensure entities is defined and is an object
+
       Object.entries(entities).forEach(([entityName, entityChanges]) => {
+        if (!entityChanges || typeof entityChanges !== 'object') return; // Ensure entityChanges is defined and is an object
+
         Object.keys(entityChanges).forEach((entityId) => {
           const path = `${entityName}.${entityId}`;
           if (this.listenerCount(path) > 0) {
@@ -171,49 +184,81 @@ export class SchemaManager extends EventEmitter {
   }
 
   /**
-   * Returns the current state.
-   * @returns The current state.
+   * Pushes the current state to the history stack for undo capability.
+   * Ensures the history size does not exceed the max history size.
+   * @param currentState The current state to save.
    */
-  getState(): EntitiesState {
-    return this.state;
+  private pushToHistory(currentState: EntitiesState): void {
+    if (this.history.length >= this.maxHistorySize) {
+      this.history.shift(); // Remove the oldest state if the history size exceeds the limit
+    }
+    this.history.push(cloneDeep(currentState));
   }
 
   /**
-   * Sets the current state.
-   * @param state The new state to set.
+   * Performs an undo operation, reverting the state to the previous state.
+   * Moves the current state to the future stack for potential redo.
    */
-  setState(newState: EntitiesState): void {
-    const previousState = this.state;
-    this.state = newState;
-    this.emit('stateChange', { newState, previousState, differences: detailedDiff(previousState, newState) });
+  async undo(): Promise<void> {
+    if (this.history.length === 0) {
+      console.warn('No more states to undo.');
+      return;
+    }
+
+    this.future.push(cloneDeep(this.state)); // Save the current state for redo
+    const previousState = this.history.pop(); // Get the last state from the history
+    if (previousState) {
+      this.setState(previousState);
+    }
+  }
+
+  /**
+   * Performs a redo operation, moving the state forward to the next state.
+   * Moves the current state to the history stack for potential undo.
+   */
+  async redo(): Promise<void> {
+    if (this.future.length === 0) {
+      console.warn('No more states to redo.');
+      return;
+    }
+
+    this.pushToHistory(this.state); // Save the current state for undo
+    const nextState = this.future.pop(); // Get the next state from the future
+    if (nextState) {
+      this.setState(nextState);
+    }
   }
 
   /**
    * Returns denormalized data for a given entity name and ID.
+   * Ensures that the data respects the schema relationships.
    * @param entityName The name of the entity to query.
    * @param id The ID of the entity to query.
    * @returns The denormalized data.
    */
   query(entityName: string, id: string): any {
-    const entity = this.state.entities[entityName]?.[id];
+    const entity = this.state[entityName]?.[id];
     if (!entity) {
       return null;
     }
-    const denormalizedData = denormalize(id, this.schemas[entityName], this.state.entities);
+    const denormalizedData = denormalize(id, this.schemas[entityName], this.state);
     return limitRecursion(denormalizedData, this.schemas[entityName]);
   }
 
-  // Creates schemas dynamically based on the configuration provided
-  private createSchemas(schemaConfig: { [key: string]: SchemaDefinition }): {
-    [key: string]: NormalizrSchema.Entity;
-  } {
-    const schemas: { [key: string]: NormalizrSchema.Entity } = {};
+  /**
+   * Creates schemas dynamically based on the configuration provided.
+   * Supports defining relationships between schemas.
+   * @param schemaConfig The schema configuration.
+   * @returns The created schemas.
+   */
+  private createSchemas(schemaConfig: SchemasDefinition) {
+    const schemas: { [key: string]: schema.Entity } = {};
 
     // First pass: Create schema entities without relationships
     for (const [name, definition] of Object.entries(schemaConfig)) {
       const { idAttribute, ...relationships } = definition;
 
-      schemas[name] = new NormalizrSchema.Entity(
+      schemas[name] = new schema.Entity(
         name,
         {},
         {
@@ -240,14 +285,30 @@ export class SchemaManager extends EventEmitter {
   }
 
   /**
-   * Returns the singleton instance of SchemaManager.
-   * @returns The SchemaManager instance.
+   * Clears all entities in the state.
+   * Dispatches a clear entities action.
    */
-  public static getInstance(): SchemaManager {
-    if (!this.instance) {
-      this.instance = new SchemaManager();
-    }
-    return this.instance;
+  clearState() {
+    this.dispatch(clearEntities());
+  }
+
+  /**
+   * Gets the current state.
+   * @returns The current state.
+   */
+  getState(): EntitiesState {
+    return this.state;
+  }
+
+  /**
+   * Sets the current state.
+   * Emits a state change event.
+   * @param newState The new state to set.
+   */
+  setState(newState: EntitiesState): void {
+    const previousState = this.state;
+    this.state = newState;
+    this.emit('stateChange', { newState, previousState, differences: detailedDiff(previousState, newState) });
   }
 }
 
