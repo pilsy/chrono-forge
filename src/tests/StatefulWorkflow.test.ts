@@ -135,29 +135,21 @@ describe('StatefulWorkflow', () => {
       const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Awesome test listing' }] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
       const expectedInitial = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
+      await sleep();
 
       // Initial state verification
-      await new Promise((resolve) => {
-        setTimeout(async () => {
-          const state = await handle.query('state');
-          expect(state).toEqual(expectedInitial);
-          resolve();
-        }, 2000);
-      });
+      const state = await handle.query('state');
+      expect(state).toEqual(expectedInitial);
 
       // Update state
       const updatedData = { ...data, update: 'fromUpdate', listings: [{ ...data.listings[0], update: 'fromUpdate' }] };
       const expectedUpdated = normalizeEntities(updatedData, SchemaManager.getInstance().getSchema('User'));
 
       await handle.signal('update', { data: updatedData, entityName: 'User' });
+      await sleep();
 
-      await new Promise((resolve) => {
-        setTimeout(async () => {
-          const updatedState = await handle.query('state');
-          expect(updatedState).toEqual(expectedUpdated);
-          resolve();
-        }, 2000);
-      });
+      const updatedState = await handle.query('state');
+      expect(updatedState).toEqual(expectedUpdated);
 
       // Verify child workflow state
       const client = getClient();
@@ -165,35 +157,29 @@ describe('StatefulWorkflow', () => {
       const updatedListingState = await childHandle.query('state');
       expect(updatedListingState).toEqual({ Listing: expectedUpdated.Listing });
 
-      await new Promise((resolve) => {
-        setTimeout(async () => {
-          await childHandle.signal('update', {
-            data: { id: data.listings[0].id, update: 'directly' },
-            entityName: 'Listing',
-            strategy: '$merge'
-          });
-          setTimeout(async () => {
-            const parentData = await handle.query('state');
-            const childData = await childHandle.query('state');
+      await childHandle.signal('update', {
+        data: { id: data.listings[0].id, update: 'directly' },
+        entityName: 'Listing',
+        strategy: '$merge'
+      });
+      await sleep();
 
-            expect(parentData).toEqual(
-              normalizeEntities(
-                { ...data, update: 'fromUpdate', listings: [{ ...data.listings[0], update: 'directly' }] },
-                SchemaManager.getInstance().getSchema('User')
-              )
-            );
-            expect(childData).toEqual({
-              Listing: {
-                [data.listings[0]?.id]: {
-                  ...data.listings[0],
-                  update: 'directly'
-                }
-              }
-            });
+      const parentData = await handle.query('state');
+      const childData = await childHandle.query('state');
 
-            resolve();
-          }, 2500);
-        }, 2500);
+      expect(parentData).toEqual(
+        normalizeEntities(
+          { ...data, update: 'fromUpdate', listings: [{ ...data.listings[0], update: 'directly' }] },
+          SchemaManager.getInstance().getSchema('User')
+        )
+      );
+      expect(childData).toEqual({
+        Listing: {
+          [data.listings[0]?.id]: {
+            ...data.listings[0],
+            update: 'directly'
+          }
+        }
       });
 
       // Cleanup
@@ -369,7 +355,7 @@ describe('StatefulWorkflow', () => {
       await likeHandle.cancel();
     });
 
-    it.skip('Should handle circular references correctly when updating nested entities', async () => {
+    it('Should handle circular references correctly when updating nested entities', async () => {
       const userId = uuid4();
       const listingId = uuid4();
       const photoId = uuid4();
@@ -501,7 +487,7 @@ describe('StatefulWorkflow', () => {
       await handle.cancel();
     });
 
-    it.skip('Should manage circular relationships without causing infinite loops', async () => {
+    it('Should manage circular relationships without causing infinite loops', async () => {
       const userId = uuid4();
       const listingId = uuid4();
       const data = {
@@ -523,6 +509,7 @@ describe('StatefulWorkflow', () => {
       await sleep();
 
       const parentData = await handle.query('state');
+      console.log(parentData);
       expect(parentData.User[userId].posts[0].content).toEqual('Updated Content');
 
       await handle.cancel();

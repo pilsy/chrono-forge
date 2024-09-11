@@ -1,6 +1,6 @@
 {
   "name": "chrono-forge",
-  "version": "0.5.4",
+  "version": "0.5.9",
   "description": "A powerful framework for temporal workflows, state management, and streaming activities, designed for seamless developer experience.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -43,6 +43,7 @@
     "dottie": "^2.0.6",
     "eventemitter3": "^5.0.1",
     "immutability-helper": "^3.1.1",
+    "lodash": "^4.17.21",
     "lodash.isempty": "^4.4.0",
     "lodash.isequal": "^4.5.0",
     "lodash.isobject": "^3.0.2",

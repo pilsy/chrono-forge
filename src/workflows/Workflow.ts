@@ -5,9 +5,9 @@ import * as workflow from '@temporalio/workflow';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { log } from '@temporalio/workflow';
 import EventEmitter from 'eventemitter3';
-import type { Duration } from '@temporalio/common';
 import { get } from 'dottie';
 import { registry } from '../WorkflowRegistry';
+import * from '../decorators';
 
 /**
  * `Workflow` Class
@@ -110,144 +110,6 @@ export function ChronoFlow(options?: ChronoFlowOptions) {
   };
 }
 
-export const ContinueAsNew = () => {
-  return (target: any, propertyKey: string) => {
-    if (!target.constructor.prototype._continueAsNewMethod) {
-      target.constructor.prototype._continueAsNewMethod = propertyKey;
-    } else {
-      throw new Error(
-        `@ContinueAsNew decorator can only be applied to one method in a class. It has already been applied to ${target.constructor.prototype._continueAsNewMethod}.`
-      );
-    }
-  };
-};
-
-export const Signal = (name?: string) => {
-  return (target: any, propertyKey: string) => {
-    if (!target.constructor._signals) {
-      target.constructor._signals = [];
-    }
-    target.constructor._signals.push([name || propertyKey, propertyKey]);
-  };
-};
-
-export const Query = (name?: string) => {
-  return (target: any, propertyKey: string) => {
-    if (!target.constructor._queries) {
-      target.constructor._queries = [];
-    }
-    target.constructor._queries.push([name || propertyKey, propertyKey]);
-  };
-};
-
-export const Hook = (options: { before?: string; after?: string } = {}) => {
-  return (target: any, propertyKey: string) => {
-    if (!target.constructor._hooks) {
-      target.constructor._hooks = {};
-    }
-    if (options.before) {
-      target.constructor._hooks[options.before] = target.constructor._hooks[options.before] || {
-        before: [],
-        after: []
-      };
-      target.constructor._hooks[options.before].before.push(propertyKey);
-    }
-    if (options.after) {
-      target.constructor._hooks[options.after] = target.constructor._hooks[options.after] || {
-        before: [],
-        after: []
-      };
-      target.constructor._hooks[options.after].after.push(propertyKey);
-    }
-  };
-};
-
-export const Before = (targetMethod: string) => Hook({ before: targetMethod });
-export const After = (targetMethod: string) => Hook({ after: targetMethod });
-
-export const Property = (options: { get?: boolean | string; set?: boolean | string } = {}) => {
-  return (target: any, propertyKey: string) => {
-    if (!target.constructor._properties) {
-      target.constructor._properties = [];
-    }
-
-    const queryName = `query${capitalize(typeof options.get === 'string' ? options.get : propertyKey)}`;
-    const signalName = `signal${capitalize(typeof options.set === 'string' ? options.set : propertyKey)}`;
-
-    target.constructor._properties.push({
-      propertyKey,
-      get: options.get || options.get === undefined,
-      set: options.set || options.set === undefined,
-      queryName,
-      signalName
-    });
-
-    if (options.get) {
-      const getterName = typeof options.get === 'string' ? options.get : propertyKey;
-      target.constructor._getters = target.constructor._getters || {};
-      target.constructor._getters[getterName] = propertyKey;
-    }
-
-    if (options.set) {
-      const setterName = typeof options.set === 'string' ? options.set : propertyKey;
-      target.constructor._setters = target.constructor._setters || {};
-      target.constructor._setters[setterName] = propertyKey;
-    }
-  };
-};
-
-export const Set = (name?: string) => {
-  return (target: any, propertyKey: string) => {
-    if (!target.constructor._setters) {
-      target.constructor._setters = {};
-    }
-    target.constructor._setters[name || propertyKey] = propertyKey;
-  };
-};
-
-export const Get = (name?: string) => {
-  return (target: any, propertyKey: string) => {
-    if (!target.constructor._getters) {
-      target.constructor._getters = {};
-    }
-    target.constructor._getters[name || propertyKey] = propertyKey;
-  };
-};
-
-export const Condition = (timeout?: string) => {
-  return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
-    const originalMethod = descriptor.value;
-    descriptor.value = async function (...args: any[]) {
-      await workflow.condition(() => originalMethod.apply(this, args), timeout as Duration);
-    };
-  };
-};
-
-export const On = (event: string) => {
-  return (target: any, propertyKey: string) => {
-    if (!target.constructor._eventHandlers) {
-      target.constructor._eventHandlers = [];
-    }
-    target.constructor._eventHandlers.push({ event, method: propertyKey });
-  };
-};
-
-export const Step = (options: { name?: string; on?: () => boolean; before?: string | string[]; after?: string | string[] } = {}) => {
-  return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
-    const stepName = options.name || propertyKey;
-    if (!target.constructor._steps) {
-      target.constructor._steps = [];
-    }
-    target.constructor._steps.push({
-      name: stepName,
-      method: propertyKey,
-      on: options.on,
-      before: options.before,
-      after: options.after
-    });
-  };
-};
-
 export abstract class Workflow extends EventEmitter {
   private _hooksBound = false;
   private _eventsBound = false;
@@ -265,38 +127,38 @@ export abstract class Workflow extends EventEmitter {
   @Property({ set: false })
   protected continueAsNew = false;
 
-  @Property()
-  protected steps: { name: string; method: string; on?: () => boolean; before?: string | string[]; after?: string | string[] }[] = [];
+  @Property({ set: false })
+  protected maxIterations = 10000;
 
   @Property({ set: false })
   protected iteration = 0;
 
-  @Property({ set: false })
-  protected maxIterations = 10000;
-
   @Property()
   protected status: string = 'running';
 
-  @Signal()
-  public cancel(): void {
-    this.log.info(`Cancelling...`);
-    this.status = 'cancelled';
-  }
+  @Property()
+  protected pendingUpdate = true;
 
   @Signal()
   public pause(): void {
-    this.log.info(`Pausing...`);
-    this.status = 'paused';
+    if (this.status !== 'paused') {
+      this.log.info(`Pausing...`);
+      this.status = 'paused';
+      this.forwardSignalToChildren('pause');
+    }
   }
 
   @Signal()
   public resume(): void {
-    this.log.info(`Resuming...`);
-    this.status = 'running';
+    if (this.status !== 'running') {
+      this.log.info(`Resuming...`);
+      this.status = 'running';
+      this.forwardSignalToChildren('resume');
+    }
   }
 
   @Property()
-  protected pendingUpdate = true;
+  protected steps: { name: string; method: string; on?: () => boolean; before?: string | string[]; after?: string | string[] }[] = [];
 
   constructor(
     protected args: any,
@@ -308,43 +170,38 @@ export abstract class Workflow extends EventEmitter {
     this.steps = Object.getPrototypeOf(this).constructor._steps || [];
   }
 
-  protected abstract execute(...args: unknown[]): Promise<unknown>;
-
-  protected async signal(signalName: string, ...args: unknown[]): Promise<void> {
-    await this.tracer.startActiveSpan(`Workflow:signal.${signalName}`, async (span) => {
-      try {
-        if (typeof this.signalHandlers[signalName] === 'function') {
-          // @ts-ignore
-          await this.signalHandlers[signalName](...args);
-          await this.emitAsync(signalName, ...args);
-        }
-      } catch (error: any) {
-        span.recordException(error);
-      } finally {
-        span.end();
-      }
-    });
-  }
-
-  protected async query(queryName: string, ...args: unknown[]): Promise<any> {
-    return await this.tracer.startActiveSpan(`Workflow:query.${queryName}`, async (span) => {
-      let result: any;
-      try {
-        if (typeof this.queryHandlers[queryName] === 'function') {
-          result = await this.queryHandlers[queryName](...args);
-        }
-      } catch (error: any) {
-        span.recordException(error);
-      } finally {
-        span.end();
-      }
-      return result;
-    });
-  }
-
   protected async condition(): Promise<any> {
     this.log.debug(`[Workflow]:${this.constructor.name}:awaitCondition`);
     return await workflow.condition(() => this.pendingUpdate || this.status !== 'running', '1 day');
+  }
+
+  protected abstract execute(...args: unknown[]): Promise<unknown>;
+
+  protected async executeSteps() {
+    const stepsToExecute = this.steps.filter((step) => !step.before);
+    for (const step of stepsToExecute) {
+      if (!step.on || (await step.on())) {
+        await this.executeStep(step);
+        await this.processDependentSteps(step.name);
+      }
+    }
+  }
+
+  protected async executeStep(step: { name: string; method: string }) {
+    const stepMethod = (this as any)[step.method].bind(this);
+    if (typeof stepMethod === 'function') {
+      await stepMethod();
+    }
+  }
+
+  protected async processDependentSteps(stepName: string) {
+    const dependentSteps = this.steps.filter((step) => step.before && step.before.includes(stepName));
+    for (const step of dependentSteps) {
+      if (!step.on || (await step.on())) {
+        await this.executeStep(step);
+        await this.processDependentSteps(step.name);
+      }
+    }
   }
 
   // @ts-ignore
@@ -393,33 +250,6 @@ export abstract class Workflow extends EventEmitter {
     });
   }
 
-  protected async executeStep(step: { name: string; method: string }) {
-    const stepMethod = (this as any)[step.method].bind(this);
-    if (typeof stepMethod === 'function') {
-      await stepMethod();
-    }
-  }
-
-  protected async executeSteps() {
-    const stepsToExecute = this.steps.filter((step) => !step.before);
-    for (const step of stepsToExecute) {
-      if (!step.on || (await step.on())) {
-        await this.executeStep(step);
-        await this.processDependentSteps(step.name);
-      }
-    }
-  }
-
-  protected async processDependentSteps(stepName: string) {
-    const dependentSteps = this.steps.filter((step) => step.before && step.before.includes(stepName));
-    for (const step of dependentSteps) {
-      if (!step.on || (await step.on())) {
-        await this.executeStep(step);
-        await this.processDependentSteps(step.name);
-      }
-    }
-  }
-
   protected async handleMaxIterations(): Promise<void> {
     const continueAsNewMethod = (this as any)._continueAsNewMethod;
 
@@ -462,6 +292,38 @@ export abstract class Workflow extends EventEmitter {
     for (const listener of listeners) {
       await listener(...args);
     }
+  }
+
+  protected async signal(signalName: string, ...args: unknown[]): Promise<void> {
+    await this.tracer.startActiveSpan(`Workflow:signal.${signalName}`, async (span) => {
+      try {
+        if (typeof this.signalHandlers[signalName] === 'function') {
+          // @ts-ignore
+          await this.signalHandlers[signalName](...args);
+          await this.emitAsync(`signal:${signalName}`, ...args);
+        }
+      } catch (error: any) {
+        span.recordException(error);
+      } finally {
+        span.end();
+      }
+    });
+  }
+
+  protected async query(queryName: string, ...args: unknown[]): Promise<any> {
+    return await this.tracer.startActiveSpan(`Workflow:query.${queryName}`, async (span) => {
+      let result: any;
+      try {
+        if (typeof this.queryHandlers[queryName] === 'function') {
+          result = await this.queryHandlers[queryName](...args);
+        }
+      } catch (error: any) {
+        span.recordException(error);
+      } finally {
+        span.end();
+      }
+      return result;
+    });
   }
 
   protected async forwardSignalToChildren(signalName: string, ...args: unknown[]): Promise<void> {
@@ -619,8 +481,4 @@ export abstract class Workflow extends EventEmitter {
     });
     this._signalsBound = true;
   }
-}
-
-function capitalize(str: string): string {
-  return str.charAt(0).toUpperCase() + str.slice(1);
 }
