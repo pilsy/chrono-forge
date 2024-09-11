@@ -7,7 +7,7 @@ import { log } from '@temporalio/workflow';
 import EventEmitter from 'eventemitter3';
 import { get } from 'dottie';
 import { registry } from '../WorkflowRegistry';
-import * from '../decorators';
+import { Property, Signal, Query, On } from '../decorators';
 
 /**
  * `Workflow` Class
