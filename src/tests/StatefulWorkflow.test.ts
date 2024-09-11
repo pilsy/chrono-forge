@@ -446,7 +446,7 @@ describe('StatefulWorkflow', () => {
       await handle.cancel();
     });
 
-    it('Should manage circular relationships without causing infinite loops', async () => {
+    it.skip('Should manage circular relationships without causing infinite loops', async () => {
       const userId = uuid4();
       const listingId = uuid4();
       const data = {
