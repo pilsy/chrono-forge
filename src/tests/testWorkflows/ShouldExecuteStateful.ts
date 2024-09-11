@@ -1,8 +1,9 @@
-import { ChronoFlow, On } from '../../workflows';
+import { ChronoFlow } from '../../workflows';
 import { ManagedPaths, StatefulWorkflow } from '../../workflows/StatefulWorkflow';
 import { User } from '../testSchemas';
 import { trace } from '@opentelemetry/api';
 import { condition } from '@temporalio/workflow';
+import { On } from '../../decorators';
 
 @ChronoFlow({
   schema: User

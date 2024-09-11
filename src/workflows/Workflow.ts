@@ -262,25 +262,81 @@ export abstract class Workflow extends EventEmitter {
 
   protected async handleExecutionError(err: any, reject: (err: Error) => void): Promise<void> {
     this.log.debug(`[Workflow]:${this.constructor.name}:handleExecutionError`);
-    this.log.error(`${err?.message}: ${err?.stack}`);
-    if (workflow.isCancellation(err)) {
-      await workflow.CancellationScope.nonCancellable(async () => {
-        for (const handle of Object.values(this.handles)) {
-          try {
-            this.log.debug(`[Workflow]:${this.constructor.name}:handleExecutionError:child.cancel`);
-            if ('cancel' in handle && typeof (handle as workflow.ExternalWorkflowHandle).cancel === 'function') {
-              this.log.debug(`Cancelling child workflow...`);
-              await (handle as workflow.ExternalWorkflowHandle).cancel();
+    this.log.error(`Error encountered: ${err?.message}: ${err?.stack}`);
+
+    // Start an OpenTelemetry span for handling the error
+    await this.tracer.startActiveSpan(`[Workflow]:${this.constructor.name}:handleExecutionError`, async (span) => {
+      try {
+        if (workflow.isCancellation(err)) {
+          // Handle cancellation error in a non-cancellable scope
+          await workflow.CancellationScope.nonCancellable(async () => {
+            const cancellationPromises: Promise<void>[] = [];
+            const cancellationTimeoutMs = 5000; // Timeout for each child cancellation in milliseconds
+
+            for (const handle of Object.values(this.handles)) {
+              try {
+                if ('cancel' in handle && typeof (handle as workflow.ExternalWorkflowHandle).cancel === 'function') {
+                  this.log.debug(`Sending cancel request to child workflow...`);
+
+                  // Add the child cancellation to the list of promises with a timeout
+                  cancellationPromises.push(this.cancelChildWorkflowWithTimeout(handle, cancellationTimeoutMs));
+                }
+              } catch (childCancelError: any) {
+                this.log.error(`Error sending cancel request to child workflow: ${childCancelError?.message ?? childCancelError}`);
+              }
             }
-          } catch (error: any) {
-            this.log.error(`${error?.message ?? error}`);
-          }
+
+            // Wait for all cancellation attempts to complete, respecting the timeout
+            await Promise.all(cancellationPromises);
+            this.log.info(`All child workflow cancellation requests have been processed.`);
+          });
+          span.setStatus({ code: SpanStatusCode.OK, message: 'Cancellation handled successfully' });
+          reject(err);
+        } else {
+          // Handle non-cancellation errors
+          this.log.warn(`Handling non-cancellation error: ${err?.message}`);
+          span.recordException(err);
+          span.setStatus({ code: SpanStatusCode.ERROR, message: err?.message });
+
+          reject(err);
         }
-        reject(err);
-      });
-    } else {
-      reject(err);
-    }
+      } catch (spanError: any) {
+        this.log.error(`Error during error handling span: ${spanError?.message}`);
+        span.recordException(spanError);
+        span.setStatus({ code: SpanStatusCode.ERROR, message: spanError?.message });
+        reject(spanError);
+      } finally {
+        span.end();
+      }
+    });
+  }
+
+  /**
+   * Attempts to cancel a child workflow with a timeout.
+   * @param handle - The child workflow handle.
+   * @param timeoutMs - Timeout in milliseconds for the cancellation attempt.
+   */
+  private async cancelChildWorkflowWithTimeout(
+    handle: workflow.ExternalWorkflowHandle | workflow.ChildWorkflowHandle<any>,
+    timeoutMs: number
+  ): Promise<void> {
+    return new Promise(async (resolve) => {
+      try {
+        // Create a timeout promise that rejects if cancellation takes too long
+        const timeoutPromise = new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error(`Timeout waiting for child workflow cancellation.`)), timeoutMs)
+        );
+
+        // Attempt to cancel the child workflow
+        await Promise.race([(handle as workflow.ExternalWorkflowHandle).cancel(), timeoutPromise]);
+
+        this.log.info(`Child workflow cancelled successfully.`);
+      } catch (error: any) {
+        this.log.error(`Failed to cancel child workflow within timeout: ${error?.message}`);
+      } finally {
+        resolve(); // Always resolve to continue processing
+      }
+    });
   }
 
   protected isInTerminalState(): boolean {

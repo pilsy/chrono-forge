@@ -1,4 +1,5 @@
-import { ChronoFlow, Workflow, After } from '../../workflows';
+import { ChronoFlow, Workflow } from '../../workflows';
+import { After } from '../../decorators';
 
 @ChronoFlow()
 export class ShouldApplyAfterHooksCorrectly extends Workflow {

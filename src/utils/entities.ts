@@ -114,8 +114,34 @@ export const normalizeEntities = <T>(data: T | T[], entitySchema: Schema | strin
   return entities;
 };
 
-// Internal Helpers
-const handleUpdateEntities = (state: EntitiesState, entities: Record<string, any>, strategy = '$merge') => {
+// Helpers
+export const createUpdateStatement = (state: EntitiesState, normalizedEntities: EntitiesState): Spec<EntitiesState> => {
+  const updateStatement: Spec<EntitiesState> = {};
+
+  for (const entityName in normalizedEntities) {
+    if (!state[entityName]) {
+      updateStatement[entityName] = {
+        $set: normalizedEntities[entityName]
+      };
+    } else {
+      updateStatement[entityName] = {};
+      for (const entityId in normalizedEntities[entityName]) {
+        if (state[entityName][entityId]) {
+          updateStatement[entityName][entityId] = {
+            $merge: normalizedEntities[entityName][entityId]
+          };
+        } else {
+          updateStatement[entityName][entityId] = {
+            $set: normalizedEntities[entityName][entityId]
+          };
+        }
+      }
+    }
+  }
+
+  return updateStatement;
+};
+export const handleUpdateEntities = (state: EntitiesState, entities: Record<string, any>, strategy = '$merge') => {
   const updateStatement: Record<string, any> = {};
 
   for (const entityName of Object.keys(entities)) {
@@ -134,7 +160,7 @@ const handleUpdateEntities = (state: EntitiesState, entities: Record<string, any
   }
   return updateStatement;
 };
-const handleDeleteEntities = (state: EntitiesState, entities: Record<string, any>) => {
+export const handleDeleteEntities = (state: EntitiesState, entities: Record<string, any>) => {
   const deleteStatement: Record<string, any> = {};
   for (const entityName of Object.keys(entities)) {
     deleteStatement[entityName] = {

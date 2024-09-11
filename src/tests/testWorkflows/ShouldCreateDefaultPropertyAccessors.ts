@@ -1,4 +1,5 @@
-import { Workflow, ChronoFlow, Property, Signal, Query } from '../../workflows';
+import { Workflow, ChronoFlow } from '../../workflows';
+import { Property } from '../../decorators';
 
 @ChronoFlow()
 export class ShouldCreateDefaultPropertyAccessors extends Workflow {

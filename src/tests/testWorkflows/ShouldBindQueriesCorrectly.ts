@@ -1,5 +1,6 @@
 import { sleep } from '@temporalio/workflow';
-import { ChronoFlow, Workflow, Query } from '../../workflows';
+import { ChronoFlow, Workflow } from '../../workflows';
+import { Query } from '../../decorators';
 
 @ChronoFlow()
 export class ShouldBindQueriesCorrectly extends Workflow {

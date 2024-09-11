@@ -17,7 +17,8 @@ import isEmpty from 'lodash.isempty';
 import isEqual from 'lodash.isequal';
 import isObject from 'lodash.isobject';
 import { startChildPayload } from '../utils/startChildPayload';
-import { Workflow, Signal, Query, Hook, Before, After, Property, Condition, Step, ContinueAsNew, ChronoFlowOptions } from './Workflow';
+import { Workflow, ChronoFlowOptions } from './Workflow';
+import { Signal, Query, Hook, Before, After, Property, Condition, Step, ContinueAsNew } from '../decorators';
 import { SchemaManager } from '../SchemaManager';
 import { limitRecursion } from '../utils/limitRecursion';
 
@@ -340,7 +341,7 @@ export abstract class StatefulWorkflow extends Workflow {
         await this.emit('updated', updated, newState, previousState);
       } else if (deleted) {
         if (!(await this.emit('deleted', deleted, newState, previousState))) {
-          return await this.cancel();
+          throw new workflow.CancelledFailure(`Workflow cancelled due to entity ${this.entityName}:${this.id} was deleted...`);
         }
       }
 

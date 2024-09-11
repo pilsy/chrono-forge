@@ -1,4 +1,5 @@
-import { Workflow, ChronoFlow, Property } from '../../workflows';
+import { Workflow, ChronoFlow } from '../../workflows';
+import { Property } from '../../decorators';
 
 @ChronoFlow()
 export class ShouldDisableSetForProperty extends Workflow {
