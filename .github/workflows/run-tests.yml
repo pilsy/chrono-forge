@@ -1,6 +1,7 @@
 name: Run Tests on Push to Master
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - master
