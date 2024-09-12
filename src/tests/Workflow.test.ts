@@ -96,8 +96,10 @@ describe('Workflow', () => {
   });
 
   afterAll(async () => {
-    await shutdown();
     await exporter.forceFlush();
+    await shutdown();
+    workflowCoverage.mergeIntoGlobalCoverage();
+    jest.clearAllTimers();
   }, 30000);
 
   describe('SignalWithStart', () => {

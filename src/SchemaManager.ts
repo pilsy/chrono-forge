@@ -66,7 +66,7 @@ export class SchemaManager extends EventEmitter {
   /**
    * Private constructor to enforce singleton pattern.
    */
-  private constructor(protected workflowId?: string) {
+  private constructor(protected workflowId: string = '__ACTIVITY_CONTEXT__') {
     super();
   }
 
