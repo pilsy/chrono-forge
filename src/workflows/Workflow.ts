@@ -291,7 +291,7 @@ export abstract class Workflow extends EventEmitter {
             this.log.info(`All child workflow cancellation requests have been processed.`);
           });
           span.setStatus({ code: SpanStatusCode.OK, message: 'Cancellation handled successfully' });
-          reject(err);
+          throw err;
         } else {
           // Handle non-cancellation errors
           this.log.warn(`Handling non-cancellation error: ${err?.message}`);
@@ -301,6 +301,9 @@ export abstract class Workflow extends EventEmitter {
           reject(err);
         }
       } catch (spanError: any) {
+        if (workflow.isCancellation(spanError)) {
+          throw spanError;
+        }
         this.log.error(`Error during error handling span: ${spanError?.message}`);
         span.recordException(spanError);
         span.setStatus({ code: SpanStatusCode.ERROR, message: spanError?.message });

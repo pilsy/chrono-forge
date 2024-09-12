@@ -15,19 +15,34 @@ export type DSLDefinition = {
   plan: DSLStatement;
 };
 
-export type DSLStatement = { when?: (dsl: DSLDefinition) => Promise<boolean>; until?: (dsl: DSLDefinition) => Promise<boolean> } & (
-  | { execute: Execute }
-  | { sequence: Sequence }
-  | { parallel: Parallel }
-  | { loop: Loop }
-);
+export type DSLStatement = {
+  when?: (dsl: DSLDefinition) => Promise<boolean>;
+  until?: (dsl: DSLDefinition) => Promise<boolean>;
+} & ({ execute: Execute } | { sequence: Sequence } | { parallel: Parallel } | { loop: Loop });
+export type ExecutionType = 'activity' | 'workflow' | 'dynamic' | 'graph';
 
 export type Sequence = { elements: DSLStatement[] };
 export type Parallel = { branches: DSLStatement[] };
-export type Execute = { name: string; taskQueue?: string; needs?: string[]; provides?: string[]; result?: string };
+export type Execute = {
+  type: ExecutionType;
+  name: string;
+  handler?: string;
+  taskQueue?: string;
+  needs?: string[];
+  provides?: string[];
+  result?: string;
+};
 export type Loop = { condition: string; body: DSLStatement[] };
 
-// Main Dynamic Execution Engine using StatefulWorkflow
+export type ExecutionType = 'activity' | 'workflow' | 'dynamic' | 'graph';
+
+// Decorator for Step Management
+function Step(executionType: ExecutionType, name: string, taskQueue?: string) {
+  return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+    target[propertyKey].metadata = { executionType, name, taskQueue };
+  };
+}
+
 class DynamicExecutionEngine extends StatefulWorkflow {
   private dsl: DSLDefinition;
   private bindings: Record<string, any> = {};
@@ -42,26 +57,21 @@ class DynamicExecutionEngine extends StatefulWorkflow {
   }
 
   initialize() {
-    // Initialize state and bindings
     Object.keys(this.dsl.state).forEach((key) => {
       this.bindings[key] = this.evaluateVariable(this.dsl.state[key]);
     });
 
-    // Dynamically create query and signal handlers for provided paths
     this.setupDynamicQueriesAndSignals();
 
-    // Setup event-driven execution model for signals and queries
     this.on('signal', async (signalName, args) => {
       await this.handleSignal(signalName, args);
     });
-
     this.on('query', async (queryName, args, resolve) => {
       await this.handleQuery(queryName, args, resolve);
     });
   }
 
   setupDynamicQueriesAndSignals() {
-    // Go through each statement and set up queries/signals for each 'provides'
     const setup = (statement: DSLStatement) => {
       if ('execute' in statement) {
         const { provides = [] } = statement.execute;
@@ -69,19 +79,15 @@ class DynamicExecutionEngine extends StatefulWorkflow {
           const queryName = `query_${path}`;
           const signalName = `signal_${path}`;
 
-          // Setup Query handler to get value from state at 'path'
           this.queryHandlers[queryName] = () => dottie.get(this.bindings, path);
-
-          // Setup Signal handler to set value in state at 'path'
           this.signalHandlers[signalName] = async (newValue: any) => {
             dottie.set(this.bindings, path, newValue);
           };
 
-          // Register Query and Signal with Temporal workflow
           workflow.setHandler(workflow.defineQuery(queryName), this.queryHandlers[queryName]);
           workflow.setHandler(workflow.defineSignal(signalName), async (...args: any[]) => {
             await this.signalHandlers[signalName](...(args as []));
-            this.emit(signalName, ...args); // Emit event for further handling if needed
+            this.emit(signalName, ...args);
           });
         });
       } else if ('sequence' in statement) {
@@ -89,14 +95,14 @@ class DynamicExecutionEngine extends StatefulWorkflow {
       } else if ('parallel' in statement) {
         statement.parallel.branches.forEach(setup);
       } else if ('loop' in statement) {
-        setup(statement.loop.body as any); // Assuming loop.body is a single statement for simplicity
+        statement.loop.body.forEach(setup);
       }
     };
 
-    // Initiate setup for the entire DSL plan
     setup(this.dsl.plan);
   }
 
+  @Step('activity', 'activityName', 'default')
   async handleSignal(signalName: string, args: any[]) {
     if (this.signalsQueue.some((signal) => signal === signalName)) return;
     this.signalsQueue.push(signalName);
@@ -105,6 +111,7 @@ class DynamicExecutionEngine extends StatefulWorkflow {
     }
   }
 
+  @Step('activity', 'queryName', 'default')
   async handleQuery(queryName: string, args: any[], resolve: Function) {
     if (this.queriesQueue.some((query) => query.queryName === queryName)) return;
     this.queriesQueue.push({ queryName, args, resolve });
@@ -132,15 +139,14 @@ class DynamicExecutionEngine extends StatefulWorkflow {
 
   async executeSignalHandler(signalName: string) {
     console.log(`Processing signal: ${signalName}`);
-    // Implement additional signal handling logic as needed
   }
 
   async executeQueryHandler(queryName: string, args: any[]): Promise<any> {
     console.log(`Processing query: ${queryName}`);
-    // Implement additional query handling logic as needed
-    return {}; // Return result based on query logic
+    return {};
   }
 
+  @Step('workflow', 'WorkflowName', 'workflow-task-queue')
   async execute(statement: DSLStatement, bindings: Record<string, any>): Promise<void> {
     if (statement.when && !(await statement.when(this.dsl))) return;
     if (statement.until && (await statement.until(this.dsl))) return;
@@ -154,23 +160,29 @@ class DynamicExecutionEngine extends StatefulWorkflow {
     } else if ('loop' in statement) {
       const conditionFn = new Function('bindings', `return ${statement.loop.condition}`);
       while (conditionFn(bindings)) {
-        await this.execute(statement.loop.body, bindings);
+        for (const el of statement.loop.body) {
+          await this.execute(el, bindings);
+        }
       }
     } else if ('execute' in statement) {
-      const { name, taskQueue, needs = [], provides = [], result } = statement.execute;
-
-      // Use 'dottie' to resolve 'needs' paths from bindings
+      const { type, name, taskQueue, needs = [], provides = [], result } = statement.execute;
       const resolvedArgs = needs.map((path) => dottie.get(bindings, path));
-      console.log(`Executing activity: ${name} on task queue: ${taskQueue || 'default'} with args: ${resolvedArgs}`);
+      console.log(`Executing ${type}: ${name} on task queue: ${taskQueue || 'default'} with args: ${resolvedArgs}`);
 
-      const activityResult = await this.invokeActivityOnTaskQueue(name, resolvedArgs, taskQueue);
+      let activityResult;
+      if (type === 'activity') {
+        activityResult = await this.invokeActivityOnTaskQueue(name, resolvedArgs, taskQueue);
+      } else if (type === 'workflow') {
+        activityResult = await this.invokeChildWorkflow(name, resolvedArgs, taskQueue);
+      } else if (type === 'dynamic') {
+        const dynamicFunction = new Function('bindings', ...needs, 'return ' + name);
+        activityResult = dynamicFunction(this.bindings, ...resolvedArgs);
+      }
 
-      // Use 'dottie' to set 'provides' paths in bindings
       provides.forEach((path, index) => {
         dottie.set(bindings, path, activityResult[index]);
       });
 
-      // Optionally store the last activity's result in 'result'
       if (result) {
         bindings[result] = activityResult;
       }
@@ -186,6 +198,12 @@ class DynamicExecutionEngine extends StatefulWorkflow {
     });
 
     return await activityProxy[activityName](...args);
+  }
+  // Replace with actual workflow invocation code
+  async invokeChildWorkflow(workflowName: string, args: any[], taskQueue?: string): Promise<any> {
+    console.log(`Invoking child workflow: ${workflowName} on task queue: ${taskQueue || 'default'}`);
+
+    return {};
   }
 
   async runExecutionLoop() {
@@ -206,8 +224,7 @@ class DynamicExecutionEngine extends StatefulWorkflow {
   }
 
   private evaluateVariable(expression: string): any {
-    // Logic to evaluate initial state variables or expressions
-    return expression;
+    return expression; // Logic to evaluate initial state variables or expressions
   }
 }
 
@@ -218,9 +235,23 @@ const dslDocument: DSLDefinition = {
     sequence: {
       elements: [
         {
-          execute: { name: 'generateMealPlan', needs: ['user.preferences.mealType'], provides: ['meals.generated'], taskQueue: 'task-queue-1' }
+          execute: {
+            type: 'activity',
+            name: 'generateMealPlan',
+            needs: ['user.preferences.mealType'],
+            provides: ['meals.generated'],
+            taskQueue: 'task-queue-1'
+          }
         },
-        { execute: { name: 'sendNotification', needs: ['meals.generated'], provides: ['notifications.sent'], taskQueue: 'task-queue-2' } }
+        {
+          execute: {
+            type: 'activity',
+            name: 'sendNotification',
+            needs: ['meals.generated'],
+            provides: ['notifications.sent'],
+            taskQueue: 'task-queue-2'
+          }
+        }
       ]
     }
   }

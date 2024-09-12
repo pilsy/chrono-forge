@@ -30,17 +30,16 @@ let contextManager: AsyncHooksContextManager;
 let loggerProvider: LoggerProvider;
 let resource: Resource;
 
-export const tracers = new Map<
-  string,
-  {
-    tracer: Tracer;
-    resource: Resource;
-    provider: NodeTracerProvider;
-    exporter: OTLPTraceExporter;
-  }
->();
+export type TracerDefinition = {
+  tracer: Tracer;
+  resource: Resource;
+  provider: NodeTracerProvider;
+  exporter: OTLPTraceExporter;
+};
 
-export function initTracer(serviceName: string, environmentName: string, url: string, prometheusPort?: number) {
+export const tracers = new Map<string, TracerDefinition>();
+
+export function initTracer(serviceName: string, environmentName: string, url: string, prometheusPort?: number): TracerDefinition {
   if (!contextManager) {
     contextManager = new AsyncHooksContextManager().enable();
     api.context.setGlobalContextManager(contextManager);

@@ -277,13 +277,13 @@ export abstract class StatefulWorkflow extends Workflow {
     this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:subscribe`);
     const { workflowId, subscriptionId } = subscription;
 
-    if (this.ancestorWorkflowIds.includes(workflowId)) {
-      this.log.warn(
-        `[${this.constructor.name}]:${this.entityName}:${this.id} Circular subscription detected for workflowId: ${workflowId}. Skipping subscription.`
-      );
-      this.log.warn(this.ancestorWorkflowIds.join(',\n  '));
-      return;
-    }
+    // if (this.ancestorWorkflowIds.includes(workflowId)) {
+    //   this.log.warn(
+    //     `[${this.constructor.name}]:${this.entityName}:${this.id} Circular subscription detected for workflowId: ${workflowId}. Skipping subscription.`
+    //   );
+    //   this.log.warn(this.ancestorWorkflowIds.join(',\n  '));
+    //   return;
+    // }
 
     if (!this.subscriptions.find((sub) => sub.workflowId === workflowId && sub.subscriptionId === subscriptionId)) {
       this.subscriptions.push(subscription);
@@ -415,10 +415,10 @@ export abstract class StatefulWorkflow extends Workflow {
   ): boolean {
     this.log.debug(`[StatefulWorkflow]: Checking if we should propagate update for selector: ${selector}`);
 
-    if (sourceWorkflowId && ancestorWorkflowIds.includes(sourceWorkflowId)) {
-      this.log.debug(`Skipping propagation for selector ${selector} because source workflow ${sourceWorkflowId} is an ancestor.`);
-      return false;
-    }
+    // if (sourceWorkflowId && ancestorWorkflowIds.includes(sourceWorkflowId)) {
+    //   this.log.debug(`Skipping propagation for selector ${selector} because source workflow ${sourceWorkflowId} is an ancestor.`);
+    //   return false;
+    // }
 
     // Use RegExp to handle wildcard selectors
     const selectorRegex = new RegExp('^' + selector.replace(/\*/g, '.*') + '$');
@@ -435,10 +435,10 @@ export abstract class StatefulWorkflow extends Workflow {
         }
 
         // Check for ancestor workflow paths to prevent redundant loops
-        if (sourceWorkflowId && ancestorWorkflowIds.includes(sourceWorkflowId)) {
-          this.log.debug(`Skipping propagation for selector ${selector} because source workflow ${sourceWorkflowId} is an ancestor.`);
-          return false;
-        }
+        // if (sourceWorkflowId && ancestorWorkflowIds.includes(sourceWorkflowId)) {
+        //   this.log.debug(`Skipping propagation for selector ${selector} because source workflow ${sourceWorkflowId} is an ancestor.`);
+        //   return false;
+        // }
 
         // Otherwise, check if there are any differences in this path
         const diffPath = key.replace(/\./g, '.');
@@ -613,8 +613,9 @@ export abstract class StatefulWorkflow extends Workflow {
               {
                 workflowId: workflow.workflowInfo().workflowId,
                 signalName: 'update',
-                selector: '*'
-                // ancestorWorkflowIds: [...this.ancestorWorkflowIds, workflow.workflowInfo().workflowId]
+                selector: `${config.entityName}.${compositeId}.*`,
+                parent: workflow.workflowInfo().workflowId
+                ancestorWorkflowIds: [...this.ancestorWorkflowIds]
               }
             ],
             apiToken: this.apiToken,
@@ -629,7 +630,11 @@ export abstract class StatefulWorkflow extends Workflow {
       this.handles[workflowId]
         .result()
         .then((result) => this.emit(`childResult:${workflowType}`, result))
-        .catch((err) => this.emit(`childError:${workflowType}`, err));
+        .catch((err) => {
+          // should this be done here?
+          delete this.handles[workflowId];
+          this.emit(`childError:${workflowType}`, err);
+        });
     } catch (err) {
       if (err instanceof Error) {
         this.log.error(`[${this.constructor.name}] Failed to start new child workflow: ${err.message}\n${err.stack}`);
