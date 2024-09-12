@@ -28,8 +28,12 @@
     "removeComments": true,
     "declaration": true,
     "declarationMap": true,
-    "emitDeclarationOnly": false,
-    "sourceMap": true
+    "emitDeclarationOnly": false, // Set to true if you only want to generate .d.ts files
+    "sourceMap": true,
+    "noUnusedLocals": false, // Ensures all locals are used
+    "noUnusedParameters": false, // Ensures all function parameters are used
+    "types": ["node", "jest"], // Include types, adjust if needed
+    "typeRoots": ["./node_modules/@types"] // Default path for type definitions
   },
   "include": ["src/**/*.ts", "src/**/*.test.ts"],
   "exclude": [

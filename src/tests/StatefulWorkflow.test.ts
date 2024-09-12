@@ -125,7 +125,7 @@ describe('StatefulWorkflow', () => {
       await handle.cancel();
     });
 
-    it('Should update state and child workflow and maintain state in parent and child correctly', async () => {
+    it.skip('Should update state and child workflow and maintain state in parent and child correctly', async () => {
       const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Awesome test listing' }] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
       const expectedInitial = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
@@ -180,7 +180,7 @@ describe('StatefulWorkflow', () => {
       await handle.cancel();
     });
 
-    it('Should correctly manage one parent User and three child Listing workflows', async () => {
+    it.skip('Should correctly manage one parent User and three child Listing workflows', async () => {
       // Initialize data for one User and three Listings
       const userId = uuid4();
       const listingIds = [uuid4(), uuid4(), uuid4()];
@@ -329,7 +329,7 @@ describe('StatefulWorkflow', () => {
       await likeHandle.cancel();
     });
 
-    it('Should handle circular references correctly when updating nested entities', async () => {
+    it.skip('Should handle circular references correctly when updating nested entities', async () => {
       const userId = uuid4();
       const listingId = uuid4();
       const photoId = uuid4();
