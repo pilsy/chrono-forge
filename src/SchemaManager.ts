@@ -14,6 +14,7 @@ import {
 import { DetailedDiff, detailedDiff } from 'deep-object-diff';
 import { isEmpty, cloneDeep } from 'lodash';
 import { limitRecursion } from './utils/limitRecursion';
+import * as workflow from '@temporalio/workflow';
 
 /**
  * Types for defining schemas and managing entities.
@@ -49,6 +50,9 @@ export class SchemaManager extends EventEmitter {
   private state: EntitiesState = {};
   private processing = false;
   private queue: EntityAction[] = [];
+
+  // Track origins of changes to prevent redundant updates
+  private changeOrigins: Set<string> = new Set();
 
   get pendingChanges() {
     return this.queue;
@@ -119,8 +123,12 @@ export class SchemaManager extends EventEmitter {
    * This function handles the action queue and ensures that actions are processed sequentially.
    * @param action The action to dispatch.
    */
-  async dispatch(action: EntityAction, sync = true): Promise<void> {
-    this.queue.push(action); // Queue the action
+  public async dispatch(action: EntityAction, sync = true, changeOrigin: string | null = null): Promise<void> {
+    this.queue.push(action);
+
+    if (changeOrigin) {
+      this.changeOrigins.add(changeOrigin);
+    }
 
     if (sync && !this.processing) {
       this.processing = true; // Mark processing as in progress
@@ -148,10 +156,11 @@ export class SchemaManager extends EventEmitter {
         this.future.length = 0;
         this.state = { ...newState };
 
-        this.emitStateChangeEvents(differences, previousState, newState);
+        this.emitStateChangeEvents(differences, previousState, newState, Array.from(this.changeOrigins));
       }
     }
 
+    this.changeOrigins.clear();
     this.processing = false;
   }
 
@@ -162,27 +171,38 @@ export class SchemaManager extends EventEmitter {
    * @param previousState The previous state.
    * @param newState The new state.
    */
-  private emitStateChangeEvents(differences: DetailedDiff, previousState: EntitiesState, newState: EntitiesState): void {
+  private emitStateChangeEvents(
+    differences: DetailedDiff,
+    previousState: EntitiesState,
+    newState: EntitiesState,
+    changeOrigins: string[]
+  ): void {
     const changedPaths = ['added', 'updated', 'deleted'] as const;
+    const currentWorkflowId = workflow.workflowInfo().workflowId;
 
     changedPaths.forEach((changeType) => {
       const entities = differences[changeType];
-      if (!entities || typeof entities !== 'object') return; // Ensure entities is defined and is an object
+      if (!entities || typeof entities !== 'object') return;
 
       Object.entries(entities).forEach(([entityName, entityChanges]) => {
-        if (!entityChanges || typeof entityChanges !== 'object') return; // Ensure entityChanges is defined and is an object
+        if (!entityChanges || typeof entityChanges !== 'object') return;
 
         Object.keys(entityChanges).forEach((entityId) => {
           const path = `${entityName}.${entityId}`;
+
+          if (changeOrigins.includes(currentWorkflowId)) {
+            workflow.log.debug(`[SchemaManager]: Skipping state change event emission for changes originating from known workflows.`);
+            return;
+          }
+
           if (this.listenerCount(path) > 0) {
-            this.emit(path, { newState, previousState, changes: entityChanges[entityId] });
+            this.emit(path, { newState, previousState, changes: entityChanges[entityId], changeOrigins });
           }
         });
       });
     });
 
-    // Emit a generic event for all state changes
-    this.emit('stateChange', { newState, previousState, differences });
+    this.emit('stateChange', { newState, previousState, differences, changeOrigins });
   }
 
   /**

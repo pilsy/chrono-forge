@@ -80,6 +80,7 @@ export type PendingChange = {
   deletions?: Record<string, any>;
   entityName: string;
   strategy?: '$set' | '$merge';
+  changeOrigin?: string;
 };
 
 export abstract class StatefulWorkflow extends Workflow {
@@ -166,7 +167,6 @@ export abstract class StatefulWorkflow extends Workflow {
 
     this.id = this.params?.id;
     // this.state = (this.params?.state as EntitiesState) || {};
-    this.status = this.params?.status ?? 'init';
 
     if (this.params?.ancestorWorkflowIds) {
       this.ancestorWorkflowIds = this.params.ancestorWorkflowIds;
@@ -191,6 +191,8 @@ export abstract class StatefulWorkflow extends Workflow {
     if (this.params?.data && !isEmpty(this.params?.data)) {
       this.schemaManager.dispatch(updateNormalizedEntities(normalizeEntities(this.params.data, this.schema), '$merge'), false);
     }
+
+    this.status = this.params?.status ?? 'running';
   }
 
   protected async executeWorkflow(): Promise<any> {
@@ -244,7 +246,7 @@ export abstract class StatefulWorkflow extends Workflow {
   }
 
   @Signal()
-  public update({ data, updates, entityName, strategy = '$merge' }: PendingChange & { data?: Record<string, any> }): void {
+  public update({ data, updates, entityName, strategy = '$merge', changeOrigin }: PendingChange & { data?: Record<string, any> }): void {
     this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:update`);
 
     if (!isEmpty(data)) {
@@ -252,7 +254,7 @@ export abstract class StatefulWorkflow extends Workflow {
     }
     if (updates) {
       this.pendingUpdate = true;
-      this.schemaManager.dispatch(updateNormalizedEntities(updates, strategy), false);
+      this.schemaManager.dispatch(updateNormalizedEntities(updates, strategy), false, changeOrigin);
     }
   }
 
@@ -274,7 +276,10 @@ export abstract class StatefulWorkflow extends Workflow {
     const { workflowId, subscriptionId } = subscription;
 
     if (this.ancestorWorkflowIds.includes(workflowId)) {
-      this.log.warn(`[${this.constructor.name}] Circular subscription detected for workflowId: ${workflowId}. Skipping subscription.`);
+      this.log.warn(
+        `[${this.constructor.name}]:${this.entityName}:${this.id} Circular subscription detected for workflowId: ${workflowId}. Skipping subscription.`
+      );
+      this.log.warn(this.ancestorWorkflowIds.join(',\n  '));
       return;
     }
 
@@ -352,9 +357,6 @@ export abstract class StatefulWorkflow extends Workflow {
       }
 
       this.pendingUpdate = false;
-
-      // we need to only call this once, but directly after the very first time the stack changes are calculated...
-      this.emit('ready');
     }
   }
 
@@ -399,11 +401,6 @@ export abstract class StatefulWorkflow extends Workflow {
 
     // Send signal with the updated data to the workflow
     await this.handles[workflowId].signal(signalName, updatedData);
-  }
-
-  private isPathMatchingSelector(path: string, selector: string): boolean {
-    const regex = new RegExp(`^${selector.replace(/\*/g, '.*')}$`); // Convert wildcard to regex
-    return regex.test(path);
   }
 
   private shouldPropagateUpdate(
