@@ -4,7 +4,7 @@
 import { Span, Tracer, default as api } from '@opentelemetry/api';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
-import { W3CTraceContextPropagator } from '@opentelemetry/core';
+import { W3CTraceContextPropagator, W3CBaggagePropagator, CompositePropagator } from '@opentelemetry/core';
 import { MeterProvider } from '@opentelemetry/sdk-metrics';
 import { PrometheusExporter } from '@opentelemetry/exporter-prometheus';
 import { registerInstrumentations } from '@opentelemetry/instrumentation';
@@ -79,7 +79,12 @@ export function initTracer(serviceName: string, environmentName: string, url: st
     // }
 
     api.trace.setGlobalTracerProvider(provider);
-    api.propagation.setGlobalPropagator(new W3CTraceContextPropagator());
+    // Set the global propagator to handle both trace context and baggage
+    api.propagation.setGlobalPropagator(
+      new CompositePropagator({
+        propagators: [new W3CTraceContextPropagator(), new W3CBaggagePropagator()]
+      })
+    );
 
     registerInstrumentations({
       instrumentations: [
@@ -104,6 +109,11 @@ export function initTracer(serviceName: string, environmentName: string, url: st
         }),
         new WinstonInstrumentation({})
       ]
+    });
+
+    ['SIGINT', 'SIGTERM'].forEach((signal) => {
+      process.on(signal, () => provider.shutdown().catch(console.error));
+      process.on(signal, () => exporter.shutdown().catch(console.error));
     });
 
     tracers.set(serviceName, {
