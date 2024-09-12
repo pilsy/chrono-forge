@@ -84,7 +84,7 @@ export type PendingChange = {
 };
 
 export abstract class StatefulWorkflow extends Workflow {
-  private schemaManager = SchemaManager.getInstance(workflow.workflowInfo().workflowId);
+  private schemaManager: SchemaManager;
   private schema: Schema;
 
   protected async condition(): Promise<any> {
@@ -159,6 +159,8 @@ export abstract class StatefulWorkflow extends Workflow {
 
   constructor(args: any[], options: StatefulWorkflowOptions) {
     super(args, options);
+
+    this.schemaManager = SchemaManager.getInstance(workflow.workflowInfo().workflowId);
 
     this.params = args[0];
     this.options = options;

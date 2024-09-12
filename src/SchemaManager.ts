@@ -178,7 +178,6 @@ export class SchemaManager extends EventEmitter {
     changeOrigins: string[]
   ): void {
     const changedPaths = ['added', 'updated', 'deleted'] as const;
-    const currentWorkflowId = workflow.workflowInfo().workflowId;
 
     changedPaths.forEach((changeType) => {
       const entities = differences[changeType];
@@ -190,7 +189,7 @@ export class SchemaManager extends EventEmitter {
         Object.keys(entityChanges).forEach((entityId) => {
           const path = `${entityName}.${entityId}`;
 
-          if (changeOrigins.includes(currentWorkflowId)) {
+          if (changeOrigins.includes(this.workflowId)) {
             workflow.log.debug(`[SchemaManager]: Skipping state change event emission for changes originating from known workflows.`);
             return;
           }
