@@ -67,6 +67,8 @@ describe('StreamingChatActivity', () => {
     await worker?.shutdown();
     await exporter.forceFlush();
     workflowCoverage.mergeIntoGlobalCoverage();
+    await testEnv.cancel();
+    jest.clearAllTimers();
   }, 20000);
 
   async function runActivityWithMessage(messageSent: string, expectedMessage: string) {

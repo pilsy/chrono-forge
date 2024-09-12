@@ -21,12 +21,13 @@ import { Workflow, ChronoFlowOptions } from './Workflow';
 import { Signal, Query, Hook, Before, After, Property, Condition, Step, ContinueAsNew } from '../decorators';
 import { SchemaManager } from '../SchemaManager';
 import { limitRecursion } from '../utils/limitRecursion';
+import { getCompositeKey } from '../utils/getCompositeKey';
 
 export type ManagedPath = {
   entityName?: string;
   path?: string;
   workflowType?: string;
-  idAttribute?: string;
+  idAttribute?: string | string[];
   autoStartChildren?: boolean;
   cancellationType?: workflow.ChildWorkflowCancellationType;
   parentClosePolicy?: workflow.ParentClosePolicy;
@@ -525,7 +526,10 @@ export abstract class StatefulWorkflow extends Workflow {
     }
 
     for (const currentItem of currentItems) {
-      const itemId = currentItem[config.idAttribute as string];
+      const itemId = Array.isArray(config.idAttribute)
+        ? getCompositeKey(currentItem, config.idAttribute)
+        : currentItem[config.idAttribute as string];
+
       if (itemId && get(differences, `deleted.${config.entityName as string}.${itemId}`)) {
         await this.processDeletion(itemId, config);
       }
@@ -541,7 +545,8 @@ export abstract class StatefulWorkflow extends Workflow {
   ): Promise<void> {
     this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:processSingleItem`);
 
-    const itemId = item; // item is already the itemId
+    const itemId = Array.isArray(config.idAttribute) ? getCompositeKey(newState[config.entityName as string][item], config.idAttribute) : item; // just assign item if idAttribute is not an array
+
     const existingHandle = this.handles[`${config.entityName}-${itemId}`];
     const previousItem = get(previousState, `${config.entityName}.${itemId}`, {});
     const newItem = get(newState, `${config.entityName}.${itemId}`, {});
@@ -576,8 +581,9 @@ export abstract class StatefulWorkflow extends Workflow {
       }
 
       const entitySchema = SchemaManager.getInstance().getSchema(entityName as string);
-      const { [idAttribute as string]: id } = state;
-      const workflowId = `${entityName}-${id}`;
+      const { [idAttribute as string]: id, ...rest } = state;
+      const compositeId = Array.isArray(idAttribute) ? getCompositeKey(state, idAttribute) : id;
+      const workflowId = `${entityName}-${compositeId}`;
       const rawData = limitRecursion(denormalize(state, entitySchema, newState), entitySchema);
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {
@@ -656,7 +662,9 @@ export abstract class StatefulWorkflow extends Workflow {
 
       const entitySchema = SchemaManager.getInstance().getSchema(entityName as string);
       const { [idAttribute as string]: id } = state;
-      const workflowId = `${entityName}-${id}`;
+      const compositeId = Array.isArray(config.idAttribute) ? getCompositeKey(state, config.idAttribute) : state[config.idAttribute as string];
+      const workflowId = `${entityName}-${compositeId}`;
+
       const rawData = limitRecursion(denormalize(state, entitySchema, newState), entitySchema);
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {

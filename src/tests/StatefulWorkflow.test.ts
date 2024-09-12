@@ -16,9 +16,10 @@ import { OpenTelemetryActivityInboundInterceptor, makeWorkflowExporter } from '@
 import { normalizeEntities } from '../utils/entities';
 import { getExternalWorkflowHandle } from '@temporalio/workflow';
 import { cloneDeep } from 'lodash';
-import { get, set } from 'dottie';
+import dottie, { get, set } from 'dottie';
 import { getExporter, getResource, getTracer } from '../utils/instrumentation';
 import { Photo } from './testSchemas';
+import { getCompositeKey } from './../utils';
 
 const workflowCoverage = new WorkflowCoverage();
 const tracer = getTracer('temporal_worker');
@@ -123,6 +124,66 @@ describe('StatefulWorkflow', () => {
       const state = await handle.query('state');
       expect(state).toEqual(expectedInitial);
       await handle.cancel();
+    });
+
+    describe('getCompositeKey', () => {
+      it('should generate a composite key from single-level attributes', () => {
+        const entity = {
+          id: '123',
+          type: 'abc'
+        };
+        const idAttributes = ['id', 'type'];
+
+        const compositeKey = getCompositeKey(entity, idAttributes);
+        expect(compositeKey).toBe('123-abc');
+      });
+
+      it('should generate a composite key from nested attributes', () => {
+        const entity = {
+          user: {
+            id: '123',
+            type: 'abc'
+          }
+        };
+        const idAttributes = ['user.id', 'user.type'];
+
+        const compositeKey = getCompositeKey(entity, idAttributes);
+        expect(compositeKey).toBe('123-abc');
+      });
+
+      it('should generate a composite key from mixed attributes', () => {
+        const entity = {
+          id: '123',
+          details: {
+            type: 'abc'
+          }
+        };
+        const idAttributes = ['id', 'details.type'];
+
+        const compositeKey = getCompositeKey(entity, idAttributes);
+        expect(compositeKey).toBe('123-abc');
+      });
+
+      it('should handle missing attributes gracefully', () => {
+        const entity = {
+          id: '123'
+        };
+        const idAttributes = ['id', 'type'];
+
+        const compositeKey = getCompositeKey(entity, idAttributes);
+        expect(compositeKey).toBe('123-');
+      });
+
+      it('should handle empty idAttributes array', () => {
+        const entity = {
+          id: '123',
+          type: 'abc'
+        };
+        const idAttributes: string[] = [];
+
+        const compositeKey = getCompositeKey(entity, idAttributes);
+        expect(compositeKey).toBe('');
+      });
     });
 
     it.skip('Should update state and child workflow and maintain state in parent and child correctly', async () => {
