@@ -580,10 +580,11 @@ export abstract class StatefulWorkflow extends Workflow {
       }
 
       const entitySchema = SchemaManager.getInstance().getSchema(entityName as string);
-      const { [idAttribute as string]: id, ...rest } = state;
-      const compositeId = Array.isArray(idAttribute) ? getCompositeKey(state, idAttribute) : id;
-      const workflowId = `${entityName}-${compositeId}`;
       const rawData = limitRecursion(denormalize(state, entitySchema, newState), entitySchema);
+      const data = typeof config.processData === 'function' ? config.processData(rawData, this) : rawData;
+      const { [idAttribute as string]: id, ...rest } = state;
+      const compositeId = Array.isArray(idAttribute) ? getCompositeKey(data, idAttribute) : id;
+      const workflowId = `${entityName}-${compositeId}`;
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {
         this.log.warn(`[${this.constructor.name}] Circular dependency detected for workflowId: ${workflowId}. Skipping child workflow start.`);
@@ -598,7 +599,6 @@ export abstract class StatefulWorkflow extends Workflow {
         }
       }
 
-      const data = typeof config.processData === 'function' ? config.processData(rawData, this) : rawData;
       const startPayload = {
         workflowId,
         cancellationType,
@@ -660,11 +660,11 @@ export abstract class StatefulWorkflow extends Workflow {
       }
 
       const entitySchema = SchemaManager.getInstance().getSchema(entityName as string);
-      const { [idAttribute as string]: id } = state;
-      const compositeId = Array.isArray(config.idAttribute) ? getCompositeKey(state, config.idAttribute) : state[config.idAttribute as string];
-      const workflowId = `${entityName}-${compositeId}`;
-
       const rawData = limitRecursion(denormalize(state, entitySchema, newState), entitySchema);
+      const data = typeof config.processData === 'function' ? config.processData(rawData, this) : rawData;
+      const { [idAttribute as string]: id } = state;
+      const compositeId = Array.isArray(config.idAttribute) ? getCompositeKey(data, config.idAttribute) : state[config.idAttribute as string];
+      const workflowId = `${entityName}-${compositeId}`;
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {
         this.log.warn(`[${this.constructor.name}] Circular update detected for workflowId: ${workflowId}. Skipping child workflow update.`);
@@ -678,8 +678,6 @@ export abstract class StatefulWorkflow extends Workflow {
           return;
         }
       }
-
-      const data = typeof config.processData === 'function' ? config.processData(rawData, this) : rawData;
 
       await handle.signal('update', { data, entityName: config.entityName, strategy: '$merge' });
       this.emit(`childUpdated:${config.workflowType}`, handle.workflowId, data);
