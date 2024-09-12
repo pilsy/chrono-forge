@@ -39,9 +39,9 @@ export class SchemaManager extends EventEmitter {
    * Returns the singleton instance of SchemaManager.
    * @returns The SchemaManager instance.
    */
-  public static getInstance(): SchemaManager {
+  public static getInstance(workflowId?: string): SchemaManager {
     if (!this.instance) {
-      this.instance = new SchemaManager();
+      this.instance = new SchemaManager(workflowId);
     }
     return this.instance;
   }
@@ -66,7 +66,7 @@ export class SchemaManager extends EventEmitter {
   /**
    * Private constructor to enforce singleton pattern.
    */
-  private constructor() {
+  private constructor(protected workflowId?: string) {
     super();
   }
 
