@@ -52,21 +52,32 @@ export interface ChronoFlowOptions {
   [key: string]: any;
 }
 
+/**
+ * `ChronoFlow` Decorator
+ *
+ * Decorator to transform a class into a Temporal workflow function. This function dynamically creates and assigns
+ * named functions for each workflow class that extends the `Workflow` base class. This ensures that Temporal can
+ * register and invoke them by name while providing a clean class-based API for developers.
+ *
+ * @param options - Configuration options for the workflow.
+ */
 export function ChronoFlow(options?: ChronoFlowOptions) {
   return function (constructor: any) {
     const { name: optionalName, taskQueue, ...extraOptions } = options || {};
-    const workflowName = optionalName || constructor.name;
+    const workflowName = optionalName || constructor.name; // Determine workflow name
 
+    // Ensure the constructor is a subtype of Workflow, or wrap it in a dynamic class
     if (!(constructor.prototype instanceof Workflow)) {
       abstract class DynamicChronoFlow extends Workflow {
         constructor(params: any, options: ChronoFlowOptions = {}) {
           super(params, options);
-          Object.assign(this, new constructor(params, options));
+          Object.assign(this, new constructor(params, options)); // Assign properties from the original constructor
         }
       }
       constructor = DynamicChronoFlow;
     }
 
+    // Dynamically create a named function for the workflow using the Function constructor
     const construct = new Function(
       'workflow',
       'constructor',
@@ -76,22 +87,25 @@ export function ChronoFlow(options?: ChronoFlowOptions) {
       return async function ${workflowName}(...args) {
         return await new Promise((resolve, reject) => {
           tracer.startActiveSpan('[Workflow]:${workflowName}', async (span) => {
-            span.setAttributes({ workflowId: workflow.workflowInfo().workflowId, workflowType: workflow.workflowInfo().workflowType });
+            span.setAttributes({
+              workflowId: workflow.workflowInfo().workflowId,
+              workflowType: workflow.workflowInfo().workflowType
+            });
             try {
-              const instance = new constructor(args, extraOptions);
+              const instance = new constructor(args[0], extraOptions);
               await instance.bindEventHandlers();
               await instance.emitAsync('hooks');
               await instance.emitAsync('init');
-              if (!instance.continueAsNew) {
-                instance
-                  .execute(...args)
-                  .then(resolve)
-              } else {
-                instance
-                  .executeWorkflow(...args)
-                  .then(resolve)
-              }
-            } catch(e) {
+              
+              const executionMethod = instance.continueAsNew ? 'executeWorkflow' : 'execute';
+              
+              instance[executionMethod](...args)
+                .then(resolve)
+                .catch(err => {
+                  span.recordException(err);
+                  reject(err);
+                });
+            } catch (e) {
               span.recordException(e);
               reject(e);
             } finally {
@@ -110,7 +124,7 @@ export function ChronoFlow(options?: ChronoFlowOptions) {
   };
 }
 
-export abstract class Workflow extends EventEmitter {
+export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   private _hooksBound = false;
   private _eventsBound = false;
   private _signalsBound = false;
@@ -161,8 +175,8 @@ export abstract class Workflow extends EventEmitter {
   protected steps: { name: string; method: string; on?: () => boolean; before?: string | string[]; after?: string | string[] }[] = [];
 
   constructor(
-    protected args: any,
-    protected options: ChronoFlowOptions
+    protected args: P,
+    protected options: O
   ) {
     super();
     this.args = args;

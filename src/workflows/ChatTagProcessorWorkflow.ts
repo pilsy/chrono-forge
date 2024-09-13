@@ -5,9 +5,9 @@ export class ChatTagProcessorWorkflow extends Workflow {
   protected name: string;
   protected content: string;
 
-  constructor(args: any[], options: ChronoFlowOptions = {}) {
+  constructor(args: any, options: ChronoFlowOptions = {}) {
     super(args, options);
-    const { name, content } = args[0];
+    const { name, content } = args;
     this.name = name;
     this.content = content;
   }

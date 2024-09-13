@@ -25,7 +25,7 @@
     "noFallthroughCasesInSwitch": true,
     "verbatimModuleSyntax": false,
     "newLine": "lf",
-    "removeComments": true,
+    "removeComments": false,
     "declaration": true,
     "declarationMap": true,
     "emitDeclarationOnly": false, // Set to true if you only want to generate .d.ts files

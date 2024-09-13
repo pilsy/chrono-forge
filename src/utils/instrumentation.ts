@@ -139,6 +139,8 @@ export function initTracer(serviceName: string, environmentName: string, url: st
       process.on(signal, () => loggerProvider.shutdown().catch(console.error));
     });
   }
+
+  // @ts-ignore
   return tracers.get(serviceName);
 }
 

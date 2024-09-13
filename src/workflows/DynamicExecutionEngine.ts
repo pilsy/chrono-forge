@@ -199,10 +199,10 @@ class DynamicExecutionEngine extends StatefulWorkflow {
 
     return await activityProxy[activityName](...args);
   }
+
   // Replace with actual workflow invocation code
   async invokeChildWorkflow(workflowName: string, args: any[], taskQueue?: string): Promise<any> {
     console.log(`Invoking child workflow: ${workflowName} on task queue: ${taskQueue || 'default'}`);
-
     return {};
   }
 
@@ -215,7 +215,8 @@ class DynamicExecutionEngine extends StatefulWorkflow {
         await workflow.continueAsNew();
       }
 
-      await workflow.sleep('1m'); // Sleep to prevent tight loop execution
+      // Sleep to prevent tight loop execution
+      await workflow.sleep('1m');
     }
   }
 
@@ -223,8 +224,9 @@ class DynamicExecutionEngine extends StatefulWorkflow {
     return this.bindings['iteration'] >= 100;
   }
 
+  // Logic to evaluate initial state variables or expressions
   private evaluateVariable(expression: string): any {
-    return expression; // Logic to evaluate initial state variables or expressions
+    return expression;
   }
 }
 

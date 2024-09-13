@@ -39,7 +39,7 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
         setTimeout(() => {
           // console.log(this);
           resolve(params);
-        }, 1000);
+        }, 100);
       });
     });
   }

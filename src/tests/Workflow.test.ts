@@ -12,68 +12,11 @@ import * as workflows from './testWorkflows';
 import { makeWorkflowExporter, OpenTelemetryActivityInboundInterceptor } from '@temporalio/interceptors-opentelemetry/lib/worker';
 import { getExporter, getResource, getTracer } from '../utils/instrumentation';
 
-const sleep = async (duration = 2000) =>
-  new Promise((resolve) => {
-    setTimeout(async () => {
-      resolve();
-    }, duration);
-  });
-
-const workflowCoverage = new WorkflowCoverage();
-const tracer = getTracer('temporal_worker');
-const exporter = getExporter('temporal_worker');
-const resource = getResource('temporal_worker');
-
 describe('Workflow', () => {
-  let testEnv: TestWorkflowEnvironment;
-  let worker: Worker;
-  let client: WorkflowClient;
-  let nativeConnection;
-  let shutdown;
-  let getClient;
   let execute;
   let signalWithStart;
 
   jest.setTimeout(30000);
-
-  const mockActivities = {
-    makeHTTPRequest: async () => '99'
-  };
-
-  beforeAll(async () => {
-    // Runtime.install({
-    //   logger: new DefaultLogger('WARN', (entry: LogEntry) => console.log(`[${entry.level}]`, entry.message))
-    // });
-
-    testEnv = await TestWorkflowEnvironment.createLocal();
-    const { client: workflowClient, nativeConnection: nc } = testEnv;
-    client = workflowClient;
-    nativeConnection = nc;
-    worker = await Worker.create(
-      workflowCoverage.augmentWorkerOptions({
-        connection: nativeConnection,
-        taskQueue: 'test',
-        workflowsPath: path.resolve(__dirname, './testWorkflows'),
-        activities: mockActivities,
-        debugMode: true,
-        sinks: {
-          exporter: makeWorkflowExporter(exporter, resource)
-        },
-        interceptors: {
-          workflowModules: [require.resolve('./testWorkflows'), require.resolve('../workflows')],
-          activityInbound: [(ctx) => new OpenTelemetryActivityInboundInterceptor(ctx)]
-        }
-      })
-    );
-
-    const runPromise = worker.run();
-    shutdown = async () => {
-      worker.shutdown();
-      await runPromise;
-      await testEnv.teardown();
-    };
-    getClient = () => testEnv.client;
-  }, 20000);
 
   beforeEach(() => {
     const client = getClient();
@@ -94,13 +37,6 @@ describe('Workflow', () => {
         ...options
       });
   });
-
-  afterAll(async () => {
-    await exporter.forceFlush();
-    await shutdown();
-    workflowCoverage.mergeIntoGlobalCoverage();
-    jest.clearAllTimers();
-  }, 30000);
 
   describe('SignalWithStart', () => {
     it('Should call the execute() method with provided arguments', async () => {

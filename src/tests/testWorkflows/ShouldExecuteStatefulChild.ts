@@ -9,7 +9,7 @@ import { After } from '../../decorators';
   // schema: Listing
 })
 export class ShouldExecuteStatefulChild extends StatefulWorkflow {
-  protected maxIterations: number = 30;
+  protected maxIterations: number = 1000;
   protected managedPaths: ManagedPaths = {
     user: {
       autoStartChildren: false,
@@ -43,7 +43,7 @@ export class ShouldExecuteStatefulChild extends StatefulWorkflow {
       await trace.getTracer('temporal_worker').startActiveSpan('test', (span) => {
         setTimeout(() => {
           resolve(params);
-        }, 1000);
+        }, 100);
       });
     });
   }

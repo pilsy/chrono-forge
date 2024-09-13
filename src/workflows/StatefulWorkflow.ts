@@ -55,10 +55,10 @@ export type Entities = {
   [entityName: string]: Schema;
 };
 
-export type StatefulWorkflowParams = {
+export type StatefulWorkflowParams<D = {}> = {
   id: string;
   entityName: string;
-  data?: Record<string, any>;
+  data?: D;
   state?: EntitiesState;
   status: string;
   apiUrl?: string;
@@ -83,12 +83,15 @@ export type PendingChange = {
   changeOrigin?: string;
 };
 
-export abstract class StatefulWorkflow extends Workflow {
-  private schemaManager: SchemaManager;
-  private schema: Schema;
+export abstract class StatefulWorkflow<
+  P extends StatefulWorkflowParams = StatefulWorkflowParams,
+  O extends StatefulWorkflowOptions = StatefulWorkflowOptions
+> extends Workflow<P, O> {
+  protected schemaManager: SchemaManager;
+  protected schema: Schema;
 
   protected async condition(): Promise<any> {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:awaitCondition`);
+    this.log.debug(`[${this.constructor.name}]:${this.id}.awaitCondition`);
     return await workflow.condition(() => this.pendingUpdate || !!this.pendingChanges.length || this.status !== 'running', '1 day');
   }
 
@@ -108,7 +111,7 @@ export abstract class StatefulWorkflow extends Workflow {
 
   @Signal('apiToken')
   public setApiToken(apiToken: string): void {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:setApiToken`);
+    this.log.debug(`[${this.constructor.name}]:${this.id}.setApiToken`);
     if (apiToken && this.apiToken !== apiToken) {
       this.log.info(`Updating apiToken...`);
       this.apiToken = apiToken;
@@ -129,6 +132,11 @@ export abstract class StatefulWorkflow extends Workflow {
 
   set state(state: EntitiesState) {
     this.schemaManager.setState(state);
+  }
+
+  @Query()
+  public data() {
+    return this.schemaManager.query(this.entityName, this.id);
   }
 
   @Property()
@@ -152,17 +160,17 @@ export abstract class StatefulWorkflow extends Workflow {
   protected ancestorWorkflowIds: string[] = [];
 
   @Property({ set: false })
-  protected params: StatefulWorkflowParams;
+  protected params: P;
 
   @Property({ set: false })
-  protected options: StatefulWorkflowOptions;
+  protected options: O;
 
-  constructor(args: any[], options: StatefulWorkflowOptions) {
-    super(args, options);
+  constructor(params: P, options: O) {
+    super(params, options);
 
     this.schemaManager = SchemaManager.getInstance(workflow.workflowInfo().workflowId);
 
-    this.params = args[0];
+    this.params = params;
     this.options = options;
     this.entityName = (this.params?.entityName || options?.schemaName) as string;
     this.schema = this.entityName ? (this.schemaManager.getSchema(this.entityName) as schema.Entity) : (options.schema as schema.Entity);
@@ -198,13 +206,13 @@ export abstract class StatefulWorkflow extends Workflow {
   }
 
   protected async executeWorkflow(): Promise<any> {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:executeWorkflow`);
+    this.log.debug(`[${this.constructor.name}]:${this.id}.executeWorkflow`);
     return new Promise(async (resolve, reject) => {
       if (this.schema) this.configureManagedPaths(this.schema);
       try {
         while (this.iteration <= this.maxIterations) {
-          this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:executeWorkflow:execute`);
-          await this.tracer.startActiveSpan(`[StatefulWorkflow]:${this.constructor.name}:executeWorkflow:execute`, async (executeSpan) => {
+          this.log.debug(`[${this.constructor.name}]:${this.id}.executeWorkflow:execute`);
+          await this.tracer.startActiveSpan(`[${this.constructor.name}]:${this.id}.executeWorkflow:execute`, async (executeSpan) => {
             try {
               executeSpan.setAttributes({
                 workflowId: workflow.workflowInfo().workflowId,
@@ -249,7 +257,7 @@ export abstract class StatefulWorkflow extends Workflow {
 
   @Signal()
   public update({ data, updates, entityName, strategy = '$merge', changeOrigin }: PendingChange & { data?: Record<string, any> }): void {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:update`);
+    this.log.debug(`[${this.constructor.name}]:${this.id}.update(${JSON.stringify({ data, updates, entityName, changeOrigin }, null, 2)})`);
 
     if (!isEmpty(data)) {
       updates = normalizeEntities(data, entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName));
@@ -262,7 +270,7 @@ export abstract class StatefulWorkflow extends Workflow {
 
   @Signal()
   public delete({ data, deletions, entityName }: PendingChange & { data?: Record<string, any> }): void {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:delete`);
+    this.log.debug(`[${this.constructor.name}]:${this.id}.delete`);
     if (!isEmpty(data)) {
       deletions = normalizeEntities(data, entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName));
     }
@@ -274,12 +282,12 @@ export abstract class StatefulWorkflow extends Workflow {
 
   @Signal()
   public async subscribe(subscription: Subscription): Promise<void> {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:subscribe`);
+    this.log.debug(`[${this.constructor.name}]:${this.id}.subscribe`);
     const { workflowId, subscriptionId } = subscription;
 
     // if (this.ancestorWorkflowIds.includes(workflowId)) {
     //   this.log.warn(
-    //     `[${this.constructor.name}]:${this.entityName}:${this.id} Circular subscription detected for workflowId: ${workflowId}. Skipping subscription.`
+    //     `[${this.constructor.name}]:${this.id}:${this.entityName}:${this.id} Circular subscription detected for workflowId: ${workflowId}. Skipping subscription.`
     //   );
     //   this.log.warn(this.ancestorWorkflowIds.join(',\n  '));
     //   return;
@@ -293,7 +301,7 @@ export abstract class StatefulWorkflow extends Workflow {
 
   @Signal()
   public async unsubscribe(subscription: Subscription): Promise<void> {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:unsubscribe`);
+    this.log.debug(`[${this.constructor.name}]:${this.id}.unsubscribe`);
     const { workflowId, subscriptionId } = subscription;
 
     // Remove the specific subscription
@@ -321,7 +329,7 @@ export abstract class StatefulWorkflow extends Workflow {
 
   @Before('execute')
   protected async processState(): Promise<void> {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:processState`);
+    this.log.debug(`[${this.constructor.name}]:${this.id}.processState`);
     if (this.pendingChanges.length) {
       await this.schemaManager.processChanges();
     }
@@ -336,7 +344,7 @@ export abstract class StatefulWorkflow extends Workflow {
     previousState: EntitiesState;
     differences: DetailedDiff;
   }): Promise<void> {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:stateChanged`);
+    this.log.debug(`[${this.constructor.name}]:${this.id}.stateChanged`);
 
     if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
       const created = get(differences.added, `${this.entityName}.${this.id}`, false);
@@ -363,7 +371,7 @@ export abstract class StatefulWorkflow extends Workflow {
   }
 
   protected async processSubscriptions(newState: EntitiesState, differences: DetailedDiff, previousState: EntitiesState): Promise<void> {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:processSubscriptions`);
+    this.log.debug(`[${this.constructor.name}]:${this.id}.processSubscriptions`);
 
     const flattenedState = dottie.flatten(newState);
 
@@ -376,9 +384,7 @@ export abstract class StatefulWorkflow extends Workflow {
       const handle = this.handles[workflowId];
       if (handle) {
         try {
-          this.log.debug(
-            `[StatefulWorkflow]:${this.constructor.name}:Sending update to workflow: ${workflowId}, Subscription ID: ${subscriptionId}`
-          );
+          this.log.debug(`[${this.constructor.name}]:${this.id}.Sending update to workflow: ${workflowId}, Subscription ID: ${subscriptionId}`);
           await handle.signal(signalName, {
             updates: dottie.transform(flattenedState),
             entityName: entityName,
@@ -389,20 +395,6 @@ export abstract class StatefulWorkflow extends Workflow {
         }
       }
     }
-  }
-
-  protected getUpdatedDataForSubscription(newState: EntitiesState, selector: string): any {
-    // Implement logic to extract updated data from the new state based on the selector
-    return get(newState, selector);
-  }
-
-  protected async sendSubscriptionUpdate(workflowId: string, signalName: string, updatedData: any): Promise<void> {
-    if (!this.handles[workflowId]) {
-      this.handles[workflowId] = await workflow.getExternalWorkflowHandle(workflowId); // Fetch handle if not cached
-    }
-
-    // Send signal with the updated data to the workflow
-    await this.handles[workflowId].signal(signalName, updatedData);
   }
 
   private shouldPropagateUpdate(
@@ -454,7 +446,7 @@ export abstract class StatefulWorkflow extends Workflow {
   }
 
   protected async processChildState(newState: EntitiesState, differences: DetailedDiff, previousState: EntitiesState): Promise<void> {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:processChildState`);
+    this.log.debug(`[${this.constructor.name}]:${this.id}.processChildState`);
 
     const newData = denormalize(get(newState, `${this.entityName}.${this.id}`), SchemaManager.getInstance().getSchemas() as Entities, newState);
     const oldData = denormalize(
@@ -512,7 +504,7 @@ export abstract class StatefulWorkflow extends Workflow {
     differences: DetailedDiff,
     previousState: EntitiesState
   ): Promise<void> {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:processArrayItems`);
+    this.log.debug(`[${this.constructor.name}]:${this.id}.processArrayItems`);
 
     const currentItems = get(previousState, config.path as string, []);
 
@@ -542,7 +534,7 @@ export abstract class StatefulWorkflow extends Workflow {
     differences: DetailedDiff,
     previousState: EntitiesState
   ): Promise<void> {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:processSingleItem`);
+    this.log.debug(`[${this.constructor.name}]:${this.id}.processSingleItem`);
 
     const itemId = Array.isArray(config.idAttribute) ? getCompositeKey(newState[config.entityName as string][item], config.idAttribute) : item; // just assign item if idAttribute is not an array
 
@@ -561,7 +553,6 @@ export abstract class StatefulWorkflow extends Workflow {
   }
 
   protected async startChildWorkflow(config: ManagedPath, state: any, newState: any): Promise<void> {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:startChildWorkflow`);
     try {
       const {
         workflowType,
@@ -587,14 +578,16 @@ export abstract class StatefulWorkflow extends Workflow {
       const workflowId = `${entityName}-${compositeId}`;
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {
-        this.log.warn(`[${this.constructor.name}] Circular dependency detected for workflowId: ${workflowId}. Skipping child workflow start.`);
+        this.log.warn(
+          `[${this.constructor.name}]:${this.id} Circular dependency detected for workflowId: ${workflowId}. Skipping child workflow start.`
+        );
         return;
       }
 
       if (typeof config.condition === 'function') {
-        this.log.info(`[${this.constructor.name}]: Calling condition function before starting child...`);
+        this.log.info(`[${this.constructor.name}]:${this.id}: Calling condition function before starting child...`);
         if (!config.condition.apply(this, [rawData, this])) {
-          this.log.info(`[${this.constructor.name}]: Condition returned false, not starting child.`);
+          this.log.info(`[${this.constructor.name}]:${this.id}: Condition returned false, not starting child.`);
           return;
         }
       }
@@ -611,10 +604,11 @@ export abstract class StatefulWorkflow extends Workflow {
             entityName,
             subscriptions: [
               {
+                subscriptionId: `${this.entityName}:${this.id}.${config.path}:${id}`,
                 workflowId: workflow.workflowInfo().workflowId,
                 signalName: 'update',
-                selector: `${config.entityName}.${compositeId}.*`,
-                parent: workflow.workflowInfo().workflowId
+                selector: '*', // `${config.entityName}.${compositeId}.*`,
+                parent: workflow.workflowInfo().workflowId,
                 ancestorWorkflowIds: [...this.ancestorWorkflowIds]
               }
             ],
@@ -624,29 +618,31 @@ export abstract class StatefulWorkflow extends Workflow {
         ]
       };
 
-      this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:startChildWorkflow(${workflowType})`);
+      this.log.debug(
+        `[${this.constructor.name}]:${this.id}.startChildWorkflow( workflowType=${workflowType}, startPayload=${JSON.stringify(startPayload, null, 2)}\n)`
+      );
       this.handles[workflowId] = await workflow.startChild(String(workflowType), startPayload);
-      this.emit(`childStarted:${workflowType}`, workflowId, data);
+      this.emit(`child:${workflowType}:start`, workflowId, data);
       this.handles[workflowId]
         .result()
-        .then((result) => this.emit(`childResult:${workflowType}`, result))
+        .then((result) => this.emit(`child:${workflowType}:result`, result))
         .catch((err) => {
           // should this be done here?
           delete this.handles[workflowId];
-          this.emit(`childError:${workflowType}`, err);
+          this.emit(`child:${workflowType}:error`, err);
         });
     } catch (err) {
       if (err instanceof Error) {
-        this.log.error(`[${this.constructor.name}] Failed to start new child workflow: ${err.message}\n${err.stack}`);
+        this.log.error(`[${this.constructor.name}]:${this.id} Failed to start new child workflow: ${err.message}\n${err.stack}`);
       } else {
-        this.log.error(`[${this.constructor.name}] An unknown error occurred while starting a new child workflow`);
+        this.log.error(`[${this.constructor.name}]:${this.id} An unknown error occurred while starting a new child workflow`);
       }
       throw err;
     }
   }
 
   protected async updateChildWorkflow(handle: workflow.ChildWorkflowHandle<any>, state: any, newState: any, config: ManagedPath): Promise<void> {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:updateChildWorkflow`);
+    this.log.debug(`[${this.constructor.name}]:${this.id}.updateChildWorkflow`);
     try {
       const {
         workflowType,
@@ -672,14 +668,16 @@ export abstract class StatefulWorkflow extends Workflow {
       const workflowId = `${entityName}-${compositeId}`;
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {
-        this.log.warn(`[${this.constructor.name}] Circular update detected for workflowId: ${workflowId}. Skipping child workflow update.`);
+        this.log.warn(
+          `[${this.constructor.name}]:${this.id} Circular update detected for workflowId: ${workflowId}. Skipping child workflow update.`
+        );
         return;
       }
 
       if (typeof config.condition === 'function') {
-        this.log.info(`[${this.constructor.name}]: Calling condition function before starting child...`);
+        this.log.info(`[${this.constructor.name}]:${this.id}: Calling condition function before starting child...`);
         if (!config.condition.apply(this, [rawData, this])) {
-          this.log.info(`[${this.constructor.name}]: Condition returned false, not starting child.`);
+          this.log.info(`[${this.constructor.name}]:${this.id}: Condition returned false, not starting child.`);
           return;
         }
       }
@@ -688,9 +686,9 @@ export abstract class StatefulWorkflow extends Workflow {
       this.emit(`childUpdated:${config.workflowType}`, handle.workflowId, data);
     } catch (err) {
       if (err instanceof Error) {
-        this.log.error(`[${this.constructor.name}] Failed to signal existing workflow handle: ${err.message}`);
+        this.log.error(`[${this.constructor.name}]:${this.id} Failed to signal existing workflow handle: ${err.message}`);
       } else {
-        this.log.error(`[${this.constructor.name}] An unknown error occurred while signaling the child workflow`);
+        this.log.error(`[${this.constructor.name}]:${this.id} An unknown error occurred while signaling the child workflow`);
       }
     }
   }
@@ -701,18 +699,20 @@ export abstract class StatefulWorkflow extends Workflow {
       const handle = this.handles[workflowId];
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {
-        this.log.warn(`[${this.constructor.name}] Circular stop detected for workflowId: ${workflowId}. Skipping child workflow cancellation.`);
+        this.log.warn(
+          `[${this.constructor.name}]:${this.id} Circular stop detected for workflowId: ${workflowId}. Skipping child workflow cancellation.`
+        );
         return;
       }
 
       if (handle && 'cancel' in handle && typeof handle.cancel === 'function') {
-        this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:Cancelling child workflow for ${config.entityName} with ID ${id}`);
+        this.log.debug(`[${this.constructor.name}]:${this.id}.Cancelling child workflow for ${config.entityName} with ID ${id}`);
         await handle.cancel();
       }
       this.emit(`childCancelled:${config.workflowType}`, id);
       delete this.handles[workflowId];
     } catch (err) {
-      this.log.error(`[${this.constructor.name}] Failed to cancel child workflow: ${(err as Error).message}`);
+      this.log.error(`[${this.constructor.name}]:${this.id} Failed to cancel child workflow: ${(err as Error).message}`);
     }
   }
 
@@ -768,7 +768,7 @@ export abstract class StatefulWorkflow extends Workflow {
   protected configureManagedPaths(
     parentSchema: Schema & { schema?: { [key: string]: Schema & [{ _idAttribute: string; _key: string }] } }
   ): void {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}:configureManagedPaths`);
+    this.log.debug(`[${this.constructor.name}]:${this.id}.configureManagedPaths`);
     if (!parentSchema.schema) {
       throw new Error("The provided schema does not have 'schema' defined.");
     }
