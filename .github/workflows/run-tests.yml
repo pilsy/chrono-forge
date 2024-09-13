@@ -1,4 +1,4 @@
-name: Run Tests on Push to Master
+name: Test Suite
 
 on:
   workflow_dispatch:
