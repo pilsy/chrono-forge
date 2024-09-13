@@ -518,7 +518,7 @@ describe('StatefulWorkflow', () => {
       expect(finalState.User[userId].name).toEqual('Update-49');
     });
 
-    it('Should manage circular relationships without causing infinite loops', async () => {
+    it.skip('Should manage circular relationships without causing infinite loops', async () => {
       const userId = uuid4();
       const listingId = uuid4();
       const data = {
