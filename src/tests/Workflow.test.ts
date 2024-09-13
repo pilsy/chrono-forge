@@ -62,14 +62,22 @@ describe('Workflow', () => {
 
       expect(result).toBe(args.join(','));
     });
+
+    it('Should call the execute() method each iteration of continueAsNew workflow', async () => {
+      const args = ['one', 'two', 'three'];
+      const result = await execute(workflows.ShouldExecuteWithArguments, 'execute', ...args);
+
+      expect(result).toBe(args.join(','));
+    });
   });
 
   describe('Property Decorators', () => {
-    it.skip('Should automatically create signals and queries for properties with default get/set', async () => {
+    it('Should automatically create signals and queries for properties with default get/set', async () => {
       const handle = await execute(workflows.ShouldCreateDefaultPropertyAccessors);
 
       // Test setting a value
       await handle.signal('status', 'updated status');
+      await sleep();
 
       // Test getting the value
       const queryResult = await handle.query('status');
@@ -80,9 +88,11 @@ describe('Workflow', () => {
 
     it.skip('Should create signals and queries with custom names', async () => {
       const handle = await execute(workflows.ShouldCreateCustomPropertyAccessors);
+      await sleep();
 
       // Test setting a value via custom signal
       await handle.signal('customSetSignal', 'custom value');
+      await sleep();
 
       // Test getting the value via custom query
       const queryResult = await handle.query('customGetQuery');
