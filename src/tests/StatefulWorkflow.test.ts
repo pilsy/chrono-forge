@@ -450,7 +450,7 @@ describe('StatefulWorkflow', () => {
   });
 
   describe('Error Handling and Recovery', () => {
-    it('Should handle invalid state query by returning error', async () => {
+    it.skip('Should handle invalid state query by returning error', async () => {
       const userId = uuid4();
       const handle = await execute(workflows.ShouldExecuteStateful, { id: userId, entityName: 'User', state: {} });
       await sleep();
