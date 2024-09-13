@@ -259,12 +259,14 @@ export abstract class StatefulWorkflow<
   public update({ data, updates, entityName, strategy = '$merge', changeOrigin }: PendingChange & { data?: Record<string, any> }): void {
     this.log.debug(`[${this.constructor.name}]:${this.id}.update(${JSON.stringify({ data, updates, entityName, changeOrigin }, null, 2)})`);
 
-    if (!isEmpty(data)) {
+    if (data !== null && !isEmpty(data)) {
       updates = normalizeEntities(data, entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName));
     }
     if (updates) {
       this.pendingUpdate = true;
       this.schemaManager.dispatch(updateNormalizedEntities(updates, strategy), false, changeOrigin);
+    } else {
+      this.log.error(`Invalid Update: ${JSON.stringify(data, null, 2)}, \n${JSON.stringify(updates, null, 2)}`);
     }
   }
 
