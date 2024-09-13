@@ -135,7 +135,7 @@ export abstract class StatefulWorkflow<
   }
 
   @Query()
-  public get data(): P {
+  public get data(): P['data'] {
     return this.schemaManager.query(this.entityName, this.id);
   }
 
