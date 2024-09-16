@@ -1,14 +1,31 @@
 /* eslint-disable no-async-promise-executor */
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 /* eslint-disable no-restricted-imports */
+import 'reflect-metadata';
 import * as workflow from '@temporalio/workflow';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { log } from '@temporalio/workflow';
 import EventEmitter from 'eventemitter3';
 import { get } from 'dottie';
 import { registry } from '../WorkflowRegistry';
-import { Property, Signal, Query, On } from '../decorators';
-import 'reflect-metadata';
+import {
+  Property,
+  Signal,
+  Query,
+  On,
+  PROPERTY_METADATA_KEY,
+  QUERY_METADATA_KEY,
+  SIGNAL_METADATA_KEY,
+  GETTER_METADATA_KEY,
+  SETTER_METADATA_KEY,
+  EVENTS_METADATA_KEY,
+  HOOKS_METADATA_KEY
+} from '../decorators';
+
+interface HookMetadata {
+  before: string[];
+  after: string[];
+}
 
 /**
  * `Workflow` Class
@@ -52,12 +69,6 @@ export interface ChronoFlowOptions {
   taskQueue?: string;
   [key: string]: any;
 }
-
-export const PROPERTY_METADATA_KEY = Symbol('property');
-export const QUERY_METADATA_KEY = Symbol('query');
-export const SIGNAL_METADATA_KEY = Symbol('signal');
-export const GETTER_METADATA_KEY = Symbol('getter');
-export const SETTER_METADATA_KEY = Symbol('setter');
 
 /**
  * `ChronoFlow` Decorator
@@ -418,29 +429,35 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   }
 
   private async bindEventHandlers() {
-    const proto = Object.getPrototypeOf(this);
-    if (!!proto._eventsBound) {
+    if (this._eventsBound) {
       return;
     }
-    (proto.constructor._eventHandlers || []).forEach((handler: { event: string; method: string }) => {
+
+    const eventHandlers = this.collectMetadata(EVENTS_METADATA_KEY, this.constructor.prototype);
+
+    eventHandlers.forEach((handler: { event: string; method: string }) => {
       this.on(handler.event, async (...args: any[]) => {
         if (typeof (this as any)[handler.method] === 'function') {
           return await (this as any)[handler.method](...args);
         }
       });
     });
+
     this._eventsBound = true;
   }
 
   @On('hooks')
   private async bindHooks() {
-    const proto = Object.getPrototypeOf(this);
-    if (!!proto._hooksBound) {
+    if (this._hooksBound) {
       return;
     }
-    this._hooksBound = true;
 
-    const hooks: { before: { [name: string]: string[] }; after: { [name: string]: string[] } } = proto.constructor._hooks;
+    // @ts-ignore
+    const hooks: { before: { [name: string]: string[] }; after: { [name: string]: string[] } } = this.collectHookMetadata(
+      HOOKS_METADATA_KEY,
+      this.constructor.prototype
+    );
+
     if (!hooks) return;
 
     const applyHook = async (methodName: string, originalMethod: () => any, ...args: any[]) => {
@@ -448,10 +465,11 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
         // @ts-ignore
         await this.tracer.startActiveSpan(`Workflow:applyHooks[${methodName}]`, async (span) => {
           // @ts-ignore
-          const { before, after } = hooks[methodName as string];
+          const { before, after } = hooks[methodName as string] || { before: [], after: [] };
           span.setAttributes({ methodName, before, after });
 
-          if (before instanceof Array) {
+          // Apply "before" hooks
+          if (Array.isArray(before)) {
             for (const beforeHook of before) {
               if (typeof (this as any)[beforeHook] === 'function') {
                 this.log.debug(`[HOOK]:before(${methodName})`);
@@ -468,7 +486,8 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
             return reject(err);
           }
 
-          if (after instanceof Array) {
+          // Apply "after" hooks
+          if (Array.isArray(after)) {
             for (const afterHook of after) {
               if (typeof (this as any)[afterHook] === 'function') {
                 this.log.debug(`[HOOK]:after(${methodName})`);
@@ -482,22 +501,26 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       });
     };
 
+    // Override methods with hook applications
     for (const methodName of Object.keys(hooks)) {
       const originalMethod = (this as any)[methodName];
-      // @ts-ignore
-      this[methodName] = async (...args: any[]) => {
-        return await applyHook(methodName, originalMethod, ...args);
-      };
+      if (typeof originalMethod === 'function') {
+        // @ts-ignore
+        this[methodName] = async (...args: any[]) => {
+          return await applyHook(methodName, originalMethod, ...args);
+        };
+      }
     }
+
+    this._hooksBound = true;
   }
 
   @On('init')
   protected async bindProperties() {
-    const proto = Object.getPrototypeOf(this);
-    if (!!proto._propertiesBound) {
+    if (!!this._propertiesBound) {
       return;
     }
-    const properties = this.collectMetadata(PROPERTY_METADATA_KEY);
+    const properties = this.collectMetadata(PROPERTY_METADATA_KEY, this.constructor.prototype);
     properties.forEach(({ propertyKey, get: g, set: s, queryName, signalName }) => {
       if (g) {
         const getter = () => (this as any)[propertyKey];
@@ -518,11 +541,10 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
   @On('init')
   protected bindQueries() {
-    const proto = Object.getPrototypeOf(this);
-    if (!!proto._queriesBound) {
+    if (!!this._queriesBound) {
       return;
     }
-    const queries = this.collectMetadata(QUERY_METADATA_KEY);
+    const queries = this.collectMetadata(QUERY_METADATA_KEY, this.constructor.prototype);
     for (const [queryName, queryMethod] of queries) {
       if (typeof (this as any)[queryMethod] === 'function') {
         const handler = (this as any)[queryMethod].bind(this);
@@ -536,11 +558,10 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
   @On('init')
   protected bindSignals() {
-    const proto = Object.getPrototypeOf(this);
-    if (!!proto._signalsBound) {
+    if (!!this._signalsBound) {
       return;
     }
-    const signals = this.collectMetadata(SIGNAL_METADATA_KEY);
+    const signals = this.collectMetadata(SIGNAL_METADATA_KEY, this.constructor.prototype);
     for (const [signalName, signalMethod] of signals) {
       if (typeof (this as any)[signalMethod] === 'function') {
         const handler = (this as any)[signalMethod].bind(this);
@@ -552,14 +573,49 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     this._signalsBound = true;
   }
 
-  private collectMetadata(metadataKey: Symbol): any[] {
+  private collectMetadata(metadataKey: Symbol, target: any): any[] {
     const collectedMetadata: any[] = [];
-    let currentProto = Object.getPrototypeOf(this);
-    while (currentProto && currentProto !== Workflow.prototype) {
+    const seen = new Set();
+    let currentProto = target;
+
+    while (currentProto && currentProto !== Object.prototype) {
       const metadata = Reflect.getMetadata(metadataKey, currentProto) || [];
-      collectedMetadata.push(...metadata);
+
+      for (const item of metadata) {
+        const itemString = JSON.stringify(item);
+        if (!seen.has(itemString)) {
+          seen.add(itemString);
+          collectedMetadata.push(item);
+        }
+      }
+
       currentProto = Object.getPrototypeOf(currentProto);
     }
+
+    // console.log(metadataKey);
+    // console.log(collectedMetadata);
+
+    return collectedMetadata;
+  }
+
+  private collectHookMetadata(metadataKey: Symbol, target: any): Record<string, HookMetadata> {
+    const collectedMetadata: Record<string, HookMetadata> = {};
+    let currentProto = target;
+
+    while (currentProto && currentProto !== Workflow.prototype) {
+      const metadata = Reflect.getOwnMetadata(metadataKey, currentProto);
+      if (metadata) {
+        for (const key in metadata) {
+          if (metadata.hasOwnProperty(key)) {
+            collectedMetadata[key] = collectedMetadata[key] || { before: [], after: [] };
+            collectedMetadata[key].before.push(...(metadata[key].before || []));
+            collectedMetadata[key].after.push(...(metadata[key].after || []));
+          }
+        }
+      }
+      currentProto = Object.getPrototypeOf(currentProto);
+    }
+
     return collectedMetadata;
   }
 }

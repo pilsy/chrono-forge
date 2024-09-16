@@ -1,8 +1,12 @@
+import 'reflect-metadata';
+import { EVENTS_METADATA_KEY } from './metadata';
+
 export const On = (event: string) => {
   return (target: any, propertyKey: string) => {
-    if (!target.constructor._eventHandlers) {
-      target.constructor._eventHandlers = [];
-    }
-    target.constructor._eventHandlers.push({ event, method: propertyKey });
+    const eventHandlers = Reflect.getOwnMetadata(EVENTS_METADATA_KEY, target) || [];
+
+    eventHandlers.push({ event, method: propertyKey });
+
+    Reflect.defineMetadata(EVENTS_METADATA_KEY, eventHandlers, target);
   };
 };

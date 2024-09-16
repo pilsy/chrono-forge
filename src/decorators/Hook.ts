@@ -1,21 +1,28 @@
+import 'reflect-metadata';
+import { HOOKS_METADATA_KEY } from './metadata';
+
 export const Hook = (options: { before?: string; after?: string } = {}) => {
   return (target: any, propertyKey: string) => {
-    if (!target.constructor._hooks) {
-      target.constructor._hooks = {};
-    }
+    // Collect hooks from the prototype chain to include inherited hooks
+    const hooks = Reflect.getMetadata(HOOKS_METADATA_KEY, target) || {};
+
+    // Helper function to ensure no duplicate hooks
+    const addHook = (hookType: string, methodName: string, position: 'before' | 'after') => {
+      hooks[hookType] = hooks[hookType] || { before: [], after: [] };
+
+      if (!hooks[hookType][position].includes(methodName)) {
+        hooks[hookType][position].push(methodName);
+      }
+    };
+
     if (options.before) {
-      target.constructor._hooks[options.before] = target.constructor._hooks[options.before] || {
-        before: [],
-        after: []
-      };
-      target.constructor._hooks[options.before].before.push(propertyKey);
+      addHook(options.before, propertyKey, 'before');
     }
+
     if (options.after) {
-      target.constructor._hooks[options.after] = target.constructor._hooks[options.after] || {
-        before: [],
-        after: []
-      };
-      target.constructor._hooks[options.after].after.push(propertyKey);
+      addHook(options.after, propertyKey, 'after');
     }
+
+    Reflect.defineMetadata(HOOKS_METADATA_KEY, hooks, target);
   };
 };

@@ -12,3 +12,4 @@ export * from './Query';
 export * from './Set';
 export * from './Signal';
 export * from './Step';
+export * from './metadata';

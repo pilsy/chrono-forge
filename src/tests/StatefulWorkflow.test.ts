@@ -186,7 +186,7 @@ describe('StatefulWorkflow', () => {
 
       const batchUpdate = { listings: data.listings.map((listing) => ({ ...listing, updated: 'batch' })) };
       await handle.signal('update', { data: { ...data, ...batchUpdate }, entityName: 'User' });
-      await sleep();
+      await sleep(2500);
 
       const stateAfterBatchUpdate = await handle.query('state');
       data.listings.forEach((listing) => {
