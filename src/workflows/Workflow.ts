@@ -454,7 +454,6 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
     // @ts-ignore
     const hooks: { before: { [name: string]: string[] }; after: { [name: string]: string[] } } = this.collectHookMetadata(
-      HOOKS_METADATA_KEY,
       this.constructor.prototype
     );
 
@@ -598,22 +597,31 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     return collectedMetadata;
   }
 
-  private collectHookMetadata(metadataKey: Symbol, target: any): Record<string, HookMetadata> {
-    const collectedMetadata: Record<string, HookMetadata> = {};
+  private collectHookMetadata(target: any): { [key: string]: { before: string[]; after: string[] } } {
+    const collectedMetadata: { [key: string]: { before: string[]; after: string[] } } = {};
+
+    const protoChain: any[] = [];
     let currentProto = target;
 
+    // Build the prototype chain from base to derived
     while (currentProto && currentProto !== Workflow.prototype) {
-      const metadata = Reflect.getOwnMetadata(metadataKey, currentProto);
-      if (metadata) {
-        for (const key in metadata) {
-          if (metadata.hasOwnProperty(key)) {
-            collectedMetadata[key] = collectedMetadata[key] || { before: [], after: [] };
-            collectedMetadata[key].before.push(...(metadata[key].before || []));
-            collectedMetadata[key].after.push(...(metadata[key].after || []));
-          }
-        }
-      }
+      protoChain.unshift(currentProto); // Push at the start to reverse the order
       currentProto = Object.getPrototypeOf(currentProto);
+    }
+
+    // Collect metadata from each prototype in the chain in order
+    for (const proto of protoChain) {
+      const metadata = Reflect.getOwnMetadata(HOOKS_METADATA_KEY, proto) || {};
+
+      for (const key of Object.keys(metadata)) {
+        // Ensure that collectedMetadata has the structure defined
+        if (!collectedMetadata[key]) {
+          collectedMetadata[key] = { before: [], after: [] };
+        }
+
+        collectedMetadata[key].before.push(...(metadata[key].before || []));
+        collectedMetadata[key].after.push(...(metadata[key].after || []));
+      }
     }
 
     return collectedMetadata;

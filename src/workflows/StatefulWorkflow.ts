@@ -28,6 +28,7 @@ export type ManagedPath = {
   path?: string;
   workflowType?: string;
   idAttribute?: string | string[];
+  includeParentId?: boolean;
   autoStartChildren?: boolean;
   cancellationType?: workflow.ChildWorkflowCancellationType;
   parentClosePolicy?: workflow.ParentClosePolicy;
@@ -561,6 +562,7 @@ export abstract class StatefulWorkflow<
         workflowType,
         entityName,
         idAttribute,
+        includeParentId,
         cancellationType = workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_COMPLETED,
         parentClosePolicy = workflow.ParentClosePolicy.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
         autoStartChildren
@@ -578,7 +580,7 @@ export abstract class StatefulWorkflow<
       const data = typeof config.processData === 'function' ? config.processData(rawData, this) : rawData;
       const { [idAttribute as string]: id, ...rest } = state;
       const compositeId = Array.isArray(idAttribute) ? getCompositeKey(data, idAttribute) : id;
-      const workflowId = `${entityName}-${compositeId}`;
+      const workflowId = includeParentId ? `${entityName}-${compositeId}-${this.id}` : `${entityName}-${compositeId}`;
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {
         this.log.warn(
@@ -651,6 +653,7 @@ export abstract class StatefulWorkflow<
         workflowType,
         entityName,
         idAttribute,
+        includeParentId,
         cancellationType = workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_COMPLETED,
         parentClosePolicy = workflow.ParentClosePolicy.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
         autoStartChildren
@@ -668,7 +671,7 @@ export abstract class StatefulWorkflow<
       const data = typeof config.processData === 'function' ? config.processData(rawData, this) : rawData;
       const { [idAttribute as string]: id } = state;
       const compositeId = Array.isArray(config.idAttribute) ? getCompositeKey(data, config.idAttribute) : state[config.idAttribute as string];
-      const workflowId = `${entityName}-${compositeId}`;
+      const workflowId = includeParentId ? `${entityName}-${compositeId}-${this.id}` : `${entityName}-${compositeId}`;
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {
         this.log.warn(

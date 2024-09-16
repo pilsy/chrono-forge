@@ -42,6 +42,8 @@ export class SchemaManager extends EventEmitter {
   public static getInstance(workflowId?: string): SchemaManager {
     if (!this.instance) {
       this.instance = new SchemaManager(workflowId);
+    } else {
+      this.instance.workflowId = String(workflowId);
     }
     return this.instance;
   }
