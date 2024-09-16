@@ -116,6 +116,7 @@ export abstract class StatefulWorkflow<
       this.log.info(`Updating apiToken...`);
       this.apiToken = apiToken;
       this.pendingUpdate = true;
+      this.forwardSignalToChildren('apiToken', apiToken);
     }
   }
 
