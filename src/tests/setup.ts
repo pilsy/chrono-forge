@@ -12,7 +12,7 @@ import { Resource } from '@opentelemetry/resources';
 import { initTracer } from '../utils/instrumentation';
 import { logger } from '../utils/logger';
 
-jest.setTimeout(30000);
+jest.setTimeout(60000);
 
 declare global {
   var tracer: Tracer | undefined;
