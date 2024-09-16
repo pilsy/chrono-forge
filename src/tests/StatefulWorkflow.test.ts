@@ -424,7 +424,7 @@ describe('StatefulWorkflow', () => {
       // Update Listing data and propagate to children
       const updatedListingData = { id: listingId, user: userId, name: 'Updated Listing Name' };
       await handle.signal('update', { data: { ...data, listings: [{ ...updatedListingData }] }, entityName: 'User' });
-      await sleep();
+      await sleep(2500);
 
       // Verify state update propagation in User
       const updatedState = await handle.query('state');
