@@ -1,30 +1,35 @@
+import 'reflect-metadata';
+import { PROPERTY_METADATA_KEY, GETTER_METADATA_KEY, SETTER_METADATA_KEY } from '../workflows/Workflow';
+
 export const Property = (options: { get?: boolean | string; set?: boolean | string } = {}) => {
   return (target: any, propertyKey: string) => {
-    if (!target.constructor._properties) {
-      target.constructor._properties = [];
-    }
+    const properties = Reflect.getMetadata(PROPERTY_METADATA_KEY, target) || [];
 
-    const queryName = `query${capitalize(typeof options.get === 'string' ? options.get : propertyKey)}`;
-    const signalName = `signal${capitalize(typeof options.set === 'string' ? options.set : propertyKey)}`;
+    // const queryName = `query${capitalize(typeof options.get === 'string' ? options.get : propertyKey)}`;
+    // const signalName = `signal${capitalize(typeof options.set === 'string' ? options.set : propertyKey)}`;
 
-    target.constructor._properties.push({
+    properties.push({
       propertyKey,
       get: options.get || options.get === undefined,
       set: options.set || options.set === undefined,
-      queryName,
-      signalName
+      queryName: propertyKey,
+      signalName: propertyKey
     });
+
+    Reflect.defineMetadata(PROPERTY_METADATA_KEY, properties, target);
 
     if (options.get) {
       const getterName = typeof options.get === 'string' ? options.get : propertyKey;
-      target.constructor._getters = target.constructor._getters || {};
-      target.constructor._getters[getterName] = propertyKey;
+      const getters = Reflect.getMetadata(GETTER_METADATA_KEY, target) || {};
+      getters[getterName] = propertyKey;
+      Reflect.defineMetadata(GETTER_METADATA_KEY, getters, target);
     }
 
     if (options.set) {
       const setterName = typeof options.set === 'string' ? options.set : propertyKey;
-      target.constructor._setters = target.constructor._setters || {};
-      target.constructor._setters[setterName] = propertyKey;
+      const setters = Reflect.getMetadata(SETTER_METADATA_KEY, target) || {};
+      setters[setterName] = propertyKey;
+      Reflect.defineMetadata(SETTER_METADATA_KEY, setters, target);
     }
   };
 };

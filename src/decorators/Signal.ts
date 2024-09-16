@@ -1,8 +1,10 @@
+import 'reflect-metadata';
+import { SIGNAL_METADATA_KEY } from '../workflows/Workflow';
+
 export const Signal = (name?: string) => {
   return (target: any, propertyKey: string) => {
-    if (!target.constructor._signals) {
-      target.constructor._signals = [];
-    }
-    target.constructor._signals.push([name || propertyKey, propertyKey]);
+    const signals = Reflect.getMetadata(SIGNAL_METADATA_KEY, target) || [];
+    signals.push([name || propertyKey, propertyKey]);
+    Reflect.defineMetadata(SIGNAL_METADATA_KEY, signals, target);
   };
 };

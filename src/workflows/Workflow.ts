@@ -8,6 +8,7 @@ import EventEmitter from 'eventemitter3';
 import { get } from 'dottie';
 import { registry } from '../WorkflowRegistry';
 import { Property, Signal, Query, On } from '../decorators';
+import 'reflect-metadata';
 
 /**
  * `Workflow` Class
@@ -51,6 +52,12 @@ export interface ChronoFlowOptions {
   taskQueue?: string;
   [key: string]: any;
 }
+
+export const PROPERTY_METADATA_KEY = Symbol('property');
+export const QUERY_METADATA_KEY = Symbol('query');
+export const SIGNAL_METADATA_KEY = Symbol('signal');
+export const GETTER_METADATA_KEY = Symbol('getter');
+export const SETTER_METADATA_KEY = Symbol('setter');
 
 /**
  * `ChronoFlow` Decorator
@@ -490,35 +497,22 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     if (!!proto._propertiesBound) {
       return;
     }
-    (proto.constructor._properties || []).forEach(
-      ({
-        propertyKey,
-        get: g,
-        set: s,
-        queryName,
-        signalName
-      }: {
-        propertyKey: string;
-        get: boolean | string;
-        set: boolean | string;
-        queryName: string;
-        signalName: string;
-      }) => {
-        if (g) {
-          const getter = get(proto, `constructor._getters.${propertyKey}`, () => (this as any)[propertyKey]);
-          // @ts-ignore
-          this.queryHandlers[propertyKey] = getter.bind(this);
-        }
-
-        if (s) {
-          const setter = get(proto, `constructor._setters.${propertyKey}`, (value: any) => {
-            (this as any)[propertyKey] = value;
-          });
-          // @ts-ignore
-          this.signalHandlers[propertyKey] = setter.bind(this);
-        }
+    const properties = this.collectMetadata(PROPERTY_METADATA_KEY);
+    properties.forEach(({ propertyKey, get: g, set: s, queryName, signalName }) => {
+      if (g) {
+        const getter = () => (this as any)[propertyKey];
+        this.queryHandlers[queryName] = getter.bind(this);
+        // @ts-ignore
+        workflow.setHandler(workflow.defineQuery(queryName), getter);
       }
-    );
+
+      if (s) {
+        const setter = (value: any) => ((this as any)[propertyKey] = value);
+        this.signalHandlers[signalName] = setter.bind(this);
+        // @ts-ignore
+        workflow.setHandler(workflow.defineSignal(signalName), setter);
+      }
+    });
     this._propertiesBound = true;
   }
 
@@ -528,12 +522,14 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     if (!!proto._queriesBound) {
       return;
     }
-    (Object.getPrototypeOf(this).constructor._queries || []).forEach(([queryName, queryMethod]: [string, string]) => {
-      this.queryHandlers[queryName] =
-        queryMethod && typeof (this as any)[queryMethod] === 'function' ? (this as any)[queryMethod]?.bind(this) : this.queryHandlers[queryName];
-    });
-    for (const [name, method] of Object.entries(this.queryHandlers)) {
-      workflow.setHandler(workflow.defineQuery(name), method);
+    const queries = this.collectMetadata(QUERY_METADATA_KEY);
+    for (const [queryName, queryMethod] of queries) {
+      if (typeof (this as any)[queryMethod] === 'function') {
+        const handler = (this as any)[queryMethod].bind(this);
+        this.queryHandlers[queryName] = handler;
+        // @ts-ignore
+        workflow.setHandler(workflow.defineQuery(queryName), handler);
+      }
     }
     this._queriesBound = true;
   }
@@ -544,14 +540,26 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     if (!!proto._signalsBound) {
       return;
     }
-    (Object.getPrototypeOf(this).constructor._signals || []).forEach(([signalName, signalMethod]: [string, string]) => {
-      this.signalHandlers[signalName] = this.signalHandlers[signalName] || (this as any)[signalMethod]?.bind(this);
-      workflow.setHandler(workflow.defineSignal(signalName), async (...args: any[]) => {
-        await this.emitAsync(signalName, args);
+    const signals = this.collectMetadata(SIGNAL_METADATA_KEY);
+    for (const [signalName, signalMethod] of signals) {
+      if (typeof (this as any)[signalMethod] === 'function') {
+        const handler = (this as any)[signalMethod].bind(this);
+        this.signalHandlers[signalName] = handler;
         // @ts-ignore
-        return await this.signalHandlers[signalName](...(args as []));
-      });
-    });
+        workflow.setHandler(workflow.defineSignal(signalName), handler);
+      }
+    }
     this._signalsBound = true;
+  }
+
+  private collectMetadata(metadataKey: Symbol): any[] {
+    const collectedMetadata: any[] = [];
+    let currentProto = Object.getPrototypeOf(this);
+    while (currentProto && currentProto !== Workflow.prototype) {
+      const metadata = Reflect.getMetadata(metadataKey, currentProto) || [];
+      collectedMetadata.push(...metadata);
+      currentProto = Object.getPrototypeOf(currentProto);
+    }
+    return collectedMetadata;
   }
 }
