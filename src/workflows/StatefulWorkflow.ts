@@ -100,7 +100,7 @@ export abstract class StatefulWorkflow<
 
   protected shouldLoadData(): boolean {
     // @ts-ignore
-    return typeof this?.loadData === 'function';
+    return typeof this?.loadData === 'function' && this.pendingUpdate;
   }
   protected abstract execute(args?: unknown, options?: ChronoFlowOptions): Promise<unknown>;
 
@@ -283,7 +283,7 @@ export abstract class StatefulWorkflow<
       updates = normalizeEntities(data, entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName));
     }
     if (updates) {
-      this.pendingUpdate = true;
+      // this.pendingUpdate = true;
       this.schemaManager.dispatch(updateNormalizedEntities(updates, strategy), sync, changeOrigin);
     } else {
       this.log.error(`Invalid Update: ${JSON.stringify(data, null, 2)}, \n${JSON.stringify(updates, null, 2)}`);
@@ -297,7 +297,7 @@ export abstract class StatefulWorkflow<
       deletions = normalizeEntities(data, entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName));
     }
     if (deletions) {
-      this.pendingUpdate = true;
+      // this.pendingUpdate = true;
       this.schemaManager.dispatch(deleteNormalizedEntities(deletions), false);
     }
   }
