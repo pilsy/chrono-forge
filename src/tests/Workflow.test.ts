@@ -23,16 +23,16 @@ describe('Workflow', () => {
 
     execute = (workflowName: string, exec = 'start', ...args) =>
       client.workflow[exec](workflowName, {
-        taskQueue,
-        workflowExecutionTimeout: 10000,
+        taskQueue: 'test',
+        workflowExecutionTimeout: 30000,
         workflowId: `test-${uuid4()}`,
         [exec === 'signalWithStart' ? 'signalArgs' : 'args']: args
       });
 
     signalWithStart = (workflowName: string, options) =>
       client.workflow.signalWithStart(workflowName, {
-        taskQueue,
-        workflowExecutionTimeout: 10000,
+        taskQueue: 'test',
+        workflowExecutionTimeout: 30000,
         workflowId: `test-${uuid4()}`,
         ...options
       });

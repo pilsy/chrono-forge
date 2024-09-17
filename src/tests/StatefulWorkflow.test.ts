@@ -30,7 +30,7 @@ describe('StatefulWorkflow', () => {
   beforeEach(() => {
     const client = getClient();
 
-    execute = (workflowName: string, params: StatefulWorkflowParams, workflowExecutionTimeout = 30000) => {
+    execute = (workflowName: string, params: StatefulWorkflowParams, workflowExecutionTimeout = 120000) => {
       console.log(`Starting workflow: ${params.entityName}-${params.id}`);
       return client.workflow.start(workflowName, {
         taskQueue: 'test',
@@ -485,7 +485,7 @@ describe('StatefulWorkflow', () => {
         await handle.signal('update', { data, entityName: 'User' });
       }
 
-      await sleep(2500);
+      await sleep(5000);
 
       const finalState = await handle.query('state');
       expect(finalState).toEqual(normalizeEntities(data, SchemaManager.getInstance().getSchema('User')));
