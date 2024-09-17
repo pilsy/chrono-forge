@@ -360,11 +360,13 @@ export abstract class StatefulWorkflow<
   protected async stateChanged({
     newState,
     previousState,
-    differences
+    differences,
+    changeOrigins
   }: {
     newState: EntitiesState;
     previousState: EntitiesState;
     differences: DetailedDiff;
+    changeOrigins: string[];
   }): Promise<void> {
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.stateChanged`);
 
@@ -385,20 +387,25 @@ export abstract class StatefulWorkflow<
 
       await this.processChildState(newState, differences, previousState || {});
       if (this.iteration !== 0) {
-        await this.processSubscriptions(newState, differences, previousState || {});
+        await this.processSubscriptions(newState, differences, previousState || {}, changeOrigins);
       }
 
       this.pendingUpdate = false;
     }
   }
 
-  protected async processSubscriptions(newState: EntitiesState, differences: DetailedDiff, previousState: EntitiesState): Promise<void> {
+  protected async processSubscriptions(
+    newState: EntitiesState,
+    differences: DetailedDiff,
+    previousState: EntitiesState,
+    changeOrigins: string[]
+  ): Promise<void> {
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.processSubscriptions`);
 
     const flattenedState = dottie.flatten(newState);
 
     for (const { workflowId, signalName, selector, parent, child, condition, entityName, subscriptionId } of this.subscriptions) {
-      if (!this.shouldPropagateUpdate(flattenedState, differences, selector, condition, workflowId, this.ancestorWorkflowIds)) {
+      if (!this.shouldPropagateUpdate(flattenedState, differences, selector, condition, changeOrigins, this.ancestorWorkflowIds)) {
         continue;
       }
 
@@ -411,7 +418,8 @@ export abstract class StatefulWorkflow<
           await handle.signal(signalName, {
             updates: dottie.transform(flattenedState),
             entityName: entityName,
-            subscriptionId: subscriptionId
+            changeOrigin: workflow.workflowInfo().workflowId,
+            subscriptionId
           });
         } catch (err) {
           this.log.error(`Failed to signal workflow '${workflowId}': ${(err as Error).message}`);
@@ -425,15 +433,20 @@ export abstract class StatefulWorkflow<
     differences: DetailedDiff,
     selector: string,
     condition?: (state: any) => boolean,
-    sourceWorkflowId?: string,
+    sourceWorkflowIds?: string[],
     ancestorWorkflowIds: string[] = []
   ): boolean {
     this.log.debug(`[StatefulWorkflow]: Checking if we should propagate update for selector: ${selector}`);
 
-    // if (sourceWorkflowId && ancestorWorkflowIds.includes(sourceWorkflowId)) {
-    //   this.log.debug(`Skipping propagation for selector ${selector} because source workflow ${sourceWorkflowId} is an ancestor.`);
-    //   return false;
-    // }
+    // If the source workflow is an ancestor, skip propagation to avoid circular dependencies
+    if (sourceWorkflowIds) {
+      for (const sourceWorkflowId of sourceWorkflowIds) {
+        if (sourceWorkflowId && ancestorWorkflowIds.includes(sourceWorkflowId)) {
+          this.log.debug(`Skipping propagation for selector ${selector} because the change originated from ${sourceWorkflowId}.`);
+          return false;
+        }
+      }
+    }
 
     // Use RegExp to handle wildcard selectors
     const selectorRegex = new RegExp('^' + selector.replace(/\*/g, '.*') + '$');
@@ -448,12 +461,6 @@ export abstract class StatefulWorkflow<
           this.log.debug(`Custom condition for selector ${selector} not met.`);
           continue; // Skip propagation if condition fails
         }
-
-        // Check for ancestor workflow paths to prevent redundant loops
-        // if (sourceWorkflowId && ancestorWorkflowIds.includes(sourceWorkflowId)) {
-        //   this.log.debug(`Skipping propagation for selector ${selector} because source workflow ${sourceWorkflowId} is an ancestor.`);
-        //   return false;
-        // }
 
         // Otherwise, check if there are any differences in this path
         const diffPath = key.replace(/\./g, '.');

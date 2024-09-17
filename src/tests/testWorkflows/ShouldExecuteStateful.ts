@@ -34,14 +34,7 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
   };
 
   async execute(params: any) {
-    return new Promise(async (resolve) => {
-      await trace.getTracer('temporal_worker').startActiveSpan('test', (span) => {
-        setTimeout(() => {
-          // console.log(this);
-          resolve(params);
-        }, 100);
-      });
-    });
+    console.log('execute');
   }
 
   @On('updated')

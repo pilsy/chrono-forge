@@ -18,6 +18,7 @@ import { IORedisInstrumentation } from '@opentelemetry/instrumentation-ioredis';
 import { trace, context } from '@opentelemetry/api';
 import { ClientRequest, IncomingMessage, ServerResponse } from 'http';
 import { PerfHooksInstrumentation } from '@opentelemetry/instrumentation-perf-hooks';
+import { NodeSDK } from '@opentelemetry/sdk-node';
 
 import { logs } from '@opentelemetry/api-logs';
 import { LoggerProvider, BatchLogRecordProcessor, SimpleLogRecordProcessor, ConsoleLogRecordExporter } from '@opentelemetry/sdk-logs';
@@ -85,44 +86,6 @@ export function initTracer(serviceName: string, environmentName: string, url: st
       })
     );
 
-    registerInstrumentations({
-      instrumentations: [
-        ...getNodeAutoInstrumentations({
-          '@opentelemetry/instrumentation-fs': {
-            enabled: false
-          },
-          '@opentelemetry/instrumentation-dns': {
-            enabled: false
-          },
-          '@opentelemetry/instrumentation-http': {
-            requestHook,
-            responseHook
-          },
-          '@opentelemetry/instrumentation-grpc': {
-            enabled: false
-          }
-        }),
-        new IORedisInstrumentation({}),
-        new PerfHooksInstrumentation({
-          eventLoopUtilizationMeasurementInterval: 5000
-        }),
-        new WinstonInstrumentation({})
-      ]
-    });
-
-    ['SIGINT', 'SIGTERM'].forEach((signal) => {
-      process.on(signal, () => provider.shutdown().catch(console.error));
-      process.on(signal, () => exporter.shutdown().catch(console.error));
-    });
-
-    tracers.set(serviceName, {
-      tracer: provider.getTracer(serviceName),
-      resource,
-      provider,
-      exporter
-    });
-  }
-  if (!loggerProvider) {
     loggerProvider = new LoggerProvider({
       resource
     });
@@ -137,6 +100,45 @@ export function initTracer(serviceName: string, environmentName: string, url: st
     logs.setGlobalLoggerProvider(loggerProvider);
     ['SIGINT', 'SIGTERM'].forEach((signal) => {
       process.on(signal, () => loggerProvider.shutdown().catch(console.error));
+    });
+
+    registerInstrumentations({
+      instrumentations: [
+        ...getNodeAutoInstrumentations({
+          '@opentelemetry/instrumentation-fs': {
+            enabled: false
+          },
+          '@opentelemetry/instrumentation-dns': {
+            enabled: false
+          },
+          '@opentelemetry/instrumentation-http': {
+            requestHook,
+            responseHook
+          },
+          '@opentelemetry/instrumentation-grpc': {
+            enabled: true
+          }
+        }),
+        // new IORedisInstrumentation({}),
+        // new PerfHooksInstrumentation({
+        //   eventLoopUtilizationMeasurementInterval: 5000
+        // }),
+        new WinstonInstrumentation({})
+      ],
+      tracerProvider: provider,
+      loggerProvider
+    });
+
+    ['SIGINT', 'SIGTERM'].forEach((signal) => {
+      process.on(signal, () => provider.shutdown().catch(console.error));
+      process.on(signal, () => exporter.shutdown().catch(console.error));
+    });
+
+    tracers.set(serviceName, {
+      tracer: provider.getTracer(serviceName),
+      resource,
+      provider,
+      exporter
     });
   }
 
