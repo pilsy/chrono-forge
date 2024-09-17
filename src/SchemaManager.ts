@@ -48,6 +48,7 @@ export class SchemaManager extends EventEmitter {
     return this.instance;
   }
 
+  private denormalizedCache: Map<string, { data: any; lastState: EntitiesState }> = new Map();
   private schemas: { [key: string]: schema.Entity } = {};
   private state: EntitiesState = {};
   private processing = false;
@@ -158,12 +159,36 @@ export class SchemaManager extends EventEmitter {
         this.future.length = 0;
         this.state = { ...newState };
 
+        this.invalidateCache(differences);
+
         this.emitStateChangeEvents(differences, previousState, newState, Array.from(this.changeOrigins));
       }
     }
 
     this.changeOrigins.clear();
     this.processing = false;
+  }
+
+  /**
+   * Invalidates cache for affected entities based on the differences.
+   * @param differences The differences between the previous and new state.
+   */
+  private invalidateCache(differences: DetailedDiff) {
+    const changedPaths = ['added', 'updated', 'deleted'] as const;
+
+    changedPaths.forEach((changeType) => {
+      const entities = differences[changeType];
+      if (!entities || typeof entities !== 'object') return;
+
+      Object.entries(entities).forEach(([entityName, entityChanges]) => {
+        if (!entityChanges || typeof entityChanges !== 'object') return;
+
+        Object.keys(entityChanges).forEach((entityId) => {
+          const cacheKey = `${entityName}.${entityId}`;
+          this.denormalizedCache.delete(cacheKey);
+        });
+      });
+    });
   }
 
   /**
@@ -253,19 +278,45 @@ export class SchemaManager extends EventEmitter {
   }
 
   /**
-   * Returns denormalized data for a given entity name and ID.
+   * Returns denormalized data or state for a given entity name and ID.
    * Ensures that the data respects the schema relationships.
+   * Utilizes caching to avoid redundant computations.
    * @param entityName The name of the entity to query.
    * @param id The ID of the entity to query.
    * @returns The denormalized data.
    */
-  query(entityName: string, id: string): any {
+  query(entityName: string, id: string, denormalizeData = true): any {
+    const cacheKey = `${entityName}.${id}`;
+
+    // Check if the result is already cached and valid
+    if (this.denormalizedCache.has(cacheKey)) {
+      const cachedEntry = this.denormalizedCache.get(cacheKey)!;
+
+      if (cachedEntry.lastState === this.state) {
+        workflow.log.debug(`[SchemaManager]: Using cached result for ${cacheKey}`);
+        return cachedEntry.data;
+      } else {
+        workflow.log.debug(`[SchemaManager]: Cache invalidated for ${cacheKey} due to state change`);
+        this.denormalizedCache.delete(cacheKey); // Invalidate cache if state has changed
+      }
+    }
+
     const entity = this.state[entityName]?.[id];
     if (!entity) {
       return null;
     }
-    const denormalizedData = denormalize(id, this.schemas[entityName], this.state);
-    return limitRecursion(denormalizedData, this.schemas[entityName]);
+
+    let result;
+    if (denormalizeData) {
+      result = limitRecursion(denormalize(entity, this.schemas[entityName], this.state), this.schemas[entityName]);
+    } else {
+      result = entity;
+    }
+
+    // Cache the result
+    this.denormalizedCache.set(cacheKey, { data: result, lastState: this.state });
+
+    return result;
   }
 
   /**
