@@ -323,6 +323,7 @@ describe('StatefulWorkflow', () => {
       expect(updatedState).toEqual(normalizeEntities(data, SchemaManager.getInstance().getSchema('User')));
     });
 
+    it('Should handle recursive relationships between User and Listings correctly', async () => {
       const userId = uuid4();
       const listingId = uuid4();
       const photoId = uuid4();
@@ -346,6 +347,7 @@ describe('StatefulWorkflow', () => {
         entityName: 'User',
         data
       });
+      await sleep(5000);
 
       // Ensure the User workflow is initialized with the correct normalized state
       const expectedInitialState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
@@ -378,6 +380,7 @@ describe('StatefulWorkflow', () => {
       // Update Listing data and propagate to children
       const updatedListingData = { id: listingId, user: userId, name: 'Updated Listing Name' };
       await handle.signal('update', { data: { ...data, listings: [{ ...updatedListingData }] }, entityName: 'User' });
+      await sleep(5000);
 
       // Verify state update propagation in User
       const updatedState = await handle.query('state');
