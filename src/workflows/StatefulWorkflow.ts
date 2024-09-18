@@ -385,8 +385,7 @@ export abstract class StatefulWorkflow<
         }
       }
 
-      // @TODO check if i actually need changeOrigins down here before i bother with all of the type related stuff needed to get it down there
-      await this.processChildState(newState, differences, previousState || {});
+      await this.processChildState(newState, differences, previousState || {}, changeOrigins);
       if (this.iteration !== 0) {
         await this.processSubscriptions(newState, differences, previousState || {}, changeOrigins);
       }
@@ -476,7 +475,12 @@ export abstract class StatefulWorkflow<
     return false;
   }
 
-  protected async processChildState(newState: EntitiesState, differences: DetailedDiff, previousState: EntitiesState): Promise<void> {
+  protected async processChildState(
+    newState: EntitiesState,
+    differences: DetailedDiff,
+    previousState: EntitiesState,
+    changeOrigins: string[]
+  ): Promise<void> {
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.processChildState`);
 
     const newData = denormalize(get(newState, `${this.entityName}.${this.id}`), SchemaManager.getInstance().getSchemas() as Entities, newState);
@@ -491,9 +495,9 @@ export abstract class StatefulWorkflow<
       const previousValue = get(oldData, config.path as string, null);
 
       if (Array.isArray(currentValue)) {
-        await this.processArrayItems(newState, currentValue, config, differences, previousState);
+        await this.processArrayItems(newState, currentValue, config, differences, previousState, changeOrigins);
       } else if (currentValue) {
-        await this.processSingleItem(newState, currentValue, config, differences, previousState);
+        await this.processSingleItem(newState, currentValue, config, differences, previousState, changeOrigins);
       }
 
       if (Array.isArray(previousValue)) {
@@ -501,6 +505,7 @@ export abstract class StatefulWorkflow<
           if (get(differences, `deleted.${config.entityName}.${item}`)) {
             this.log.debug(`Processing subscription for deleted item in ${config.entityName}`);
 
+            // @TODO need to fix this
             const workflowId = `${config.entityName}-${item}`;
             const handle = this.handles[workflowId];
             if (handle) {
@@ -515,6 +520,7 @@ export abstract class StatefulWorkflow<
         if (get(differences, `deleted.${config.entityName}.${itemId}`)) {
           this.log.debug(`Processing subscription for deleted item in ${config.entityName}`);
 
+          // @TODO need to fix this
           const workflowId = `${config.entityName}-${itemId}`;
 
           const handle = this.handles[workflowId];
@@ -533,7 +539,8 @@ export abstract class StatefulWorkflow<
     items: any[],
     config: ManagedPath,
     differences: DetailedDiff,
-    previousState: EntitiesState
+    previousState: EntitiesState,
+    changeOrigins: string[]
   ): Promise<void> {
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.processArrayItems`);
 
@@ -544,7 +551,7 @@ export abstract class StatefulWorkflow<
         (get(differences, `added.${config.entityName as string}.${newItem}`) as DetailedDiff) ||
         (get(differences, `updated.${config.entityName as string}.${newItem}`) as DetailedDiff);
 
-      await this.processSingleItem(newState, newItem, config, difference, previousState);
+      await this.processSingleItem(newState, newItem, config, difference, previousState, changeOrigins);
     }
 
     for (const currentItem of currentItems) {
@@ -553,6 +560,7 @@ export abstract class StatefulWorkflow<
         : currentItem[config.idAttribute as string];
 
       if (itemId && get(differences, `deleted.${config.entityName as string}.${itemId}`)) {
+        // @TODO need to fix this
         await this.processDeletion(itemId, config);
       }
     }
@@ -563,15 +571,24 @@ export abstract class StatefulWorkflow<
     item: string,
     config: ManagedPath,
     differences: DetailedDiff,
-    previousState: EntitiesState
+    previousState: EntitiesState,
+    changeOrigins: string[]
   ): Promise<void> {
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.processSingleItem`);
 
-    const itemId = Array.isArray(config.idAttribute) ? getCompositeKey(newState[config.entityName as string][item], config.idAttribute) : item;
+    const compositeId = Array.isArray(config.idAttribute)
+      ? getCompositeKey(newState[config.entityName as string][item], config.idAttribute)
+      : item;
+    const workflowId = config.includeParentId ? `${config.entityName}-${compositeId}-${this.id}` : `${config.entityName}-${compositeId}`;
 
-    const existingHandle = this.handles[`${config.entityName}-${itemId}`];
-    const previousItem = get(previousState, `${config.entityName}.${itemId}`, {});
-    const newItem = get(newState, `${config.entityName}.${itemId}`, {});
+    if (changeOrigins.includes(workflowId)) {
+      this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id} Skipping recursive update...`);
+      return;
+    }
+
+    const existingHandle = this.handles[workflowId];
+    const previousItem = get(previousState, `${config.entityName}.${compositeId}`, {});
+    const newItem = get(newState, `${config.entityName}.${compositeId}`, {});
     const hasStateChanged = !isEqual(previousItem, newItem);
 
     if (hasStateChanged) {

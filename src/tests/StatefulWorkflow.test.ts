@@ -580,26 +580,6 @@ describe('StatefulWorkflow', () => {
       const parentUpdatedState = await handle.query('state');
       expect(parentUpdatedState.Like[likeId].newField).toEqual('direct update');
     }, 45000);
-
-    it.skip('Should handle schema updates and maintain data integrity', async () => {
-      const userId = uuid4();
-      const initialData = { id: userId, name: 'Initial' };
-      const handle = await execute(workflows.ShouldExecuteStateful, { id: userId, entityName: 'User', data: initialData });
-      await sleep();
-
-      // Simulate schema update
-      SchemaManager.getInstance().registerSchema('User', {
-        id: 'string',
-        name: 'string',
-        age: 'number' // New field
-      });
-
-      await handle.signal('update', { data: { id: userId, age: 30 }, entityName: 'User' });
-      await sleep();
-
-      const updatedState = await handle.query('state');
-      expect(updatedState.User[userId]).toHaveProperty('age', 30);
-    });
   });
 
   describe('getCompositeKey', () => {
