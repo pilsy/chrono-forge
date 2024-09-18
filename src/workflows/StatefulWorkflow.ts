@@ -158,6 +158,8 @@ export abstract class StatefulWorkflow<
   @Property({ set: false })
   protected subscriptions: Subscription[] = [];
 
+  protected subscriptionHandles: { [workflowId: string]: workflow.ExternalWorkflowHandle } = {};
+
   @Property({ set: false })
   protected managedPaths: ManagedPaths = {};
 
@@ -233,7 +235,7 @@ export abstract class StatefulWorkflow<
                 await this.condition();
 
                 if (this.status === 'paused') {
-                  await this.handlePause();
+                  await this.forwardSignalToChildren('pause');
                 } else if (this.status === 'cancelled') {
                   throw new Error(`Cancelled`);
                 }
@@ -317,7 +319,7 @@ export abstract class StatefulWorkflow<
 
     if (!this.subscriptions.find((sub) => sub.workflowId === workflowId && sub.subscriptionId === subscriptionId)) {
       this.subscriptions.push(subscription);
-      this.handles[workflowId] = await workflow.getExternalWorkflowHandle(workflowId);
+      this.subscriptionHandles[workflowId] = await workflow.getExternalWorkflowHandle(workflowId);
     }
   }
 
@@ -329,7 +331,7 @@ export abstract class StatefulWorkflow<
     // Remove the specific subscription
     const index = this.subscriptions.findIndex((sub) => sub.workflowId === workflowId && sub.subscriptionId === subscriptionId);
     if (index !== -1) {
-      delete this.handles[workflowId];
+      delete this.subscriptionHandles[workflowId];
       this.subscriptions.splice(index, 1);
     }
   }
@@ -409,7 +411,7 @@ export abstract class StatefulWorkflow<
         continue;
       }
 
-      const handle = this.handles[workflowId];
+      const handle = this.subscriptionHandles[workflowId];
       if (handle) {
         try {
           this.log.debug(
@@ -800,19 +802,6 @@ export abstract class StatefulWorkflow<
         )
       });
     }
-  }
-
-  protected async handlePause(): Promise<void> {
-    await Promise.all(
-      this.subscriptions.map(async (sub) => {
-        try {
-          await this.handles[sub.workflowId].signal('pause');
-        } catch (err) {
-          this.log.error(err as string);
-        }
-      })
-    );
-    await workflow.condition(() => this.status !== 'paused');
   }
 
   protected async loadDataAndEnqueueChanges(): Promise<void> {
