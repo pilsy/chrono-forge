@@ -376,15 +376,16 @@ export abstract class StatefulWorkflow<
       const deleted = get(differences.deleted, `${this.entityName}.${this.id}`, false);
 
       if (created) {
-        await this.emit('created', created, newState, previousState);
+        await this.emit('created', created, newState, previousState, changeOrigins);
       } else if (updated) {
-        await this.emit('updated', updated, newState, previousState);
+        await this.emit('updated', updated, newState, previousState, changeOrigins);
       } else if (deleted) {
-        if (!(await this.emit('deleted', deleted, newState, previousState))) {
+        if (!(await this.emit('deleted', deleted, newState, previousState, changeOrigins))) {
           throw new workflow.CancelledFailure(`Workflow cancelled due to entity ${this.entityName}:${this.id} was deleted...`);
         }
       }
 
+      // @TODO check if i actually need changeOrigins down here before i bother with all of the type related stuff needed to get it down there
       await this.processChildState(newState, differences, previousState || {});
       if (this.iteration !== 0) {
         await this.processSubscriptions(newState, differences, previousState || {}, changeOrigins);
