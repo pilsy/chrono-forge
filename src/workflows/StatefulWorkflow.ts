@@ -603,8 +603,8 @@ export abstract class StatefulWorkflow<
       }
 
       const entitySchema = SchemaManager.getInstance().getSchema(entityName as string);
-      const rawData = limitRecursion(denormalize(state, entitySchema, newState), entitySchema);
-      const data = typeof config.processData === 'function' ? config.processData(rawData, this) : rawData;
+      const rawData = denormalize(state, entitySchema, newState);
+      const data = limitRecursion(typeof config.processData === 'function' ? config.processData(rawData, this) : rawData, entitySchema);
       const { [idAttribute as string]: id, ...rest } = state;
       const compositeId = Array.isArray(idAttribute) ? getCompositeKey(data, idAttribute) : id;
       const workflowId = includeParentId ? `${entityName}-${compositeId}-${this.id}` : `${entityName}-${compositeId}`;
@@ -706,8 +706,8 @@ export abstract class StatefulWorkflow<
       }
 
       const entitySchema = SchemaManager.getInstance().getSchema(entityName as string);
-      const rawData = limitRecursion(denormalize(state, entitySchema, newState), entitySchema);
-      const data = typeof config.processData === 'function' ? config.processData(rawData, this) : rawData;
+      const rawData = denormalize(state, entitySchema, newState);
+      const data = limitRecursion(typeof config.processData === 'function' ? config.processData(rawData, this) : rawData, entitySchema);
       const { [idAttribute as string]: id } = state;
       const compositeId = Array.isArray(config.idAttribute) ? getCompositeKey(data, config.idAttribute) : state[config.idAttribute as string];
       const workflowId = includeParentId ? `${entityName}-${compositeId}-${this.id}` : `${entityName}-${compositeId}`;

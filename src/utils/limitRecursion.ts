@@ -1,4 +1,4 @@
-import isObject from 'lodash.isobject';
+import { isObject } from 'lodash';
 
 export const limitRecursion = (ob: Record<string, any>, root: Record<string, any>) => {
   const seen = new WeakSet();
@@ -6,24 +6,25 @@ export const limitRecursion = (ob: Record<string, any>, root: Record<string, any
   const recurse = (obj: Record<string, any>, rootEntities: Record<string, any>) => {
     if (!obj || typeof obj !== 'object') return obj;
 
-    // Check if we have already processed this object
     if (seen.has(obj)) {
-      return obj?.id || null; // Return the ID or null to stop recursion
+      const idAttribute = rootEntities[rootEntities.length - 1].idAttribute || 'id';
+      return obj?.[idAttribute] || null;
     }
-    seen.add(obj); // Mark this object as processed
+    seen.add(obj);
 
     const rootEntity = rootEntities[rootEntities.length - 1];
 
     return Object.entries(obj).reduce((acc, [key, value]): any => {
       if (rootEntity.schema[key]) {
-        const subEntity = rootEntity.schema[key] instanceof Array ? rootEntity.schema[key][0] : rootEntity.schema[key];
-        const subEntities = rootEntity.schema[key] instanceof Array ? obj[key] : obj[key];
+        const subEntity = Array.isArray(rootEntity.schema[key]) ? rootEntity.schema[key][0] : rootEntity.schema[key];
+        const subEntities = Array.isArray(rootEntity.schema[key]) ? obj[key] : obj[key];
 
         if (rootEntities[0] !== subEntity) {
           rootEntities.push(subEntity);
           if (!subEntities || subEntities === null) {
             return acc;
           }
+
           return {
             ...acc,
             [key]: Array.isArray(subEntities)
@@ -33,14 +34,16 @@ export const limitRecursion = (ob: Record<string, any>, root: Record<string, any
                 : recurse(subEntities, rootEntities)
           };
         }
+
+        const idAttribute = rootEntities[0].idAttribute || 'id';
         return {
           ...acc,
           [key]: Array.isArray(subEntities)
             ? // @ts-ignore
-              subEntities.map((s: any): any => (isObject(s) ? s?.id : s))
+              subEntities.map((s: any): any => (isObject(s) ? s?.[idAttribute] : s))
             : isObject(subEntities)
               ? // @ts-ignore
-                subEntities?.id
+                subEntities?.[idAttribute]
               : subEntities
         };
       }
