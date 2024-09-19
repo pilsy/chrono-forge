@@ -222,7 +222,7 @@ export abstract class StatefulWorkflow<
             break;
           }
 
-          if (!this.isInTerminalState() && this.shouldLoadData()) {
+          if (this.shouldLoadData()) {
             await this.loadDataAndEnqueueChanges();
           }
 
@@ -788,13 +788,14 @@ export abstract class StatefulWorkflow<
     if (typeof this?.loadData === 'function') {
       // @ts-ignore
       let { data, updates } = await this.loadData();
+      if (!data && !updates) {
+        console.log(`No data or updates returned from loadData(), skipping state change...`);
+        return;
+      }
       if (data && !updates) {
         updates = normalizeEntities(data, this.entityName);
-      } else if (updates) {
-        this.schemaManager.dispatch(updateNormalizedEntities(updates, '$merge'), false);
-      } else {
-        console.log(`No data or updates returned from loadData(), skipping state change...`);
       }
+      this.schemaManager.dispatch(updateNormalizedEntities(updates, '$merge'), false);
     }
   }
 
