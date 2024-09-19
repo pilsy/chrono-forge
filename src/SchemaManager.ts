@@ -293,7 +293,6 @@ export class SchemaManager extends EventEmitter {
     if (this.denormalizedCache.has(cacheKey)) {
       const cachedEntry = this.denormalizedCache.get(cacheKey)!;
       if (cachedEntry.lastState === this.state) {
-        workflow.log.debug(`[SchemaManager]: Using cached result for ${cacheKey}`);
         return cachedEntry.data;
       } else {
         workflow.log.debug(`[SchemaManager]: Cache invalidated for ${cacheKey} due to state change`);
@@ -317,7 +316,7 @@ export class SchemaManager extends EventEmitter {
       const handler = {
         set: (target: any, prop: string | symbol, value: any) => {
           if (target[prop] === value) {
-            return true; // Prevent redundant updates
+            return true;
           }
           this.updateStateAtPath(entityName, id, target, prop.toString(), value);
           target[prop] = value;
@@ -326,12 +325,18 @@ export class SchemaManager extends EventEmitter {
         get: (target: any, prop: string | symbol) => {
           const val = target[prop];
           if (Array.isArray(val) || (typeof val === 'object' && val !== null)) {
-            return new Proxy(val, handler); // Recursively apply proxy with caution
+            return new Proxy(val, handler);
           }
           return val;
         }
       };
       result = new Proxy(result, handler);
+      Promise.resolve().then(async () => {
+        if (this.pendingChanges) {
+          workflow.log.debug(`[SchemaManager]: Processing ${this.pendingChanges.length} state changes for ${cacheKey}...`);
+          await this.processChanges();
+        }
+      });
     }
 
     this.denormalizedCache.set(cacheKey, { data: result, lastState: this.state });
@@ -346,26 +351,19 @@ export class SchemaManager extends EventEmitter {
       throw new Error(`Entity ${entityName} with ID ${id} not found.`);
     }
 
-    // Get the current value at the path
     const existingValue = dottie.get(entity, path);
 
-    // Only update if the value has actually changed
     if (Array.isArray(existingValue) && Array.isArray(value)) {
-      // Handle array concatenation or pushing to the array
       dottie.set(entity, path, [...existingValue, ...value]);
     } else if (Array.isArray(existingValue)) {
-      // Handle adding a single value to an array
       dottie.set(entity, path, [...existingValue, value]);
     } else if (typeof existingValue === 'object' && typeof value === 'object') {
-      // Handle merging objects
       dottie.set(entity, path, { ...existingValue, ...value });
     } else {
-      // Handle setting a primitive value
       dottie.set(entity, path, value);
     }
 
-    // Dispatch the update
-    this.dispatch(updateEntity(entity, entityName), true, workflow.workflowInfo().workflowId);
+    this.dispatch(updateEntity(entity, entityName), false, workflow.workflowInfo().workflowId);
     workflow.log.debug(`Updated state at path ${path} for ${entityName}:${id}`);
   }
 
