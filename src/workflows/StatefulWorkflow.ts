@@ -76,7 +76,6 @@ export type PendingChange = {
 };
 
 export interface ActionMetadata {
-  actionType: { name: string };
   method: keyof StatefulWorkflow<any, any>;
   options?: ActionOptions<any, any>;
 }
@@ -91,10 +90,7 @@ export abstract class StatefulWorkflow<
 
   protected async condition(): Promise<any> {
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.awaitCondition`);
-    return await workflow.condition(
-      () => this.pendingUpdate || !!this.pendingActions.length || !!this.pendingChanges.length || this.status !== 'running',
-      '1 day'
-    );
+    return await workflow.condition(() => this.pendingUpdate || !!this.pendingChanges.length || this.status !== 'running', '1 day');
   }
 
   protected shouldLoadData(): boolean {
@@ -154,8 +150,6 @@ export abstract class StatefulWorkflow<
     return this.schemaManager.pendingChanges;
   }
 
-  @Query('pendingActions')
-  protected pendingActions: Array<{ action: any; completed: boolean }> = [];
   protected actionHandlers: Record<string, Function> = {};
 
   @Property({ set: false })
@@ -869,51 +863,22 @@ export abstract class StatefulWorkflow<
     const actions: ActionMetadata[] = Reflect.getMetadata(ACTIONS_METADATA_KEY, this.constructor.prototype) || [];
     const validators = Reflect.getMetadata(VALIDATOR_METADATA_KEY, this.constructor.prototype) || {};
 
-    actions.forEach(({ actionType, method, options }) => {
+    actions.forEach(({ method, options }) => {
       const methodName = method as keyof StatefulWorkflow<any, any>;
-      // @ts-ignore
-      const validator = this[String(validatorMethod)];
-
-      const updateOptions: UpdateHandlerOptions<any[]> = {
-        validator
-      };
+      const updateOptions: UpdateHandlerOptions<any[]> = {};
+      const validatorMethod = validators[methodName];
+      if (validatorMethod) {
+        // @ts-ignore
+        updateOptions.validator = this[String(validatorMethod)];
+      }
 
       workflow.setHandler(
-        workflow.defineUpdate<any, any>(actionType.name),
-        async (input: any): Promise<any> => {
-          const validatorMethod = validators[methodName];
-          if (validatorMethod) {
-            // @ts-ignore
-            const isValid = await this[validatorMethod](input);
-            if (!isValid) {
-              throw new Error(`Validation failed for action: ${JSON.stringify(input)}`);
-            }
-          }
-
-          return await (this[methodName] as (input: any) => any)(input);
-        },
+        workflow.defineUpdate<any, any>(method),
+        async (input: any): Promise<any> => await (this[methodName] as (input: any) => any)(input),
         updateOptions
       );
     });
 
     this._actionsBound = true;
-  }
-
-  protected enqueueAction(action: any): void {
-    this.pendingActions.push({ action, completed: false });
-  }
-
-  @After('processState')
-  protected async processActions(): Promise<void> {
-    for (const action of this.pendingActions) {
-      if (!action.completed) {
-        const handler = this.actionHandlers[action.action.constructor.name];
-        if (handler) {
-          await handler(action.action);
-          action.completed = true;
-        }
-      }
-    }
-    this.pendingActions = this.pendingActions.filter((a) => !a.completed);
   }
 }
