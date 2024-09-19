@@ -6,11 +6,12 @@ import { DetailedDiff } from 'deep-object-diff';
 import { schema, denormalize, Schema } from 'normalizr';
 import { isEmpty, isEqual, property } from 'lodash';
 import { Workflow, ChronoFlowOptions } from './Workflow';
-import { Signal, Query, Before, Property } from '../decorators';
+import { Signal, Query, Before, Property, After, ACTIONS_METADATA_KEY, VALIDATOR_METADATA_KEY, ActionOptions, On } from '../decorators';
 import { SchemaManager } from '../SchemaManager';
 import { limitRecursion } from '../utils/limitRecursion';
 import { getCompositeKey } from '../utils/getCompositeKey';
 import { PROPERTY_METADATA_KEY } from '../decorators';
+import { UpdateHandlerOptions } from '@temporalio/workflow/lib/interfaces';
 
 export type ManagedPath = {
   entityName?: string;
@@ -74,16 +75,26 @@ export type PendingChange = {
   sync?: boolean;
 };
 
+export interface ActionMetadata {
+  actionType: { name: string };
+  method: keyof StatefulWorkflow<any, any>;
+  options?: ActionOptions<any, any>;
+}
+
 export abstract class StatefulWorkflow<
   P extends StatefulWorkflowParams = StatefulWorkflowParams,
   O extends StatefulWorkflowOptions = StatefulWorkflowOptions
 > extends Workflow<P, O> {
+  private _actionsBound: boolean = false;
   protected schemaManager: SchemaManager;
   protected schema: Schema;
 
   protected async condition(): Promise<any> {
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.awaitCondition`);
-    return await workflow.condition(() => this.pendingUpdate || !!this.pendingChanges.length || this.status !== 'running', '1 day');
+    return await workflow.condition(
+      () => this.pendingUpdate || !!this.pendingActions.length || !!this.pendingChanges.length || this.status !== 'running',
+      '1 day'
+    );
   }
 
   protected shouldLoadData(): boolean {
@@ -142,6 +153,10 @@ export abstract class StatefulWorkflow<
   get pendingChanges() {
     return this.schemaManager.pendingChanges;
   }
+
+  @Query('pendingActions')
+  protected pendingActions: Array<{ action: any; completed: boolean }> = [];
+  protected actionHandlers: Record<string, Function> = {};
 
   @Property({ set: false })
   protected subscriptions: Subscription[] = [];
@@ -232,8 +247,10 @@ export abstract class StatefulWorkflow<
           this.result = await this.execute();
 
           if (this.isInTerminalState()) {
+            await workflow.condition(workflow.allHandlersFinished);
             return this.status !== 'errored' ? resolve(this.result) : reject(this.result);
           } else if (++this.iteration >= this.maxIterations) {
+            await workflow.condition(workflow.allHandlersFinished);
             await this.handleMaxIterations();
             resolve('Continued as a new workflow execution...');
           }
@@ -487,8 +504,10 @@ export abstract class StatefulWorkflow<
           if (get(differences, `deleted.${config.entityName}.${item}`)) {
             this.log.debug(`Processing subscription for deleted item in ${config.entityName}`);
 
-            // @TODO need to fix this
-            const workflowId = `${config.entityName}-${item}`;
+            const compositeId = Array.isArray(config.idAttribute)
+              ? getCompositeKey(newState[config.entityName as string][item], config.idAttribute)
+              : item;
+            const workflowId = config.includeParentId ? `${config.entityName}-${compositeId}-${this.id}` : `${config.entityName}-${compositeId}`;
             const handle = this.handles[workflowId];
             if (handle) {
               await this.unsubscribeHandle(handle);
@@ -502,8 +521,10 @@ export abstract class StatefulWorkflow<
         if (get(differences, `deleted.${config.entityName}.${itemId}`)) {
           this.log.debug(`Processing subscription for deleted item in ${config.entityName}`);
 
-          // @TODO need to fix this
-          const workflowId = `${config.entityName}-${itemId}`;
+          const compositeId = Array.isArray(config.idAttribute)
+            ? getCompositeKey(newState[config.entityName as string][itemId], config.idAttribute)
+            : itemId;
+          const workflowId = config.includeParentId ? `${config.entityName}-${compositeId}-${this.id}` : `${config.entityName}-${compositeId}`;
 
           const handle = this.handles[workflowId];
           if (handle) {
@@ -837,5 +858,62 @@ export abstract class StatefulWorkflow<
         });
       }
     });
+  }
+
+  @On('init')
+  protected async bindActions() {
+    if (!!this._actionsBound) {
+      return;
+    }
+
+    const actions: ActionMetadata[] = Reflect.getMetadata(ACTIONS_METADATA_KEY, this.constructor.prototype) || [];
+    const validators = Reflect.getMetadata(VALIDATOR_METADATA_KEY, this.constructor.prototype) || {};
+
+    actions.forEach(({ actionType, method, options }) => {
+      const methodName = method as keyof StatefulWorkflow<any, any>;
+      // @ts-ignore
+      const validator = this[String(validatorMethod)];
+
+      const updateOptions: UpdateHandlerOptions<any[]> = {
+        validator
+      };
+
+      workflow.setHandler(
+        workflow.defineUpdate<any, any>(actionType.name),
+        async (input: any): Promise<any> => {
+          const validatorMethod = validators[methodName];
+          if (validatorMethod) {
+            // @ts-ignore
+            const isValid = await this[validatorMethod](input);
+            if (!isValid) {
+              throw new Error(`Validation failed for action: ${JSON.stringify(input)}`);
+            }
+          }
+
+          return await (this[methodName] as (input: any) => any)(input);
+        },
+        updateOptions
+      );
+    });
+
+    this._actionsBound = true;
+  }
+
+  protected enqueueAction(action: any): void {
+    this.pendingActions.push({ action, completed: false });
+  }
+
+  @After('processState')
+  protected async processActions(): Promise<void> {
+    for (const action of this.pendingActions) {
+      if (!action.completed) {
+        const handler = this.actionHandlers[action.action.constructor.name];
+        if (handler) {
+          await handler(action.action);
+          action.completed = true;
+        }
+      }
+    }
+    this.pendingActions = this.pendingActions.filter((a) => !a.completed);
   }
 }

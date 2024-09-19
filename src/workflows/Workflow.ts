@@ -586,9 +586,6 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       currentProto = Object.getPrototypeOf(currentProto);
     }
 
-    // console.log(metadataKey);
-    // console.log(collectedMetadata);
-
     return collectedMetadata;
   }
 
