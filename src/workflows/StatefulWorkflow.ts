@@ -208,47 +208,39 @@ export abstract class StatefulWorkflow<
       if (this.schema) this.configureManagedPaths(this.schema);
       try {
         while (this.iteration <= this.maxIterations) {
-          this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.executeWorkflow:execute`);
-          await this.tracer.startActiveSpan(
-            `[${this.constructor.name}]:${this.entityName}:${this.id}.executeWorkflow:execute`,
-            async (executeSpan) => {
-              try {
-                executeSpan.setAttributes({
-                  workflowId: workflow.workflowInfo().workflowId,
-                  workflowType: workflow.workflowInfo().workflowType,
-                  iteration: this.iteration
-                });
+          this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}:execute`);
 
-                await this.condition();
+          await this.condition();
 
-                if (this.status === 'paused') {
-                  await this.forwardSignalToChildren('pause');
-                } else if (this.status === 'cancelled') {
-                  throw new Error(`Cancelled`);
-                }
+          if (this.status === 'paused') {
+            await this.emitAsync('paused');
+            await this.forwardSignalToChildren('pause');
+            await workflow.condition(() => this.status !== 'paused');
+          }
 
-                if (this.shouldLoadData()) {
-                  await this.loadDataAndEnqueueChanges();
-                }
+          if (this.status === 'cancelled') {
+            break;
+          }
 
-                this.result = await this.execute();
+          if (!this.isInTerminalState() && this.shouldLoadData()) {
+            await this.loadDataAndEnqueueChanges();
+          }
 
-                if (this.isInTerminalState()) {
-                  return this.status !== 'errored' ? resolve(this.result) : reject(this.result);
-                } else if (++this.iteration >= this.maxIterations) {
-                  await this.handleMaxIterations();
-                  resolve('Continued as a new workflow execution...');
-                } else {
-                  this.pendingUpdate = false;
-                }
-              } catch (e: any) {
-                throw e;
-              } finally {
-                executeSpan.end();
-              }
-            }
-          );
+          if (!this.isInTerminalState()) this.result = await this.execute();
+
+          this.result = await this.execute();
+
+          if (this.isInTerminalState()) {
+            return this.status !== 'errored' ? resolve(this.result) : reject(this.result);
+          } else if (++this.iteration >= this.maxIterations) {
+            await this.handleMaxIterations();
+            resolve('Continued as a new workflow execution...');
+          }
+
+          this.pendingUpdate = false;
         }
+
+        resolve(this.result);
       } catch (err) {
         await this.handleExecutionError(err, reject);
       }
@@ -798,10 +790,11 @@ export abstract class StatefulWorkflow<
       let { data, updates } = await this.loadData();
       if (data && !updates) {
         updates = normalizeEntities(data, this.entityName);
-      } else if (!updates) {
+      } else if (updates) {
+        this.schemaManager.dispatch(updateNormalizedEntities(updates, '$merge'), false);
+      } else {
         console.log(`No data or updates returned from loadData(), skipping state change...`);
       }
-      this.schemaManager.dispatch(updateNormalizedEntities(updates, '$merge'), false);
     }
   }
 

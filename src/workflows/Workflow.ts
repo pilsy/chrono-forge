@@ -239,6 +239,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
           if (this.status === 'paused') {
             await this.emitAsync('paused');
+            await this.forwardSignalToChildren('pause');
             await workflow.condition(() => this.status !== 'paused');
           }
 
