@@ -5,3 +5,5 @@ export const GETTER_METADATA_KEY = Symbol('getter');
 export const SETTER_METADATA_KEY = Symbol('setter');
 export const EVENTS_METADATA_KEY = Symbol('events');
 export const HOOKS_METADATA_KEY = Symbol('hooks');
+export const ACTIONS_METADATA_KEY = Symbol('actions');
+export const VALIDATOR_METADATA_KEY = Symbol('validators');
