@@ -6,12 +6,10 @@ import * as workflow from '@temporalio/workflow';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { log } from '@temporalio/workflow';
 import EventEmitter from 'eventemitter3';
-import { get } from 'dottie';
 import { registry } from '../WorkflowRegistry';
 import {
   Property,
   Signal,
-  Query,
   On,
   PROPERTY_METADATA_KEY,
   QUERY_METADATA_KEY,
@@ -21,11 +19,6 @@ import {
   EVENTS_METADATA_KEY,
   HOOKS_METADATA_KEY
 } from '../decorators';
-
-interface HookMetadata {
-  before: string[];
-  after: string[];
-}
 
 /**
  * `Workflow` Class
@@ -82,14 +75,13 @@ export interface ChronoFlowOptions {
 export function ChronoFlow(options?: ChronoFlowOptions) {
   return function (constructor: any) {
     const { name: optionalName, taskQueue, ...extraOptions } = options || {};
-    const workflowName = optionalName || constructor.name; // Determine workflow name
+    const workflowName = optionalName || constructor.name;
 
-    // Ensure the constructor is a subtype of Workflow, or wrap it in a dynamic class
     if (!(constructor.prototype instanceof Workflow)) {
       abstract class DynamicChronoFlow extends Workflow {
         constructor(params: any, options: ChronoFlowOptions = {}) {
           super(params, options);
-          Object.assign(this, new constructor(params, options)); // Assign properties from the original constructor
+          Object.assign(this, new constructor(params, options));
         }
       }
       constructor = DynamicChronoFlow;
@@ -133,7 +125,7 @@ export function ChronoFlow(options?: ChronoFlowOptions) {
         });
       };
     `
-    )(workflow, constructor, extraOptions, trace.getTracer('temporal_worker'));
+    )(workflow, constructor, extraOptions, trace.getTracer(String(process.env.OTEL_SERVICE_NAME) || 'temporal_worker'));
 
     // Register the workflow class in the WorkflowRegistry
     registry.registerWorkflow(workflowName, construct, taskQueue || 'default');
@@ -152,7 +144,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   protected result: any;
   protected signalHandlers: { [key: string]: (args: any[]) => Promise<void> } = {};
   protected queryHandlers: { [key: string]: (...args: any[]) => any } = {};
-  protected tracer = trace.getTracer('temporal_worker');
+  protected tracer = trace.getTracer(String(process.env.OTEL_SERVICE_NAME) || 'temporal_worker');
   protected handles: { [workflowId: string]: ReturnType<typeof workflow.getExternalWorkflowHandle> | workflow.ChildWorkflowHandle<any> } = {};
   protected log = log;
 
