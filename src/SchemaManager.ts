@@ -1,3 +1,4 @@
+import dottie from 'dottie';
 import EventEmitter from 'eventemitter3';
 import { normalize, denormalize, schema } from 'normalizr';
 import {
@@ -9,10 +10,11 @@ import {
   deleteNormalizedEntity,
   deleteNormalizedEntities,
   normalizeEntities,
-  clearEntities
+  clearEntities,
+  updateEntity
 } from './utils/entities';
 import { DetailedDiff, detailedDiff } from 'deep-object-diff';
-import { isEmpty, cloneDeep } from 'lodash';
+import { isEmpty, cloneDeep, update } from 'lodash';
 import { limitRecursion } from './utils/limitRecursion';
 import * as workflow from '@temporalio/workflow';
 
@@ -288,16 +290,14 @@ export class SchemaManager extends EventEmitter {
   query(entityName: string, id: string, denormalizeData = true): any {
     const cacheKey = `${entityName}.${id}`;
 
-    // Check if the result is already cached and valid
     if (this.denormalizedCache.has(cacheKey)) {
       const cachedEntry = this.denormalizedCache.get(cacheKey)!;
-
       if (cachedEntry.lastState === this.state) {
         workflow.log.debug(`[SchemaManager]: Using cached result for ${cacheKey}`);
         return cachedEntry.data;
       } else {
         workflow.log.debug(`[SchemaManager]: Cache invalidated for ${cacheKey} due to state change`);
-        this.denormalizedCache.delete(cacheKey); // Invalidate cache if state has changed
+        this.denormalizedCache.delete(cacheKey);
       }
     }
 
@@ -306,17 +306,67 @@ export class SchemaManager extends EventEmitter {
       return null;
     }
 
-    let result;
+    let result: any;
     if (denormalizeData) {
       result = limitRecursion(denormalize(entity, this.schemas[entityName], this.state), this.schemas[entityName]);
     } else {
       result = entity;
     }
 
-    // Cache the result
+    if (denormalizeData) {
+      const handler = {
+        set: (target: any, prop: string | symbol, value: any) => {
+          if (target[prop] === value) {
+            return true; // Prevent redundant updates
+          }
+          this.updateStateAtPath(entityName, id, target, prop.toString(), value);
+          target[prop] = value;
+          return true;
+        },
+        get: (target: any, prop: string | symbol) => {
+          const val = target[prop];
+          if (Array.isArray(val) || (typeof val === 'object' && val !== null)) {
+            return new Proxy(val, handler); // Recursively apply proxy with caution
+          }
+          return val;
+        }
+      };
+      result = new Proxy(result, handler);
+    }
+
     this.denormalizedCache.set(cacheKey, { data: result, lastState: this.state });
 
     return result;
+  }
+
+  updateStateAtPath(entityName: string, id: string, entity: any, path: string, value: any) {
+    workflow.log.debug(`[SchemaManager]: updateStateAtPath(${entityName}.${id}.${path}) = ${value}...`);
+
+    if (!entity) {
+      throw new Error(`Entity ${entityName} with ID ${id} not found.`);
+    }
+
+    // Get the current value at the path
+    const existingValue = dottie.get(entity, path);
+
+    // Only update if the value has actually changed
+    if (Array.isArray(existingValue) && Array.isArray(value)) {
+      // Handle array concatenation or pushing to the array
+      dottie.set(entity, path, [...existingValue, ...value]);
+    } else if (Array.isArray(existingValue)) {
+      // Handle adding a single value to an array
+      dottie.set(entity, path, [...existingValue, value]);
+    } else if (typeof existingValue === 'object' && typeof value === 'object') {
+      // Handle merging objects
+      dottie.set(entity, path, { ...existingValue, ...value });
+    } else {
+      // Handle setting a primitive value
+      dottie.set(entity, path, value);
+    }
+
+    // Dispatch the update
+    this.dispatch(updateEntity(entity, entityName), true, workflow.workflowInfo().workflowId);
+    workflow.log.debug(`Updated state at path ${path} for ${entityName}:${id}`);
   }
 
   /**

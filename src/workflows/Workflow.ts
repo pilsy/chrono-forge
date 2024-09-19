@@ -60,6 +60,7 @@ import {
 export interface ChronoFlowOptions {
   name?: string;
   taskQueue?: string;
+  tracerName?: string;
   [key: string]: any;
 }
 
@@ -74,7 +75,7 @@ export interface ChronoFlowOptions {
  */
 export function ChronoFlow(options?: ChronoFlowOptions) {
   return function (constructor: any) {
-    const { name: optionalName, taskQueue, ...extraOptions } = options || {};
+    const { name: optionalName, taskQueue, tracerName = 'temporal_worker', ...extraOptions } = options || {};
     const workflowName = optionalName || constructor.name;
 
     if (!(constructor.prototype instanceof Workflow)) {
@@ -103,6 +104,7 @@ export function ChronoFlow(options?: ChronoFlowOptions) {
             });
             try {
               const instance = new constructor(args[0], extraOptions);
+              instance.tracer = tracer;
               await instance.bindEventHandlers();
               await instance.emitAsync('hooks');
               await instance.emitAsync('init');
@@ -125,7 +127,7 @@ export function ChronoFlow(options?: ChronoFlowOptions) {
         });
       };
     `
-    )(workflow, constructor, extraOptions, trace.getTracer(String(process.env.OTEL_SERVICE_NAME) || 'temporal_worker'));
+    )(workflow, constructor, extraOptions, trace.getTracer(tracerName));
 
     // Register the workflow class in the WorkflowRegistry
     registry.registerWorkflow(workflowName, construct, taskQueue || 'default');
@@ -144,7 +146,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   protected result: any;
   protected signalHandlers: { [key: string]: (args: any[]) => Promise<void> } = {};
   protected queryHandlers: { [key: string]: (...args: any[]) => any } = {};
-  protected tracer = trace.getTracer(String(process.env.OTEL_SERVICE_NAME) || 'temporal_worker');
+  public tracer = trace.getTracer('temporal_worker');
   protected handles: { [workflowId: string]: ReturnType<typeof workflow.getExternalWorkflowHandle> | workflow.ChildWorkflowHandle<any> } = {};
   protected log = log;
 
