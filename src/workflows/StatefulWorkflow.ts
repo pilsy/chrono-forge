@@ -4,12 +4,13 @@ import * as workflow from '@temporalio/workflow';
 import { normalizeEntities, EntitiesState, updateNormalizedEntities, deleteNormalizedEntities, deleteEntities } from '../utils/entities';
 import { DetailedDiff } from 'deep-object-diff';
 import { schema, denormalize, Schema } from 'normalizr';
-import { isEmpty, isEqual } from 'lodash';
+import { isEmpty, isEqual, property } from 'lodash';
 import { Workflow, ChronoFlowOptions } from './Workflow';
 import { Signal, Query, Before, Property } from '../decorators';
 import { SchemaManager } from '../SchemaManager';
 import { limitRecursion } from '../utils/limitRecursion';
 import { getCompositeKey } from '../utils/getCompositeKey';
+import { PROPERTY_METADATA_KEY } from '../decorators';
 
 export type ManagedPath = {
   entityName?: string;
@@ -818,5 +819,23 @@ export abstract class StatefulWorkflow<
         ...(this.managedPaths[path] || {})
       };
     }
+  }
+
+  protected async bindProperties() {
+    await super.bindProperties();
+
+    const properties = this.collectMetadata(PROPERTY_METADATA_KEY, this.constructor.prototype);
+    properties.forEach(({ propertyKey, path }) => {
+      if (typeof path === 'string') {
+        Object.defineProperty(this, propertyKey, {
+          get: () => dottie.get(this.data || {}, path),
+          set: (value) => {
+            dottie.set(this.data || (this.data = {}), path, value);
+          },
+          configurable: false,
+          enumerable: true
+        });
+      }
+    });
   }
 }

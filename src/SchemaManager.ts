@@ -332,7 +332,7 @@ export class SchemaManager extends EventEmitter {
       };
       result = new Proxy(result, handler);
       Promise.resolve().then(async () => {
-        if (this.pendingChanges) {
+        if (this.pendingChanges.length) {
           workflow.log.debug(`[SchemaManager]: Processing ${this.pendingChanges.length} state changes for ${cacheKey}...`);
           await this.processChanges();
         }

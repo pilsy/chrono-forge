@@ -46,6 +46,8 @@
     "src/workflows/DynamicExecutionEngine.ts",
     "src/workflows/ChronoGraph.ts",
     "src/utils/runWorker.ts",
-    "src/decorators/Worker.ts"
+    "src/decorators/Worker.ts",
+    "src/utils/instrumentation.ts",
+    "src/utils/logger.ts"
   ]
 }

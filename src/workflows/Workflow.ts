@@ -567,7 +567,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     this._signalsBound = true;
   }
 
-  private collectMetadata(metadataKey: Symbol, target: any): any[] {
+  protected collectMetadata(metadataKey: Symbol, target: any): any[] {
     const collectedMetadata: any[] = [];
     const seen = new Set();
     let currentProto = target;

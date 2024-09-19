@@ -1,20 +1,18 @@
 import 'reflect-metadata';
 import { PROPERTY_METADATA_KEY, GETTER_METADATA_KEY, SETTER_METADATA_KEY } from './metadata';
 
-export const Property = (options: { get?: boolean | string; set?: boolean | string } = {}) => {
+export const Property = (options: { get?: boolean | string; set?: boolean | string; path?: string } = {}) => {
   return (target: any, propertyKey: string) => {
-    // Use getOwnMetadata to retrieve only metadata defined on the current class
     const properties = Reflect.getOwnMetadata(PROPERTY_METADATA_KEY, target) || [];
-
     properties.push({
       propertyKey,
+      path: options.path,
       get: options.get || options.get === undefined,
       set: options.set || options.set === undefined,
       queryName: propertyKey,
       signalName: propertyKey
     });
 
-    // Define metadata for the current class
     Reflect.defineMetadata(PROPERTY_METADATA_KEY, properties, target);
 
     if (options.get) {
@@ -32,7 +30,3 @@ export const Property = (options: { get?: boolean | string; set?: boolean | stri
     }
   };
 };
-
-function capitalize(str: string): string {
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
