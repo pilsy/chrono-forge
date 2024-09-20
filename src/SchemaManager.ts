@@ -53,7 +53,7 @@ export class SchemaManager extends EventEmitter {
   private denormalizedCache: Map<string, { data: any; lastState: EntitiesState }> = new Map();
   private schemas: { [key: string]: schema.Entity } = {};
   private state: EntitiesState = {};
-  private processing = false;
+  public processing = false;
   private queue: EntityAction[] = [];
 
   // Track origins of changes to prevent redundant updates
@@ -136,7 +136,6 @@ export class SchemaManager extends EventEmitter {
     }
 
     if (sync && !this.processing) {
-      this.processing = true; // Mark processing as in progress
       await this.processChanges(); // Start processing the queue
     }
   }
@@ -146,6 +145,7 @@ export class SchemaManager extends EventEmitter {
    * Handles state changes, history management for undo/redo, and event emission for state changes.
    */
   async processChanges(): Promise<void> {
+    this.processing = true;
     const previousState = this.state;
 
     let newState;
@@ -307,19 +307,14 @@ export class SchemaManager extends EventEmitter {
 
     let result: any;
     if (denormalizeData) {
-      result = limitRecursion(denormalize(entity, this.schemas[entityName], this.state), this.schemas[entityName]);
-    } else {
-      result = entity;
-    }
-
-    if (denormalizeData) {
+      const denormalised = limitRecursion(denormalize(entity, this.schemas[entityName], this.state), this.schemas[entityName]);
       const handler = {
         set: (target: any, prop: string | symbol, value: any) => {
           if (target[prop] === value) {
             return true;
           }
-          this.updateStateAtPath(entityName, id, target, prop.toString(), value);
           target[prop] = value;
+          this.dispatch(updateEntity(denormalised, entityName), false, workflow.workflowInfo().workflowId);
           return true;
         },
         get: (target: any, prop: string | symbol) => {
@@ -330,41 +325,13 @@ export class SchemaManager extends EventEmitter {
           return val;
         }
       };
-      result = new Proxy(result, handler);
-      Promise.resolve().then(async () => {
-        if (this.pendingChanges.length) {
-          workflow.log.debug(`[SchemaManager]: Processing ${this.pendingChanges.length} state changes for ${cacheKey}...`);
-          await this.processChanges();
-        }
-      });
+      result = new Proxy(denormalised, handler);
+      this.denormalizedCache.set(cacheKey, { data: result, lastState: this.state });
+    } else {
+      result = entity;
     }
-
-    this.denormalizedCache.set(cacheKey, { data: result, lastState: this.state });
 
     return result;
-  }
-
-  updateStateAtPath(entityName: string, id: string, entity: any, path: string, value: any) {
-    workflow.log.debug(`[SchemaManager]: updateStateAtPath(${entityName}.${id}.${path}) = ${value}...`);
-
-    if (!entity) {
-      throw new Error(`Entity ${entityName} with ID ${id} not found.`);
-    }
-
-    const existingValue = dottie.get(entity, path);
-
-    if (Array.isArray(existingValue) && Array.isArray(value)) {
-      dottie.set(entity, path, [...existingValue, ...value]);
-    } else if (Array.isArray(existingValue)) {
-      dottie.set(entity, path, [...existingValue, value]);
-    } else if (typeof existingValue === 'object' && typeof value === 'object') {
-      dottie.set(entity, path, { ...existingValue, ...value });
-    } else {
-      dottie.set(entity, path, value);
-    }
-
-    this.dispatch(updateEntity(entity, entityName), false, workflow.workflowInfo().workflowId);
-    workflow.log.debug(`Updated state at path ${path} for ${entityName}:${id}`);
   }
 
   /**

@@ -39,7 +39,7 @@ logger.trace = (...args) => logger.debug(...args);
 
 Runtime.install({
   telemetryOptions: {
-    metrics: { otel: { url: 'http://localhost:4317/v1/metrics' } },
+    // metrics: { otel: { url: 'http://localhost:4317/v1/metrics' } },
     logging: {}
   },
   // @ts-ignore

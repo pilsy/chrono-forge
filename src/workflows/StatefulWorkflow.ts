@@ -85,6 +85,7 @@ export abstract class StatefulWorkflow<
   O extends StatefulWorkflowOptions = StatefulWorkflowOptions
 > extends Workflow<P, O> {
   private _actionsBound: boolean = false;
+  private _actionRunning: boolean = false;
   protected schemaManager: SchemaManager;
   protected schema: Schema;
 
@@ -344,6 +345,13 @@ export abstract class StatefulWorkflow<
 
   @Before('execute')
   protected async processState(): Promise<void> {
+    if (this._actionRunning) {
+      this.log.debug(
+        `[${this.constructor.name}]:${this.entityName}:${this.id}: Action is running, waiting for all changes to be made before processing...`
+      );
+      await workflow.condition(() => !this._actionRunning);
+    }
+
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.processState`);
     if (this.pendingChanges.length) {
       await this.schemaManager.processChanges();
@@ -874,7 +882,30 @@ export abstract class StatefulWorkflow<
 
       workflow.setHandler(
         workflow.defineUpdate<any, any>(method),
-        async (input: any): Promise<any> => await (this[methodName] as (input: any) => any)(input),
+        async (input: any): Promise<any> => {
+          this._actionRunning = true;
+          return await new Promise(async (resolve, reject) => {
+            let result: any;
+            let error: any;
+            try {
+              result = await (this[methodName] as (input: any) => any)(input);
+            } catch (err: any) {
+              error = err;
+            } finally {
+              this._actionRunning = false;
+            }
+
+            Promise.resolve().then(async () => {
+              if (!error) {
+                await workflow.condition(() => !this.schemaManager.processing);
+                resolve(result ? result : this.data);
+              } else {
+                this.log.error(error);
+                reject(error);
+              }
+            });
+          });
+        },
         updateOptions
       );
     });
