@@ -750,8 +750,6 @@ export abstract class StatefulWorkflow<
         }
       }
 
-      await handle.signal('update', { data, entityName: config.entityName, strategy: '$merge' });
-      this.emit(`child:${entityName}:updated`, { ...config, workflowId: handle.workflowId, data });
       await handle.signal('update', {
         data,
         entityName: config.entityName,
