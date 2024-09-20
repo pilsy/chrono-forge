@@ -12,6 +12,7 @@ import { limitRecursion } from '../utils/limitRecursion';
 import { getCompositeKey } from '../utils/getCompositeKey';
 import { PROPERTY_METADATA_KEY } from '../decorators';
 import { UpdateHandlerOptions } from '@temporalio/workflow/lib/interfaces';
+import { setWithProxy } from '../utils';
 
 export type ManagedPath = {
   entityName?: string;
@@ -751,6 +752,19 @@ export abstract class StatefulWorkflow<
 
       await handle.signal('update', { data, entityName: config.entityName, strategy: '$merge' });
       this.emit(`child:${entityName}:updated`, { ...config, workflowId: handle.workflowId, data });
+      await handle.signal('update', {
+        data,
+        entityName: config.entityName,
+        strategy: '$merge',
+        sync: false,
+        changeOrigin: workflow.workflowInfo().workflowId
+      });
+      this.emit(`child:${entityName}:updated`, {
+        ...config,
+        workflowId: handle.workflowId,
+        data,
+        changeOrigin: workflow.workflowInfo().workflowId
+      });
     } catch (err) {
       if (err instanceof Error) {
         this.log.error(`[${this.constructor.name}]:${this.entityName}:${this.id} Failed to signal existing workflow handle: ${err.message}`);
@@ -853,7 +867,7 @@ export abstract class StatefulWorkflow<
         Object.defineProperty(this, propertyKey, {
           get: () => dottie.get(this.data || {}, path),
           set: (value) => {
-            dottie.set(this.data || (this.data = {}), path, value);
+            setWithProxy(this.data || (this.data = {}), path, value);
           },
           configurable: false,
           enumerable: true
@@ -864,20 +878,19 @@ export abstract class StatefulWorkflow<
 
   @On('init')
   protected async bindActions() {
-    if (!!this._actionsBound) {
+    if (this._actionsBound) {
       return;
     }
 
     const actions: ActionMetadata[] = Reflect.getMetadata(ACTIONS_METADATA_KEY, this.constructor.prototype) || [];
     const validators = Reflect.getMetadata(VALIDATOR_METADATA_KEY, this.constructor.prototype) || {};
 
-    actions.forEach(({ method, options }) => {
+    for (const { method, options } of actions) {
       const methodName = method as keyof StatefulWorkflow<any, any>;
       const updateOptions: UpdateHandlerOptions<any[]> = {};
       const validatorMethod = validators[methodName];
       if (validatorMethod) {
-        // @ts-ignore
-        updateOptions.validator = this[String(validatorMethod)];
+        updateOptions.validator = (this as any)[validatorMethod].bind(this);
       }
 
       workflow.setHandler(
@@ -908,7 +921,7 @@ export abstract class StatefulWorkflow<
         },
         updateOptions
       );
-    });
+    }
 
     this._actionsBound = true;
   }
