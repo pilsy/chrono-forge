@@ -419,9 +419,6 @@ export abstract class StatefulWorkflow<
         continue;
       }
 
-      // No need to flatten and transform; send nested updates
-      const transformedUpdates = relevantChanges;
-
       const handle = this.subscriptionHandles[workflowId];
       if (handle) {
         try {
@@ -430,7 +427,7 @@ export abstract class StatefulWorkflow<
           );
 
           await handle.signal(signalName, {
-            updates: transformedUpdates, // Send the nested changes
+            updates: relevantChanges, // Send the nested changes
             entityName: entityName,
             changeOrigin: workflow.workflowInfo().workflowId, // Assuming workflowInfo() provides the current workflow ID
             subscriptionId
@@ -442,6 +439,16 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  /**
+   * Determines whether the changes should be propagated to the subscription.
+   * @param newState - The new state after changes.
+   * @param differences - The DetailedDiff object containing changes.
+   * @param selector - The selector string to match changes against.
+   * @param condition - An optional condition function to further filter updates.
+   * @param changeOrigins - Origins of the changes.
+   * @param ancestorWorkflowIds - Ancestor workflow IDs to prevent circular dependencies.
+   * @returns True if the changes should be propagated, false otherwise.
+   */
   private shouldPropagateUpdate(
     newState: EntitiesState,
     differences: DetailedDiff,
@@ -463,22 +470,22 @@ export abstract class StatefulWorkflow<
     }
 
     // Convert selector with wildcards to a regex
-    const selectorRegex = new RegExp('^' + selector.replace(/\*/g, '.*') + '$');
+    const selectorRegex = new RegExp('^' + selector.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
 
-    // Check if any changes match the selector
+    // Iterate through 'added' and 'updated' differences
     for (const diffType of ['added', 'updated'] as const) {
       const entities = differences[diffType] as EntitiesState;
       if (!entities) continue;
 
       for (const [entityName, entityChanges] of Object.entries(entities)) {
         for (const [entityId, entityData] of Object.entries(entityChanges)) {
+          // Iterate through the keys in entityData
           for (const key in entityData) {
             if (Object.prototype.hasOwnProperty.call(entityData, key)) {
-              const value = entityData[key];
-              const currentPath = key;
+              const path = `${entityName}.${entityId}.${key}`;
 
-              if (selectorRegex.test(currentPath)) {
-                const selectedData = get(newState, `${entityName}.${entityId}.${currentPath}`);
+              if (selectorRegex.test(path)) {
+                const selectedData = get(newState, path);
 
                 // If a custom condition is provided, use it
                 if (condition && !condition(selectedData)) {
@@ -490,10 +497,24 @@ export abstract class StatefulWorkflow<
                 this.log.debug(`Differences detected that match selector ${selector}, propagation allowed.`);
                 return true;
               } else {
-                // Check if the selector is a parent of the current path (e.g., selector: "meals" and currentPath: "meals.0")
-                const parentPath = selector.endsWith('*') ? selector.slice(0, -1) : selector;
-                if (currentPath.startsWith(parentPath + '.')) {
-                  const selectedData = get(newState, `${entityName}.${entityId}.${parentPath}`);
+                // Check if the selector is a parent path of the current path (e.g., selector: "MealSlot.meals" and currentPath: "MealSlot.meals.0")
+                const selectorParts = selector.split('.');
+                const keyParts = path.split('.');
+                let isParent = true;
+
+                for (let i = 0; i < selectorParts.length; i++) {
+                  if (selectorParts[i] === '*') {
+                    continue; // Wildcard matches any segment
+                  }
+                  if (selectorParts[i] !== keyParts[i]) {
+                    isParent = false;
+                    break;
+                  }
+                }
+
+                if (isParent) {
+                  const parentKey = selector.split('.').slice(-1)[0]; // last segment of selector
+                  const selectedData = get(newState, `${entityName}.${entityId}.${parentKey}`);
 
                   // If a custom condition is provided, use it
                   if (condition && !condition(selectedData)) {
@@ -520,61 +541,73 @@ export abstract class StatefulWorkflow<
    * Extracts only the changed entities that match the given selector.
    * @param differences - The DetailedDiff object containing changes.
    * @param selector - The selector string to match changes against.
+   * @param newState - The new state after changes.
    * @returns A subset of EntitiesState containing only the relevant changes.
    */
   private extractChangesForSelector(differences: DetailedDiff, selector: string, newState: EntitiesState): EntitiesState {
     const changedEntities: EntitiesState = {};
 
     // Convert selector with wildcards to a regex
-    const selectorRegex = new RegExp('^' + selector.replace(/\*/g, '.*') + '$');
+    const selectorRegex = new RegExp('^' + selector.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
 
-    // Helper function to traverse and match selectors
-    const traverseDifferences = (diffType: 'added' | 'updated') => {
+    // Iterate through 'added' and 'updated' differences
+    for (const diffType of ['added', 'updated'] as const) {
       const entities = differences[diffType] as EntitiesState;
-      if (!entities) return;
+      if (!entities) continue;
 
       for (const [entityName, entityChanges] of Object.entries(entities)) {
         for (const [entityId, entityData] of Object.entries(entityChanges)) {
-          // Initialize if not present
-          if (!changedEntities[entityName]) {
-            changedEntities[entityName] = {};
-          }
-
-          // Iterate over the keys in the entityData
+          // Iterate through the keys in entityData
           for (const key in entityData) {
             if (Object.prototype.hasOwnProperty.call(entityData, key)) {
-              const value = entityData[key];
-              const currentPath = key;
+              // Build the full path for matching
+              const path = `${entityName}.${entityId}.${key}`;
 
-              if (selectorRegex.test(currentPath)) {
-                // Direct match
+              if (selectorRegex.test(path)) {
+                // Direct match: include the updated field
+                if (!changedEntities[entityName]) {
+                  changedEntities[entityName] = {};
+                }
                 if (!changedEntities[entityName][entityId]) {
                   changedEntities[entityName][entityId] = {};
                 }
-                changedEntities[entityName][entityId][key] = value;
+                changedEntities[entityName][entityId][key] = entityData[key];
               } else {
-                // Check if the selector is a parent of the current path (e.g., selector: "meals" and currentPath: "meals.0")
-                const parentPath = selector.endsWith('*') ? selector.slice(0, -1) : selector;
-                if (currentPath.startsWith(parentPath + '.')) {
-                  // Include the entire parent path (array) once
+                const selectorParts = selector.split('.');
+                const keyParts = path.split('.');
+                let isParent = true;
+
+                for (let i = 0; i < selectorParts.length; i++) {
+                  if (selectorParts[i] === '*') {
+                    continue; // Wildcard matches any segment
+                  }
+                  if (selectorParts[i] !== keyParts[i]) {
+                    isParent = false;
+                    break;
+                  }
+                }
+
+                if (isParent) {
+                  // The selector is a parent path; include the entire field
+                  if (!changedEntities[entityName]) {
+                    changedEntities[entityName] = {};
+                  }
                   if (!changedEntities[entityName][entityId]) {
                     changedEntities[entityName][entityId] = {};
                   }
-                  // Assign the entire array from newState
-                  const arrayKey = parentPath;
-                  const arrayValue = get(newState, `${entityName}.${entityId}.${arrayKey}`);
-                  changedEntities[entityName][entityId][arrayKey] = arrayValue;
+                  const parentKey = selector.split('.').slice(-1)[0]; // last segment of selector
+                  if (!(parentKey in changedEntities[entityName][entityId])) {
+                    // Assign the entire field from newState
+                    const fieldValue = get(newState, `${entityName}.${entityId}.${parentKey}`);
+                    changedEntities[entityName][entityId][parentKey] = fieldValue;
+                  }
                 }
               }
             }
           }
         }
       }
-    };
-
-    // Process 'added' and 'updated' differences
-    traverseDifferences('added');
-    traverseDifferences('updated');
+    }
 
     return changedEntities;
   }
