@@ -404,18 +404,13 @@ export abstract class StatefulWorkflow<
     for (const subscription of this.subscriptions) {
       const { workflowId, signalName, selector, parent, child, condition, entityName, subscriptionId } = subscription;
 
-      // Check if this subscription should receive an update
       const shouldUpdate = this.shouldPropagateUpdate(newState, differences, selector, condition, changeOrigins, this.ancestorWorkflowIds);
-
       if (!shouldUpdate) {
         continue;
       }
 
-      // Extract only the changes that match the selector
       const relevantChanges = this.extractChangesForSelector(differences, selector, newState);
-
       if (isEmpty(relevantChanges)) {
-        // No relevant changes to send
         continue;
       }
 
@@ -427,10 +422,11 @@ export abstract class StatefulWorkflow<
           );
 
           await handle.signal(signalName, {
-            updates: relevantChanges, // Send the nested changes
+            updates: relevantChanges,
             entityName: entityName,
-            changeOrigin: workflow.workflowInfo().workflowId, // Assuming workflowInfo() provides the current workflow ID
-            subscriptionId
+            changeOrigin: workflow.workflowInfo().workflowId,
+            subscriptionId,
+            sync: true
           });
         } catch (err) {
           this.log.error(`Failed to signal workflow '${workflowId}': ${(err as Error).message}`);
@@ -459,7 +455,6 @@ export abstract class StatefulWorkflow<
   ): boolean {
     this.log.debug(`[StatefulWorkflow]: Checking if we should propagate update for selector: ${selector}`);
 
-    // If the source workflow is an ancestor, skip propagation to avoid circular dependencies
     if (changeOrigins) {
       for (const origin of changeOrigins) {
         if (origin && ancestorWorkflowIds.includes(origin)) {
@@ -469,10 +464,7 @@ export abstract class StatefulWorkflow<
       }
     }
 
-    // Convert selector with wildcards to a regex
     const selectorRegex = new RegExp('^' + selector.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
-
-    // Iterate through 'added' and 'updated' differences
     for (const diffType of ['added', 'updated'] as const) {
       const entities = differences[diffType] as EntitiesState;
       if (!entities) continue;
@@ -493,11 +485,10 @@ export abstract class StatefulWorkflow<
                   continue; // Skip propagation if condition fails
                 }
 
-                // Relevant change found
                 this.log.debug(`Differences detected that match selector ${selector}, propagation allowed.`);
                 return true;
               } else {
-                // Check if the selector is a parent path of the current path (e.g., selector: "MealSlot.meals" and currentPath: "MealSlot.meals.0")
+                // Check if the selector is a parent path of the current path
                 const selectorParts = selector.split('.');
                 const keyParts = path.split('.');
                 let isParent = true;
@@ -522,7 +513,6 @@ export abstract class StatefulWorkflow<
                     continue; // Skip propagation if condition fails
                   }
 
-                  // Relevant change found in the parent array
                   this.log.debug(`Differences detected within selector ${selector}, propagation allowed.`);
                   return true;
                 }
@@ -547,67 +537,43 @@ export abstract class StatefulWorkflow<
   private extractChangesForSelector(differences: DetailedDiff, selector: string, newState: EntitiesState): EntitiesState {
     const changedEntities: EntitiesState = {};
 
-    // Convert selector with wildcards to a regex
-    const selectorRegex = new RegExp('^' + selector.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
-
-    // Iterate through 'added' and 'updated' differences
-    for (const diffType of ['added', 'updated'] as const) {
+    const selectorRegex = new RegExp('^' + selector.replace(/\*/g, '.*') + '$');
+    const traverseDifferences = (diffType: 'added' | 'updated') => {
       const entities = differences[diffType] as EntitiesState;
-      if (!entities) continue;
+      if (!entities) return;
 
       for (const [entityName, entityChanges] of Object.entries(entities)) {
+        const schema = this.schemaManager.getSchema(entityName);
         for (const [entityId, entityData] of Object.entries(entityChanges)) {
-          // Iterate through the keys in entityData
+          if (!changedEntities[entityName]) {
+            changedEntities[entityName] = {};
+          }
+
           for (const key in entityData) {
             if (Object.prototype.hasOwnProperty.call(entityData, key)) {
-              // Build the full path for matching
-              const path = `${entityName}.${entityId}.${key}`;
+              const value = entityData[key];
+              const currentPath = key;
 
-              if (selectorRegex.test(path)) {
-                // Direct match: include the updated field
-                if (!changedEntities[entityName]) {
-                  changedEntities[entityName] = {};
-                }
-                if (!changedEntities[entityName][entityId]) {
-                  changedEntities[entityName][entityId] = {};
-                }
-                changedEntities[entityName][entityId][key] = entityData[key];
+              if (!changedEntities[entityName][entityId]) {
+                changedEntities[entityName][entityId] = {};
+              }
+
+              // @ts-ignore
+              if (!Array.isArray(schema.schema[currentPath])) {
+                changedEntities[entityName][entityId][key] = value;
               } else {
-                const selectorParts = selector.split('.');
-                const keyParts = path.split('.');
-                let isParent = true;
-
-                for (let i = 0; i < selectorParts.length; i++) {
-                  if (selectorParts[i] === '*') {
-                    continue; // Wildcard matches any segment
-                  }
-                  if (selectorParts[i] !== keyParts[i]) {
-                    isParent = false;
-                    break;
-                  }
-                }
-
-                if (isParent) {
-                  // The selector is a parent path; include the entire field
-                  if (!changedEntities[entityName]) {
-                    changedEntities[entityName] = {};
-                  }
-                  if (!changedEntities[entityName][entityId]) {
-                    changedEntities[entityName][entityId] = {};
-                  }
-                  const parentKey = selector.split('.').slice(-1)[0]; // last segment of selector
-                  if (!(parentKey in changedEntities[entityName][entityId])) {
-                    // Assign the entire field from newState
-                    const fieldValue = get(newState, `${entityName}.${entityId}.${parentKey}`);
-                    changedEntities[entityName][entityId][parentKey] = fieldValue;
-                  }
-                }
+                // Assign the entire array from newState
+                changedEntities[entityName][entityId][currentPath] = get(newState, `${entityName}.${entityId}.${currentPath}`);
               }
             }
           }
         }
       }
-    }
+    };
+
+    // Process 'added' and 'updated' differences
+    traverseDifferences('added');
+    traverseDifferences('updated');
 
     return changedEntities;
   }

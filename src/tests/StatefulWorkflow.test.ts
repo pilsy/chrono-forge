@@ -329,6 +329,7 @@ describe('StatefulWorkflow', () => {
       const listingId = uuid4();
       const listing2Id = uuid4();
       const photoId = uuid4();
+      const photo2Id = uuid4();
       const likeId = uuid4();
 
       // Initial data for User with Listings, Photos, and Likes, forming a recursive structure
@@ -374,7 +375,7 @@ describe('StatefulWorkflow', () => {
       const listingState = await listingHandle.query('state');
       expect(listingState.Listing).toEqual(expectedState.Listing);
 
-      // **TODO 1: Verify Listing2 workflow state**
+      // Verify Listing2 workflow state**
       const listing2Handle = await client.workflow.getHandle(`Listing-${listing2Id}`);
       const listing2State = await listing2Handle.query('state');
       expect(listing2State.Listing).toEqual(expectedState.Listing);
@@ -430,7 +431,14 @@ describe('StatefulWorkflow', () => {
       const updatedListing2Data = {
         id: listing2Id,
         user: userId,
-        name: 'Updated Listing2 Name'
+        name: 'Updated Listing2 Name',
+        photos: [
+          {
+            id: photo2Id,
+            user: userId,
+            listing: listing2Id
+          }
+        ]
       };
       await listing2Handle.signal('update', {
         data: updatedListing2Data,
@@ -440,6 +448,7 @@ describe('StatefulWorkflow', () => {
 
       // Verify the state update in Listing2 workflow
       updatedListing2State = await listing2Handle.query('state');
+      console.log(updatedListing2State);
       expect(updatedListing2State.Listing[listing2Id].name).toEqual('Updated Listing2 Name');
 
       // Verify it propagates up to the parent by checking parent state**
