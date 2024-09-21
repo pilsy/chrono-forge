@@ -401,12 +401,24 @@ export abstract class StatefulWorkflow<
   ): Promise<void> {
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.processSubscriptions`);
 
-    const flattenedState = dottie.flatten(newState);
+    for (const subscription of this.subscriptions) {
+      const { workflowId, signalName, selector, parent, child, condition, entityName, subscriptionId } = subscription;
 
-    for (const { workflowId, signalName, selector, parent, child, condition, entityName, subscriptionId } of this.subscriptions) {
-      if (!this.shouldPropagateUpdate(flattenedState, differences, selector, condition, changeOrigins, this.ancestorWorkflowIds)) {
+      // Check if this subscription should receive an update
+      const shouldUpdate = this.shouldPropagateUpdate(newState, differences, selector, condition, changeOrigins, this.ancestorWorkflowIds);
+      if (!shouldUpdate) {
         continue;
       }
+
+      // Extract only the changes that match the selector
+      const relevantChanges = this.extractChangesForSelector(differences, selector);
+      if (isEmpty(relevantChanges)) {
+        // No relevant changes to send
+        continue;
+      }
+
+      // No need to flatten and transform; send nested updates
+      const transformedUpdates = relevantChanges;
 
       const handle = this.subscriptionHandles[workflowId];
       if (handle) {
@@ -414,10 +426,11 @@ export abstract class StatefulWorkflow<
           this.log.debug(
             `[${this.constructor.name}]:${this.entityName}:${this.id}.Sending update to workflow: ${workflowId}, Subscription ID: ${subscriptionId}`
           );
+
           await handle.signal(signalName, {
-            updates: dottie.transform(flattenedState),
+            updates: transformedUpdates, // Send the nested changes
             entityName: entityName,
-            changeOrigin: workflow.workflowInfo().workflowId,
+            changeOrigin: workflow.workflowInfo().workflowId, // Assuming workflowInfo() provides the current workflow ID
             subscriptionId
           });
         } catch (err) {
@@ -428,50 +441,131 @@ export abstract class StatefulWorkflow<
   }
 
   private shouldPropagateUpdate(
-    flattenedState: Record<string, any>,
+    newState: EntitiesState,
     differences: DetailedDiff,
     selector: string,
     condition?: (state: any) => boolean,
-    sourceWorkflowIds?: string[],
+    changeOrigins?: string[],
     ancestorWorkflowIds: string[] = []
   ): boolean {
     this.log.debug(`[StatefulWorkflow]: Checking if we should propagate update for selector: ${selector}`);
 
     // If the source workflow is an ancestor, skip propagation to avoid circular dependencies
-    if (sourceWorkflowIds) {
-      for (const sourceWorkflowId of sourceWorkflowIds) {
-        if (sourceWorkflowId && ancestorWorkflowIds.includes(sourceWorkflowId)) {
-          this.log.debug(`Skipping propagation for selector ${selector} because the change originated from ${sourceWorkflowId}.`);
+    if (changeOrigins) {
+      for (const origin of changeOrigins) {
+        if (origin && ancestorWorkflowIds.includes(origin)) {
+          this.log.debug(`Skipping propagation for selector ${selector} because the change originated from an ancestor workflow (${origin}).`);
           return false;
         }
       }
     }
 
-    // Use RegExp to handle wildcard selectors
+    // Convert selector with wildcards to a regex
     const selectorRegex = new RegExp('^' + selector.replace(/\*/g, '.*') + '$');
 
-    // Check if any flattened key matches the selector
-    for (const key of Object.keys(flattenedState)) {
-      if (selectorRegex.test(key)) {
-        const selectedData = flattenedState[key];
+    // Check if any changes match the selector
+    for (const diffType of ['added', 'updated'] as const) {
+      const entities = differences[diffType];
+      if (!entities) continue;
 
-        // If a custom condition is provided, use it
-        if (condition && !condition(selectedData)) {
-          this.log.debug(`Custom condition for selector ${selector} not met.`);
-          continue; // Skip propagation if condition fails
-        }
+      for (const [entityName, entityChanges] of Object.entries(entities)) {
+        for (const [entityId, entityData] of Object.entries(entityChanges)) {
+          const traverse = (data: any, path: string = ''): boolean => {
+            for (const key in data) {
+              if (Object.prototype.hasOwnProperty.call(data, key)) {
+                const value = data[key];
+                const currentPath = path ? `${path}.${key}` : key;
 
-        // Otherwise, check if there are any differences in this path
-        const diffPath = key.replace(/\./g, '.');
-        if (get(differences.added, diffPath) || get(differences.updated, diffPath) || get(differences.deleted, diffPath)) {
-          this.log.debug(`Differences detected at path ${diffPath}, propagation allowed.`);
-          return true;
+                if (selectorRegex.test(currentPath)) {
+                  const selectedData = get(newState, currentPath);
+
+                  // If a custom condition is provided, use it
+                  if (condition && !condition(selectedData)) {
+                    this.log.debug(`Custom condition for selector ${selector} not met.`);
+                    continue; // Skip propagation if condition fails
+                  }
+
+                  // Relevant change found
+                  this.log.debug(`Differences detected that match selector ${selector}, propagation allowed.`);
+                  return true;
+                }
+
+                if (typeof value === 'object' && value !== null) {
+                  if (traverse(value, currentPath)) {
+                    return true;
+                  }
+                }
+              }
+            }
+            return false;
+          };
+
+          if (traverse(entityData)) {
+            return true;
+          }
         }
       }
     }
 
     this.log.debug(`No matching differences found, conditions not met, or ancestry conflicts for selector: ${selector}`);
     return false;
+  }
+
+  /**
+   * Extracts only the changed entities that match the given selector.
+   * @param differences - The DetailedDiff object containing changes.
+   * @param selector - The selector string to match changes against.
+   * @returns A subset of EntitiesState containing only the relevant changes.
+   */
+  private extractChangesForSelector(differences: DetailedDiff, selector: string): EntitiesState {
+    const changedEntities: EntitiesState = {};
+
+    // Convert selector with wildcards to a regex
+    const selectorRegex = new RegExp('^' + selector.replace(/\*/g, '.*') + '$');
+
+    // Helper function to traverse and match selectors
+    const traverseDifferences = (diffType: 'added' | 'updated') => {
+      const entities = differences[diffType];
+      if (!entities) return;
+
+      for (const [entityName, entityChanges] of Object.entries(entities)) {
+        for (const [entityId, entityData] of Object.entries(entityChanges)) {
+          // Initialize if not present
+          if (!changedEntities[entityName]) {
+            changedEntities[entityName] = {};
+          }
+          if (!changedEntities[entityName][entityId]) {
+            changedEntities[entityName][entityId] = {};
+          }
+
+          // Iterate over the keys in the entityData
+          const traverseEntity = (data: any, path: string = '') => {
+            for (const key in data) {
+              if (Object.prototype.hasOwnProperty.call(data, key)) {
+                const value = data[key];
+                const currentPath = path ? `${path}.${key}` : key;
+
+                if (selectorRegex.test(currentPath)) {
+                  changedEntities[entityName][entityId][key] = value;
+                }
+
+                if (typeof value === 'object' && value !== null) {
+                  traverseEntity(value, currentPath);
+                }
+              }
+            }
+          };
+
+          traverseEntity(entityData);
+        }
+      }
+    };
+
+    // Process 'added' and 'updated' differences
+    traverseDifferences('added');
+    traverseDifferences('updated');
+
+    return changedEntities;
   }
 
   protected async processChildState(
