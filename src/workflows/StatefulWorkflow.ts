@@ -406,12 +406,14 @@ export abstract class StatefulWorkflow<
 
       // Check if this subscription should receive an update
       const shouldUpdate = this.shouldPropagateUpdate(newState, differences, selector, condition, changeOrigins, this.ancestorWorkflowIds);
+
       if (!shouldUpdate) {
         continue;
       }
 
       // Extract only the changes that match the selector
-      const relevantChanges = this.extractChangesForSelector(differences, selector);
+      const relevantChanges = this.extractChangesForSelector(differences, selector, newState);
+
       if (isEmpty(relevantChanges)) {
         // No relevant changes to send
         continue;
@@ -465,19 +467,33 @@ export abstract class StatefulWorkflow<
 
     // Check if any changes match the selector
     for (const diffType of ['added', 'updated'] as const) {
-      const entities = differences[diffType];
+      const entities = differences[diffType] as EntitiesState;
       if (!entities) continue;
 
       for (const [entityName, entityChanges] of Object.entries(entities)) {
         for (const [entityId, entityData] of Object.entries(entityChanges)) {
-          const traverse = (data: any, path: string = ''): boolean => {
-            for (const key in data) {
-              if (Object.prototype.hasOwnProperty.call(data, key)) {
-                const value = data[key];
-                const currentPath = path ? `${path}.${key}` : key;
+          for (const key in entityData) {
+            if (Object.prototype.hasOwnProperty.call(entityData, key)) {
+              const value = entityData[key];
+              const currentPath = key;
 
-                if (selectorRegex.test(currentPath)) {
-                  const selectedData = get(newState, currentPath);
+              if (selectorRegex.test(currentPath)) {
+                const selectedData = get(newState, `${entityName}.${entityId}.${currentPath}`);
+
+                // If a custom condition is provided, use it
+                if (condition && !condition(selectedData)) {
+                  this.log.debug(`Custom condition for selector ${selector} not met.`);
+                  continue; // Skip propagation if condition fails
+                }
+
+                // Relevant change found
+                this.log.debug(`Differences detected that match selector ${selector}, propagation allowed.`);
+                return true;
+              } else {
+                // Check if the selector is a parent of the current path (e.g., selector: "meals" and currentPath: "meals.0")
+                const parentPath = selector.endsWith('*') ? selector.slice(0, -1) : selector;
+                if (currentPath.startsWith(parentPath + '.')) {
+                  const selectedData = get(newState, `${entityName}.${entityId}.${parentPath}`);
 
                   // If a custom condition is provided, use it
                   if (condition && !condition(selectedData)) {
@@ -485,23 +501,12 @@ export abstract class StatefulWorkflow<
                     continue; // Skip propagation if condition fails
                   }
 
-                  // Relevant change found
-                  this.log.debug(`Differences detected that match selector ${selector}, propagation allowed.`);
+                  // Relevant change found in the parent array
+                  this.log.debug(`Differences detected within selector ${selector}, propagation allowed.`);
                   return true;
-                }
-
-                if (typeof value === 'object' && value !== null) {
-                  if (traverse(value, currentPath)) {
-                    return true;
-                  }
                 }
               }
             }
-            return false;
-          };
-
-          if (traverse(entityData)) {
-            return true;
           }
         }
       }
@@ -517,7 +522,7 @@ export abstract class StatefulWorkflow<
    * @param selector - The selector string to match changes against.
    * @returns A subset of EntitiesState containing only the relevant changes.
    */
-  private extractChangesForSelector(differences: DetailedDiff, selector: string): EntitiesState {
+  private extractChangesForSelector(differences: DetailedDiff, selector: string, newState: EntitiesState): EntitiesState {
     const changedEntities: EntitiesState = {};
 
     // Convert selector with wildcards to a regex
@@ -525,7 +530,7 @@ export abstract class StatefulWorkflow<
 
     // Helper function to traverse and match selectors
     const traverseDifferences = (diffType: 'added' | 'updated') => {
-      const entities = differences[diffType];
+      const entities = differences[diffType] as EntitiesState;
       if (!entities) return;
 
       for (const [entityName, entityChanges] of Object.entries(entities)) {
@@ -534,29 +539,35 @@ export abstract class StatefulWorkflow<
           if (!changedEntities[entityName]) {
             changedEntities[entityName] = {};
           }
-          if (!changedEntities[entityName][entityId]) {
-            changedEntities[entityName][entityId] = {};
-          }
 
           // Iterate over the keys in the entityData
-          const traverseEntity = (data: any, path: string = '') => {
-            for (const key in data) {
-              if (Object.prototype.hasOwnProperty.call(data, key)) {
-                const value = data[key];
-                const currentPath = path ? `${path}.${key}` : key;
+          for (const key in entityData) {
+            if (Object.prototype.hasOwnProperty.call(entityData, key)) {
+              const value = entityData[key];
+              const currentPath = key;
 
-                if (selectorRegex.test(currentPath)) {
-                  changedEntities[entityName][entityId][key] = value;
+              if (selectorRegex.test(currentPath)) {
+                // Direct match
+                if (!changedEntities[entityName][entityId]) {
+                  changedEntities[entityName][entityId] = {};
                 }
-
-                if (typeof value === 'object' && value !== null) {
-                  traverseEntity(value, currentPath);
+                changedEntities[entityName][entityId][key] = value;
+              } else {
+                // Check if the selector is a parent of the current path (e.g., selector: "meals" and currentPath: "meals.0")
+                const parentPath = selector.endsWith('*') ? selector.slice(0, -1) : selector;
+                if (currentPath.startsWith(parentPath + '.')) {
+                  // Include the entire parent path (array) once
+                  if (!changedEntities[entityName][entityId]) {
+                    changedEntities[entityName][entityId] = {};
+                  }
+                  // Assign the entire array from newState
+                  const arrayKey = parentPath;
+                  const arrayValue = get(newState, `${entityName}.${entityId}.${arrayKey}`);
+                  changedEntities[entityName][entityId][arrayKey] = arrayValue;
                 }
               }
             }
-          };
-
-          traverseEntity(entityData);
+          }
         }
       }
     };
