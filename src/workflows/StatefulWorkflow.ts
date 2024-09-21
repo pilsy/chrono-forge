@@ -864,7 +864,8 @@ export abstract class StatefulWorkflow<
         Object.defineProperty(this, propertyKey, {
           get: () => dottie.get(this.data || {}, path),
           set: (value) => {
-            setWithProxy(this.data || (this.data = {}), path, value);
+            dottie.set(this.data || (this.data = {}), path, value);
+            // setWithProxy(this.data || (this.data = {}), path, value);
           },
           configurable: false,
           enumerable: true
