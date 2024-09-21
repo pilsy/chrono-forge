@@ -11,8 +11,9 @@ import { SchemaManager } from '../SchemaManager';
 import { limitRecursion } from '../utils/limitRecursion';
 import { getCompositeKey } from '../utils/getCompositeKey';
 import { PROPERTY_METADATA_KEY } from '../decorators';
-import { UpdateHandlerOptions } from '@temporalio/workflow/lib/interfaces';
+import { UpdateHandlerOptions, Handler } from '@temporalio/workflow/lib/interfaces';
 import { setWithProxy } from '../utils';
+import { HandlerUnfinishedPolicy } from '@temporalio/common';
 
 export type ManagedPath = {
   entityName?: string;
@@ -151,8 +152,6 @@ export abstract class StatefulWorkflow<
   get pendingChanges() {
     return this.schemaManager.pendingChanges;
   }
-
-  protected actionHandlers: Record<string, Function> = {};
 
   @Property({ set: false })
   protected subscriptions: Subscription[] = [];
@@ -890,32 +889,25 @@ export abstract class StatefulWorkflow<
       if (validatorMethod) {
         updateOptions.validator = (this as any)[validatorMethod].bind(this);
       }
+      updateOptions.unfinishedPolicy = HandlerUnfinishedPolicy.ABANDON;
 
       workflow.setHandler(
         workflow.defineUpdate<any, any>(method),
         async (input: any): Promise<any> => {
           this._actionRunning = true;
-          return await new Promise(async (resolve, reject) => {
-            let result: any;
-            let error: any;
-            try {
-              result = await (this[methodName] as (input: any) => any)(input);
-            } catch (err: any) {
-              error = err;
-            } finally {
-              this._actionRunning = false;
-            }
+          let result: any;
+          let error: any;
+          try {
+            result = await (this[methodName] as (input: any) => any)(input);
+          } catch (err: any) {
+            error = err;
+            this.log.error(error);
+          } finally {
+            this._actionRunning = false;
+          }
 
-            Promise.resolve().then(async () => {
-              if (!error) {
-                await workflow.condition(() => !this.schemaManager.processing);
-                resolve(result ? result : this.data);
-              } else {
-                this.log.error(error);
-                reject(error);
-              }
-            });
-          });
+          await workflow.condition(() => !this.schemaManager.processing);
+          return result !== undefined ? result : this.data;
         },
         updateOptions
       );

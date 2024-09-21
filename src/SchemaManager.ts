@@ -159,7 +159,7 @@ export class SchemaManager extends EventEmitter {
       if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
         this.pushToHistory(previousState);
         this.future.length = 0;
-        this.state = { ...newState };
+        this.state = newState;
 
         this.invalidateCache(differences);
 
