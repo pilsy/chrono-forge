@@ -625,8 +625,9 @@ export abstract class StatefulWorkflow<
       }
 
       const entitySchema = SchemaManager.getInstance().getSchema(entityName as string);
+      const parentData = limitRecursion(denormalize(get(newState, `${this.entityName}.${this.id}`), entitySchema, newState), this.schema);
       const rawData = denormalize(state, entitySchema, newState);
-      const data = limitRecursion(typeof config.processData === 'function' ? config.processData(rawData, this) : rawData, entitySchema);
+      const data = limitRecursion(typeof config.processData === 'function' ? config.processData(rawData, parentData) : rawData, entitySchema);
       const { [idAttribute as string]: id, ...rest } = state;
       const compositeId = Array.isArray(idAttribute) ? getCompositeKey(data, idAttribute) : id;
       const workflowId = includeParentId ? `${entityName}-${compositeId}-${this.id}` : `${entityName}-${compositeId}`;
@@ -710,17 +711,9 @@ export abstract class StatefulWorkflow<
   protected async updateChildWorkflow(handle: workflow.ChildWorkflowHandle<any>, state: any, newState: any, config: ManagedPath): Promise<void> {
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.updateChildWorkflow`);
     try {
-      const {
-        workflowType,
-        entityName,
-        idAttribute,
-        includeParentId,
-        cancellationType = workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_COMPLETED,
-        parentClosePolicy = workflow.ParentClosePolicy.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
-        autoStartChildren
-      } = config;
+      const { workflowType, entityName, idAttribute, includeParentId, autoStartChildren } = config;
 
-      if (!config.autoStartChildren) {
+      if (!autoStartChildren) {
         this.log.warn(
           `${workflowType} with entityName ${entityName} not configured to autoStartChildren...\n${JSON.stringify(config, null, 2)}`
         );
@@ -728,8 +721,9 @@ export abstract class StatefulWorkflow<
       }
 
       const entitySchema = SchemaManager.getInstance().getSchema(entityName as string);
+      const parentData = limitRecursion(denormalize(get(newState, `${this.entityName}.${this.id}`), entitySchema, newState), this.schema);
       const rawData = denormalize(state, entitySchema, newState);
-      const data = limitRecursion(typeof config.processData === 'function' ? config.processData(rawData, this) : rawData, entitySchema);
+      const data = limitRecursion(typeof config.processData === 'function' ? config.processData(rawData, parentData) : rawData, entitySchema);
       const { [idAttribute as string]: id } = state;
       const compositeId = Array.isArray(config.idAttribute) ? getCompositeKey(data, config.idAttribute) : state[config.idAttribute as string];
       const workflowId = includeParentId ? `${entityName}-${compositeId}-${this.id}` : `${entityName}-${compositeId}`;
