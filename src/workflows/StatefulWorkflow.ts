@@ -1,7 +1,14 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 import dottie, { get } from 'dottie';
 import * as workflow from '@temporalio/workflow';
-import { normalizeEntities, EntitiesState, updateNormalizedEntities, deleteNormalizedEntities, deleteEntities } from '../utils/entities';
+import {
+  normalizeEntities,
+  EntitiesState,
+  updateNormalizedEntities,
+  deleteNormalizedEntities,
+  deleteEntities,
+  updateEntity
+} from '../utils/entities';
 import { DetailedDiff } from 'deep-object-diff';
 import { schema, denormalize, Schema } from 'normalizr';
 import { isEmpty, isEqual, property } from 'lodash';
@@ -12,7 +19,6 @@ import { limitRecursion } from '../utils/limitRecursion';
 import { getCompositeKey } from '../utils/getCompositeKey';
 import { PROPERTY_METADATA_KEY } from '../decorators';
 import { UpdateHandlerOptions, Handler } from '@temporalio/workflow/lib/interfaces';
-import { setWithProxy } from '../utils';
 import { HandlerUnfinishedPolicy } from '@temporalio/common';
 
 export type ManagedPath = {
@@ -20,6 +26,7 @@ export type ManagedPath = {
   path?: string;
   workflowType?: string;
   idAttribute?: string | string[];
+  isMany?: boolean;
   includeParentId?: boolean;
   autoStartChildren?: boolean;
   cancellationType?: workflow.ChildWorkflowCancellationType;
@@ -207,7 +214,7 @@ export abstract class StatefulWorkflow<
     }
 
     if (this.params?.data && !isEmpty(this.params?.data)) {
-      this.schemaManager.dispatch(updateNormalizedEntities(normalizeEntities(this.params.data, this.schema), '$merge'), false);
+      this.schemaManager.dispatch(updateEntity(this.params.data, this.entityName), false);
     }
 
     this.status = this.params?.status ?? 'running';
@@ -277,7 +284,6 @@ export abstract class StatefulWorkflow<
       updates = normalizeEntities(data, entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName));
     }
     if (updates) {
-      // this.pendingUpdate = true;
       this.schemaManager.dispatch(updateNormalizedEntities(updates, strategy), sync, changeOrigin);
     } else {
       this.log.error(`Invalid Update: ${JSON.stringify(data, null, 2)}, \n${JSON.stringify(updates, null, 2)}`);
@@ -300,14 +306,6 @@ export abstract class StatefulWorkflow<
   public async subscribe(subscription: Subscription): Promise<void> {
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.subscribe`);
     const { workflowId, subscriptionId } = subscription;
-
-    // if (this.ancestorWorkflowIds.includes(workflowId)) {
-    //   this.log.warn(
-    //     `[${this.constructor.name}]:${this.entityName}:${this.id}:${this.entityName}:${this.id} Circular subscription detected for workflowId: ${workflowId}. Skipping subscription.`
-    //   );
-    //   this.log.warn(this.ancestorWorkflowIds.join(',\n  '));
-    //   return;
-    // }
 
     if (!this.subscriptions.find((sub) => sub.workflowId === workflowId && sub.subscriptionId === subscriptionId)) {
       this.subscriptions.push(subscription);
@@ -624,11 +622,10 @@ export abstract class StatefulWorkflow<
         return;
       }
 
-      const entitySchema = SchemaManager.getInstance().getSchema(entityName as string);
-      const parentData = limitRecursion(denormalize(get(newState, `${this.entityName}.${this.id}`), entitySchema, newState), this.schema);
-      const rawData = denormalize(state, entitySchema, newState);
-      const data = limitRecursion(typeof config.processData === 'function' ? config.processData(rawData, parentData) : rawData, entitySchema);
       const { [idAttribute as string]: id, ...rest } = state;
+      const parentData = limitRecursion(this.id, this.entityName, newState);
+      const rawData = limitRecursion(id, String(entityName), newState);
+      const data = typeof config.processData === 'function' ? config.processData(rawData, parentData) : rawData;
       const compositeId = Array.isArray(idAttribute) ? getCompositeKey(data, idAttribute) : id;
       const workflowId = includeParentId ? `${entityName}-${compositeId}-${this.id}` : `${entityName}-${compositeId}`;
 
@@ -663,7 +660,8 @@ export abstract class StatefulWorkflow<
                 workflowId: workflow.workflowInfo().workflowId,
                 signalName: 'update',
                 selector: '*',
-                parent: workflow.workflowInfo().workflowId,
+                parent: `${this.entityName}:${this.id}`,
+                child: `${config.entityName}:${id}`,
                 ancestorWorkflowIds: [...this.ancestorWorkflowIds]
               }
             ],
@@ -720,12 +718,11 @@ export abstract class StatefulWorkflow<
         return;
       }
 
-      const entitySchema = SchemaManager.getInstance().getSchema(entityName as string);
-      const parentData = limitRecursion(denormalize(get(newState, `${this.entityName}.${this.id}`), entitySchema, newState), this.schema);
-      const rawData = denormalize(state, entitySchema, newState);
-      const data = limitRecursion(typeof config.processData === 'function' ? config.processData(rawData, parentData) : rawData, entitySchema);
-      const { [idAttribute as string]: id } = state;
-      const compositeId = Array.isArray(config.idAttribute) ? getCompositeKey(data, config.idAttribute) : state[config.idAttribute as string];
+      const { [idAttribute as string]: id, ...rest } = state;
+      const parentData = limitRecursion(this.id, this.entityName, newState);
+      const rawData = limitRecursion(id, String(entityName), newState);
+      const data = typeof config.processData === 'function' ? config.processData(rawData, parentData) : rawData;
+      const compositeId = Array.isArray(idAttribute) ? getCompositeKey(data, idAttribute) : id;
       const workflowId = includeParentId ? `${entityName}-${compositeId}-${this.id}` : `${entityName}-${compositeId}`;
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {

@@ -307,7 +307,7 @@ export class SchemaManager extends EventEmitter {
 
     let result: any;
     if (denormalizeData) {
-      const denormalised = limitRecursion(denormalize(entity, this.schemas[entityName], this.state), this.schemas[entityName]);
+      const denormalised = limitRecursion(id, entityName, this.state);
       const handler = {
         set: (target: any, prop: string | symbol, value: any) => {
           if (target[prop] === value) {
