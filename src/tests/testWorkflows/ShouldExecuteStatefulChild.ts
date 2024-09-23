@@ -1,9 +1,5 @@
 import { ChronoFlow } from '../../workflows';
 import { ManagedPaths, StatefulWorkflow } from '../../workflows/StatefulWorkflow';
-import { Listing } from '../testSchemas';
-import { trace } from '@opentelemetry/api';
-import { condition } from '@temporalio/workflow';
-import { After } from '../../decorators';
 
 @ChronoFlow({
   // schema: Listing
@@ -39,12 +35,6 @@ export class ShouldExecuteStatefulChild extends StatefulWorkflow {
   // }
 
   async execute(params: any) {
-    return new Promise(async (resolve) => {
-      await trace.getTracer('temporal_worker').startActiveSpan('test', (span) => {
-        setTimeout(() => {
-          resolve(params);
-        }, 100);
-      });
-    });
+    console.log(`Execute`);
   }
 }

@@ -15,10 +15,6 @@ export class ShouldSignalWithStartAndArguments extends Workflow {
     this.data = data;
   }
 
-  protected async condition(): Promise<any> {
-    return await condition(() => this.pendingUpdate, '1 minute');
-  }
-
   async execute() {
     await condition(() => this.pendingUpdate, '1 minute');
     return this.data;

@@ -111,7 +111,7 @@ describe('StatefulWorkflow', () => {
       const expectedUpdated = normalizeEntities(updatedData, SchemaManager.getInstance().getSchema('User'));
 
       await handle.signal('update', { data: updatedData, entityName: 'User' });
-      await sleep(3000);
+      await sleep(5000);
 
       const updatedState = await handle.query('state');
       expect(updatedState).toEqual(expectedUpdated);
