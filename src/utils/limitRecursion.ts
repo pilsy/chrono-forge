@@ -9,13 +9,11 @@ export const limitRecursion = (
 ): any => {
   const entity = entities[entityName]?.[entityId];
   if (!entity) {
-    // Entity data is missing; return the ID
     return entityId;
   }
 
   const entityKey = `${entityName}:${entityId}`;
   if (visited.has(entityKey)) {
-    // Circular reference detected; return the ID
     return entityId;
   }
   visited.add(entityKey);
@@ -30,16 +28,12 @@ export const limitRecursion = (
       const relation = schema.schema[key];
 
       if (relation) {
-        // Relation detected
         if (Array.isArray(value)) {
-          // Array relation
           result[key] = value.map((childId: string) => limitRecursion(childId, getEntityName(relation), entities, visited));
         } else {
-          // Single entity relation
           result[key] = limitRecursion(value, getEntityName(relation), entities, visited);
         }
       } else {
-        // Not a relation; copy the value
         result[key] = value;
       }
     }
@@ -47,7 +41,6 @@ export const limitRecursion = (
   return result;
 };
 
-// Helper function to extract entity name from schema definition
 const getEntityName = (relation: any): string => {
   if (Array.isArray(relation)) {
     return getEntityName(relation[0]);
