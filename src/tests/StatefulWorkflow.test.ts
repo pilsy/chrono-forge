@@ -476,33 +476,15 @@ describe('StatefulWorkflow', () => {
       );
     });
 
-    it.skip('Should manage cancellation of child workflow correctly', async () => {
+    it('Should handle restarting child workflow after cancellation', async () => {
       const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Test Listing' }] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
-      const client = getClient();
-      const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
-
-      await childHandle.cancel();
       await sleep();
 
-      const parentState = await handle.query('state');
-      expect(parentState.Listing).not.toHaveProperty(data.listings[0].id);
-    });
-
-    it.skip('Should handle restarting child workflow after cancellation', async () => {
-      const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Test Listing' }] };
-      const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
       const client = getClient();
       const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
-
       await childHandle.cancel();
       await sleep();
-
-      await client.workflow.start(workflows.ShouldExecuteStateful, {
-        taskQueue: 'test',
-        workflowId: `Listing-${data.listings[0].id}`,
-        args: [{ id: data.listings[0].id, entityName: 'Listing', data: { id: data.listings[0].id, name: 'Test Listing' } }]
-      });
 
       const restartedChildHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
       await sleep();
@@ -510,18 +492,34 @@ describe('StatefulWorkflow', () => {
       expect(childState.Listing).toHaveProperty(data.listings[0].id);
     });
 
-    it.skip('Should handle child workflow cancellation and reflect in parent state', async () => {
-      const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Awesome test listing' }] };
+    it('Should cancel children upon parent cancellation', async () => {
+      const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Test Listing' }] };
+      const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
+      await sleep();
+
+      expect(await handle.query('data')).toEqual(data);
+      await handle.cancel();
+
+      const client = getClient();
+      const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
+      await handle.cancel();
+      await childHandle.result();
+    });
+
+    it('Should handle completed child workflow and maintain state in the parent', async () => {
+      const listing = { id: uuid4(), name: 'Test Listing' };
+      const data = { id: uuid4(), listings: [listing] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
       await sleep();
 
       const client = getClient();
       const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
-      await childHandle.cancel();
-      await sleep(5000);
+      await childHandle.signal('status', 'completed');
+      const childCompletedData = await childHandle.result();
+      expect(childCompletedData).toEqual(listing);
 
-      const parentState = await handle.query('state');
-      expect(parentState.Listing).not.toHaveProperty(data.listings[0].id);
+      const parentData = await handle.query('data');
+      expect(parentData).toEqual(data);
     });
   });
 

@@ -243,7 +243,7 @@ export abstract class StatefulWorkflow<
           }
 
           if (this.isInTerminalState()) {
-            return this.status !== 'errored' ? resolve(this.result) : reject(this.result);
+            return this.status !== 'errored' ? resolve(this.result || this.data) : reject(this.result);
           }
 
           if (++this.iteration >= this.maxIterations) {
@@ -254,7 +254,7 @@ export abstract class StatefulWorkflow<
           }
         }
 
-        resolve(this.result);
+        resolve(this.result ?? this.data);
       } catch (err) {
         await this.handleExecutionError(err, reject);
       }
@@ -641,11 +641,13 @@ export abstract class StatefulWorkflow<
     const currentItems = get(previousState, config.path as string, []);
 
     for (const newItem of items) {
-      const difference =
-        (get(differences, `added.${config.entityName as string}.${newItem?.id || newItem}`) as DetailedDiff) ||
-        (get(differences, `updated.${config.entityName as string}.${newItem?.id || newItem}`) as DetailedDiff);
+      const itemId = Array.isArray(config.idAttribute) ? getCompositeKey(newItem, config.idAttribute) : newItem[config.idAttribute as string];
 
-      await this.processSingleItem(newState, newItem?.id || newItem, config, difference, previousState, changeOrigins);
+      const difference =
+        (get(differences, `added.${config.entityName as string}.${itemId}`) as DetailedDiff) ||
+        (get(differences, `updated.${config.entityName as string}.${itemId}`) as DetailedDiff);
+
+      await this.processSingleItem(newState, itemId, config, difference, previousState, changeOrigins);
     }
 
     for (const currentItem of currentItems) {
@@ -706,7 +708,7 @@ export abstract class StatefulWorkflow<
         autoStartChildren
       } = config;
 
-      if (!config.autoStartChildren) {
+      if (!autoStartChildren) {
         this.log.warn(
           `${workflowType} with entityName ${entityName} not configured to autoStartChildren...\n${JSON.stringify(config, null, 2)}`
         );
@@ -772,17 +774,11 @@ export abstract class StatefulWorkflow<
         .then((result) => this.emit(`child:${entityName}:completed`, { ...config, workflowId, result }))
         .catch(async (error) => {
           this.log.error(`[${this.constructor.name}]:${this.entityName}:${this.id} Child workflow error: ${error.message}\n${error.stack}`);
-          if (workflow.isCancellation(error)) {
-            this.delete({
-              deletions: deleteEntities(data, String(entityName)),
-              entityName: String(entityName),
-              changeOrigin: workflow.workflowInfo().workflowId,
-              sync: true
-            });
-            this.emit(`child:${entityName}:cancelled`, { ...config, workflowId, error });
+          if (workflow.isCancellation(error) && this.status !== 'cancelled') {
+            this.log.info(`[${this.constructor.name}]:${this.entityName}:${this.id} Restarting child workflow due to cancellation.`);
+            await this.startChildWorkflow(config, this.schemaManager.query(String(entityName), compositeId, false), this.state);
           } else {
             this.emit(`child:${entityName}:errored`, { ...config, workflowId, error });
-            await this.startChildWorkflow(config, this.schemaManager.query(String(entityName), compositeId, false), this.state);
           }
         });
     } catch (err) {

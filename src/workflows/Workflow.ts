@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import * as workflow from '@temporalio/workflow';
-import { log } from '@temporalio/workflow';
+import { log, CancellationScope } from '@temporalio/workflow';
 import EventEmitter from 'eventemitter3';
 import {
   Property,
@@ -50,28 +50,27 @@ export function ChronoFlow(options?: ChronoFlowOptions) {
       'extraOptions',
       `
       return async function ${workflowName}(...args) {
-        return await new Promise(async (resolve, reject) => {
-          try {
-            const instance = new constructor(args[0], extraOptions);
-            await instance.bindEventHandlers();
-            await instance.emitAsync('hooks');
-            await instance.emitAsync('init');
-            
-            const executionMethod = instance.continueAsNew
-              ? 'executeWorkflow'
-              : 'execute';
-            
-            instance[executionMethod](...args)
-              .then(resolve)
-              .catch(err => {
-                console.error(err);
-                reject(err);
-              });
-          } catch (e) {
-            reject(e);
+        const instance = new constructor(args[0], extraOptions);
+
+        try {
+          await instance.bindEventHandlers();
+          await instance.emitAsync('hooks');
+          await instance.emitAsync('init');
+
+          const executionMethod = instance.continueAsNew
+            ? 'executeWorkflow'
+            : 'execute';
+
+          return await instance[executionMethod](...args);
+        } catch (e) {
+          if (workflow.isCancellation(e)) {
+            await workflow.CancellationScope.nonCancellable(async () => {
+              await workflow.condition(() => instance.status === 'cancelled');
+            });
           }
-        });
-      };
+          throw e;
+        }
+      }
     `
     )(workflow, constructor, extraOptions);
 
@@ -147,7 +146,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   }
 
   protected isInTerminalState(): boolean {
-    return ['complete', 'cancelled', 'errored'].includes(this.status);
+    return ['complete', 'completed', 'cancel', 'cancelling', 'cancelled', 'error', 'erroring', 'errored'].includes(this.status);
   }
 
   protected abstract execute(...args: unknown[]): Promise<unknown>;
@@ -205,12 +204,22 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     this.log.error(`Error encountered: ${err?.message}: ${err?.stack}`);
 
     if (workflow.isCancellation(err)) {
+      this.log.debug(`[Workflow]:${this.constructor.name}: Cancelling...`);
+
       await workflow.CancellationScope.nonCancellable(async () => {
-        await workflow.condition(() => workflow.allHandlersFinished(), '30 seconds');
+        await Promise.all([
+          workflow.condition(() => workflow.allHandlersFinished()),
+          ...Object.values(this.handles).map(async (handle: workflow.ChildWorkflowHandle<any>) => {
+            try {
+              if ('cancel' in handle && typeof handle.cancel === 'function') {
+                await handle.cancel();
+              }
+            } catch (e) {}
+          })
+        ]);
         this.status = 'cancelled';
-        // what other cleanup should be done here?
       });
-      throw err;
+      reject(err);
     } else {
       this.log.error(`Handling non-cancellation error: ${err?.message}`);
       reject(err);
