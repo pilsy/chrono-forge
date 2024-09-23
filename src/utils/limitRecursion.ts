@@ -5,7 +5,7 @@ export const limitRecursion = (
   entityId: string,
   entityName: string,
   entities: Record<string, any> = SchemaManager.getInstance().getState(),
-  visited = new Set<string>()
+  visited: Map<string, Set<string>> = new Map()
 ): any => {
   const entity = entities[entityName]?.[entityId];
   if (!entity) {
@@ -13,10 +13,14 @@ export const limitRecursion = (
   }
 
   const entityKey = `${entityName}:${entityId}`;
-  if (visited.has(entityKey)) {
+  if (visited.get(entityName)?.has(entityId)) {
     return entityId;
   }
-  visited.add(entityKey);
+
+  if (!visited.has(entityName)) {
+    visited.set(entityName, new Set());
+  }
+  visited.get(entityName)?.add(entityId);
 
   const schema = SchemaManager.getInstance().getSchema(entityName);
   const result: Record<string, any> = {};
@@ -29,15 +33,16 @@ export const limitRecursion = (
 
       if (relation) {
         if (Array.isArray(value)) {
-          result[key] = value.map((childId: string) => limitRecursion(childId, getEntityName(relation), entities, visited));
+          result[key] = value.map((childId: string) => limitRecursion(childId, getEntityName(relation), entities, new Map(visited)));
         } else {
-          result[key] = limitRecursion(value, getEntityName(relation), entities, visited);
+          result[key] = limitRecursion(value, getEntityName(relation), entities, new Map(visited));
         }
       } else {
         result[key] = value;
       }
     }
   }
+
   return result;
 };
 
