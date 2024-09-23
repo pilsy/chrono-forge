@@ -11,6 +11,7 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { Resource } from '@opentelemetry/resources';
 import { initTracer } from '../utils/instrumentation';
 import { logger } from '../utils/logger';
+import schemas from './testSchemas';
 
 jest.setTimeout(60000);
 
