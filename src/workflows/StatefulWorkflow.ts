@@ -31,8 +31,8 @@ export type ManagedPath = {
   autoStartChildren?: boolean;
   cancellationType?: workflow.ChildWorkflowCancellationType;
   parentClosePolicy?: workflow.ParentClosePolicy;
-  condition?: (entity: Record<string, any>, flow: StatefulWorkflow) => boolean;
-  processData?: (entity: Record<string, any>, flow: StatefulWorkflow) => Record<string, any>;
+  condition?: (entity: Record<string, any>, data: StatefulWorkflow['data']) => boolean;
+  processData?: (entity: Record<string, any>, data: StatefulWorkflow['data']) => Record<string, any>;
 };
 
 export type ManagedPaths = {
