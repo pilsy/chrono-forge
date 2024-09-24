@@ -1,0 +1,23 @@
+{
+  "configurations": [
+    {
+      "presentation": {
+        "hidden": false,
+        "group": "Chrono-Forge",
+        "order": 1
+      },
+      "name": "Workflow",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "command": "npm run start",
+      "envFile": "${workspaceFolder}/.env"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Workflow",
+      "configurations": ["Workflow"]
+    }
+  ]
+}

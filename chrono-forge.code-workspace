@@ -1,0 +1,11 @@
+{
+  "folders": [
+    {
+      "name": "ChronoForge",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "js/ts.implicitProjectConfig.experimentalDecorators": true
+  }
+}

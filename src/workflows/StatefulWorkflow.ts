@@ -13,7 +13,7 @@ import { DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
 import { isEmpty, isEqual } from 'lodash';
 import { Workflow, ChronoFlowOptions } from './Workflow';
-import { Signal, Query, Before, Property, ACTIONS_METADATA_KEY, VALIDATOR_METADATA_KEY, ActionOptions, On } from '../decorators';
+import { Signal, Query, Before, Property, ACTIONS_METADATA_KEY, VALIDATOR_METADATA_KEY, ActionOptions, On, After } from '../decorators';
 import { SchemaManager } from '../SchemaManager';
 import { limitRecursion } from '../utils/limitRecursion';
 import { getCompositeKey } from '../utils/getCompositeKey';
@@ -88,6 +88,13 @@ export interface ActionMetadata {
   method: keyof StatefulWorkflow<any, any>;
   options?: ActionOptions<any, any>;
 }
+
+export type AncestorHandleEntry = {
+  entityId: string;
+  entityName: string;
+  isParent: boolean;
+  handle: workflow.ExternalWorkflowHandle;
+};
 
 export abstract class StatefulWorkflow<
   P extends StatefulWorkflowParams = StatefulWorkflowParams,
@@ -175,13 +182,27 @@ export abstract class StatefulWorkflow<
   @Property({ set: false })
   protected options: O;
 
+  protected ancestorHandles: { [key: string]: AncestorHandleEntry } = {};
+
   constructor(params: P, options: O) {
     super(params, options);
 
-    this.schemaManager = SchemaManager.getInstance(workflow.workflowInfo().workflowId);
-
     this.params = params;
     this.options = options;
+
+    if (params.ancestorWorkflowIds) {
+      for (const workflowId of params.ancestorWorkflowIds) {
+        const [entityName, entityId] = workflowId.split('-');
+        this.ancestorHandles[workflowId] = {
+          entityId,
+          entityName,
+          handle: workflow.getExternalWorkflowHandle(workflowId),
+          isParent: workflow.workflowInfo().parent?.workflowId === workflowId
+        };
+      }
+    }
+
+    this.schemaManager = SchemaManager.getInstance(workflow.workflowInfo().workflowId);
 
     this.id = this.params?.id;
     this.entityName = (this.params?.entityName || options?.schemaName) as string;
@@ -201,17 +222,25 @@ export abstract class StatefulWorkflow<
     }
 
     this.schemaManager.on('stateChange', this.stateChanged.bind(this));
+    this.schemaManager.on('stateChange', this.upsertStateToMemo.bind(this));
     this.pendingUpdate = true;
+
+    const memo = (workflow.workflowInfo().memo || {}) as { state?: EntitiesState; iteration?: number; status?: string };
+    if (memo?.iteration !== undefined) {
+      this.iteration = Number(memo.iteration);
+    }
 
     if (this.params?.state && !isEmpty(this.params?.state)) {
       this.schemaManager.setState(this.params.state);
+    } else if (memo?.state && !isEmpty(memo.state)) {
+      this.schemaManager.setState(memo.state);
     }
 
     if (this.params?.data && !isEmpty(this.params?.data)) {
       this.schemaManager.dispatch(updateEntity(this.params.data, this.entityName), false);
     }
 
-    this.status = this.params?.status ?? 'running';
+    this.status = memo?.status ?? this.params?.status ?? 'running';
   }
 
   protected async executeWorkflow(): Promise<any> {
@@ -380,8 +409,19 @@ export abstract class StatefulWorkflow<
         await this.processSubscriptions(newState, differences, previousState || {}, changeOrigins);
       }
 
+      this.upsertStateToMemo();
       this.pendingUpdate = false;
     }
+  }
+
+  protected upsertStateToMemo(): void {
+    this.log.debug(`[StatefulWorkflow]: Checking if we should upsertStateToMemo: ${workflow.workflowInfo().workflowId}`);
+    workflow.upsertMemo({
+      iteration: this.iteration,
+      status: this.status,
+      state: this.schemaManager.getState(),
+      lastUpdated: new Date().toISOString()
+    });
   }
 
   protected async processSubscriptions(

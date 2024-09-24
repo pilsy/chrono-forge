@@ -5,22 +5,23 @@ export const limitRecursion = (
   entityId: string,
   entityName: string,
   entities: Record<string, any> = SchemaManager.getInstance().getState(),
-  visited: Map<string, Set<string>> = new Map()
+  visited: Map<string, number> = new Map(), // Track the depth at which entities are visited
+  depth: number = 0 // Track the current recursion depth
 ): any => {
   const entity = entities[entityName]?.[entityId];
   if (!entity) {
-    return entityId;
+    return entityId; // Entity not found, return the id
   }
 
   const entityKey = `${entityName}:${entityId}`;
-  if (visited.get(entityName)?.has(entityId)) {
+
+  // If the entity has been visited at a shallower depth, return the id
+  if (visited.has(entityKey) && visited.get(entityKey)! <= depth) {
     return entityId;
   }
 
-  if (!visited.has(entityName)) {
-    visited.set(entityName, new Set());
-  }
-  visited.get(entityName)?.add(entityId);
+  // Mark this entity as visited at the current depth
+  visited.set(entityKey, depth);
 
   const schema = SchemaManager.getInstance().getSchema(entityName);
   const result: Record<string, any> = {};
@@ -33,9 +34,11 @@ export const limitRecursion = (
 
       if (relation) {
         if (Array.isArray(value)) {
-          result[key] = value.map((childId: string) => limitRecursion(childId, getEntityName(relation), entities, new Map(visited)));
+          result[key] = value.map(
+            (childId: string) => limitRecursion(childId, getEntityName(relation), entities, new Map(visited), depth + 1) // Increase depth for each recursion
+          );
         } else {
-          result[key] = limitRecursion(value, getEntityName(relation), entities, new Map(visited));
+          result[key] = limitRecursion(value, getEntityName(relation), entities, new Map(visited), depth + 1); // Increase depth for each object child
         }
       } else {
         result[key] = value;
