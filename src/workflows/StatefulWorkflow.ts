@@ -190,8 +190,12 @@ export abstract class StatefulWorkflow<
     this.params = params;
     this.options = options;
 
-    if (params.ancestorWorkflowIds) {
-      for (const workflowId of params.ancestorWorkflowIds) {
+    if (this.params?.ancestorWorkflowIds) {
+      this.ancestorWorkflowIds = this.params.ancestorWorkflowIds;
+    }
+
+    if (this.ancestorWorkflowIds) {
+      for (const workflowId of this.ancestorWorkflowIds) {
         const [entityName, entityId] = workflowId.split('-');
         this.ancestorHandles[workflowId] = {
           entityId,
@@ -207,11 +211,6 @@ export abstract class StatefulWorkflow<
     this.id = this.params?.id;
     this.entityName = (this.params?.entityName || options?.schemaName) as string;
     this.schema = this.entityName ? (this.schemaManager.getSchema(this.entityName) as schema.Entity) : (options.schema as schema.Entity);
-
-    if (this.params?.ancestorWorkflowIds) {
-      this.ancestorWorkflowIds = this.params.ancestorWorkflowIds;
-    }
-
     this.apiUrl = this.params?.apiUrl || options?.apiUrl;
     this.apiToken = this.params?.apiToken;
 
@@ -245,6 +244,7 @@ export abstract class StatefulWorkflow<
 
   protected async executeWorkflow(): Promise<any> {
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.executeWorkflow`);
+
     return new Promise(async (resolve, reject) => {
       try {
         if (this.schema) this.configureManagedPaths(this.schema);
