@@ -11,7 +11,7 @@ import {
 } from '../utils/entities';
 import { DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
-import { isEmpty, isEqual } from 'lodash';
+import { isEmpty, isEqual, unset } from 'lodash';
 import { Workflow, ChronoFlowOptions } from './Workflow';
 import { Signal, Query, Before, Property, ACTIONS_METADATA_KEY, VALIDATOR_METADATA_KEY, ActionOptions, On, After } from '../decorators';
 import { SchemaManager } from '../SchemaManager';
@@ -20,6 +20,7 @@ import { getCompositeKey } from '../utils/getCompositeKey';
 import { PROPERTY_METADATA_KEY } from '../decorators';
 import { UpdateHandlerOptions, Handler } from '@temporalio/workflow/lib/interfaces';
 import { HandlerUnfinishedPolicy } from '@temporalio/common';
+import { flatten } from '../utils/flatten';
 
 export type ManagedPath = {
   entityName?: string;
@@ -108,7 +109,7 @@ export abstract class StatefulWorkflow<
   protected iteration = 0;
 
   protected condition(): boolean {
-    return this.pendingUpdate || !!this.pendingChanges.length || this.status !== 'running';
+    return this.pendingIteration || this.pendingUpdate || !!this.pendingChanges.length || this.status !== 'running';
   }
 
   protected shouldLoadData(): boolean {
@@ -121,7 +122,7 @@ export abstract class StatefulWorkflow<
 
   @Signal('apiToken')
   public setApiToken(apiToken: string): void {
-    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.setApiToken`);
+    this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.setApiToken`);
     if (apiToken && this.apiToken !== apiToken) {
       this.log.info(`Updating apiToken...`);
       this.apiToken = apiToken;
@@ -221,8 +222,9 @@ export abstract class StatefulWorkflow<
     }
 
     this.schemaManager.on('stateChange', this.stateChanged.bind(this));
-    this.schemaManager.on('stateChange', this.upsertStateToMemo.bind(this));
+    // this.schemaManager.on('stateChange', this.upsertStateToMemo.bind(this));
     this.pendingUpdate = true;
+    this.pendingIteration = true;
 
     const memo = (workflow.workflowInfo().memo || {}) as { state?: EntitiesState; iteration?: number; status?: string };
     if (memo?.iteration !== undefined) {
@@ -278,8 +280,14 @@ export abstract class StatefulWorkflow<
           if (++this.iteration >= this.maxIterations) {
             await this.handleMaxIterations();
             break;
-          } else {
+          }
+
+          if (this.pendingUpdate) {
             this.pendingUpdate = false;
+          }
+
+          if (this.pendingIteration) {
+            this.pendingIteration = false;
           }
         }
 
@@ -299,7 +307,7 @@ export abstract class StatefulWorkflow<
     changeOrigin,
     sync = true
   }: PendingChange & { data?: Record<string, any> }): void {
-    this.log.debug(
+    this.log.trace(
       `[${this.constructor.name}]:${this.entityName}:${this.id}.update(${JSON.stringify({ data, updates, entityName, changeOrigin }, null, 2)})`
     );
 
@@ -315,7 +323,7 @@ export abstract class StatefulWorkflow<
 
   @Signal()
   public delete({ data, deletions, entityName }: PendingChange & { data?: Record<string, any> }): void {
-    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.delete`);
+    this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.delete`);
     if (!isEmpty(data)) {
       deletions = normalizeEntities(data, entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName));
     }
@@ -326,7 +334,7 @@ export abstract class StatefulWorkflow<
 
   @Signal()
   public async subscribe(subscription: Subscription): Promise<void> {
-    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.subscribe`);
+    this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.subscribe`);
 
     const { workflowId, subscriptionId } = subscription;
     if (!this.subscriptions.find((sub) => sub.workflowId === workflowId && sub.subscriptionId === subscriptionId)) {
@@ -337,7 +345,7 @@ export abstract class StatefulWorkflow<
 
   @Signal()
   public async unsubscribe(subscription: Subscription): Promise<void> {
-    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.unsubscribe`);
+    this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.unsubscribe`);
 
     const { workflowId, subscriptionId } = subscription;
     const index = this.subscriptions.findIndex((sub) => sub.workflowId === workflowId && sub.subscriptionId === subscriptionId);
@@ -348,7 +356,7 @@ export abstract class StatefulWorkflow<
   }
 
   private async unsubscribeHandle(handle: workflow.ExternalWorkflowHandle | workflow.ChildWorkflowHandle<any>) {
-    this.log.debug(
+    this.log.trace(
       `[${this.constructor.name}]:${this.entityName}:${this.id}: Successfully Unsubscribing from workflow handle: ${handle.workflowId}`
     );
     try {
@@ -364,7 +372,7 @@ export abstract class StatefulWorkflow<
   @Before('execute')
   protected async processState(): Promise<void> {
     if (this._actionRunning) {
-      this.log.debug(
+      this.log.info(
         `[${this.constructor.name}]:${this.entityName}:${this.id}: Action is running, waiting for all changes to be made before processing...`
       );
       await workflow.condition(() => !this._actionRunning);
@@ -409,19 +417,52 @@ export abstract class StatefulWorkflow<
         await this.processSubscriptions(newState, differences, previousState || {}, changeOrigins);
       }
 
-      this.upsertStateToMemo(newState);
-      this.pendingUpdate = false;
+      this.pendingIteration = true;
     }
   }
 
-  protected upsertStateToMemo(newState: EntitiesState): void {
-    this.log.debug(`[StatefulWorkflow]: Checking if we should upsertStateToMemo: ${workflow.workflowInfo().workflowId}`);
-    workflow.upsertMemo({
-      iteration: this.iteration,
-      status: this.status,
-      state: newState,
-      lastUpdated: new Date().toISOString()
-    });
+  @After('processState')
+  protected async upsertStateToMemo(): Promise<void> {
+    this.log.info(`[StatefulWorkflow]: Saving state to memo: ${workflow.workflowInfo().workflowId}`);
+
+    // Get the current memo state
+    const memo = (workflow.workflowInfo().memo || {}) as { state?: EntitiesState; iteration?: number; status?: string };
+    const currentState = memo.state || {};
+
+    // Flatten the new state and current memo state
+    const flattenedNewState = flatten(this.state);
+    const flattenedCurrentState = flatten(currentState);
+
+    const updatedMemo: Record<string, any> = {};
+    let hasChanges = false;
+
+    // Upsert changes or additions
+    for (const [key, newValue] of Object.entries(flattenedNewState)) {
+      const currentValue = flattenedCurrentState[key];
+      if (!isEqual(newValue, currentValue)) {
+        updatedMemo[`state_${key}`] = newValue; // Only update the modified key
+        hasChanges = true;
+      }
+    }
+
+    // Handle deletions: Check if any keys in the current memo state are missing in the new state
+    for (const key of Object.keys(flattenedCurrentState)) {
+      if (!(key in flattenedNewState)) {
+        unset(updatedMemo, `state_${key}`); // Unset keys that are no longer present
+        hasChanges = true;
+      }
+    }
+
+    // If there are changes, upsert the updated memo with only the modified keys
+    if (hasChanges) {
+      workflow.upsertMemo({
+        // ...memo, // Preserve iteration and status
+        ...updatedMemo, // Apply only the updated keys
+        iteration: this.iteration,
+        status: this.status,
+        lastUpdated: new Date().toISOString()
+      });
+    }
   }
 
   protected async processSubscriptions(
@@ -430,7 +471,7 @@ export abstract class StatefulWorkflow<
     previousState: EntitiesState,
     changeOrigins: string[]
   ): Promise<void> {
-    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.processSubscriptions`);
+    this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.processSubscriptions`);
 
     for (const subscription of this.subscriptions) {
       const { workflowId, signalName, selector, parent, child, condition, entityName, subscriptionId } = subscription;
@@ -448,7 +489,7 @@ export abstract class StatefulWorkflow<
       const handle = this.subscriptionHandles[workflowId];
       if (handle) {
         try {
-          this.log.debug(
+          this.log.trace(
             `[${this.constructor.name}]:${this.entityName}:${this.id}.Sending update to workflow: ${workflowId}, Subscription ID: ${subscriptionId}`
           );
 
@@ -615,7 +656,7 @@ export abstract class StatefulWorkflow<
     previousState: EntitiesState,
     changeOrigins: string[]
   ): Promise<void> {
-    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.processChildState`);
+    this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.processChildState`);
 
     const newData = limitRecursion(this.id, this.entityName, newState);
     const oldData = limitRecursion(this.id, this.entityName, previousState);
@@ -676,7 +717,7 @@ export abstract class StatefulWorkflow<
     previousState: EntitiesState,
     changeOrigins: string[]
   ): Promise<void> {
-    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.processArrayItems`);
+    this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.processArrayItems`);
 
     const currentItems = get(previousState, config.path as string, []);
 
@@ -710,7 +751,7 @@ export abstract class StatefulWorkflow<
     previousState: EntitiesState,
     changeOrigins: string[]
   ): Promise<void> {
-    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.processSingleItem`);
+    this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.processSingleItem`);
 
     const compositeId = Array.isArray(config.idAttribute)
       ? getCompositeKey(newState[config.entityName as string][item], config.idAttribute)
@@ -749,7 +790,7 @@ export abstract class StatefulWorkflow<
       } = config;
 
       if (!autoStartChildren) {
-        this.log.warn(
+        this.log.trace(
           `${workflowType} with entityName ${entityName} not configured to autoStartChildren...\n${JSON.stringify(config, null, 2)}`
         );
         return;
@@ -763,14 +804,14 @@ export abstract class StatefulWorkflow<
       const workflowId = includeParentId ? `${entityName}-${compositeId}-${this.id}` : `${entityName}-${compositeId}`;
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {
-        this.log.warn(
+        this.log.info(
           `[${this.constructor.name}]:${this.entityName}:${this.id} Circular dependency detected for workflowId: ${workflowId}. Skipping child workflow start.`
         );
         return;
       }
 
       if (typeof config.condition === 'function') {
-        this.log.info(`[${this.constructor.name}]:${this.entityName}:${this.id}: Calling condition function before starting child...`);
+        this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}: Calling condition function before starting child...`);
         if (!config.condition.apply(this, [rawData, this])) {
           this.log.info(`[${this.constructor.name}]:${this.entityName}:${this.id}: Condition returned false, not starting child.`);
           return;
@@ -804,7 +845,7 @@ export abstract class StatefulWorkflow<
         ]
       };
 
-      this.log.debug(
+      this.log.trace(
         `[${this.constructor.name}]:${this.entityName}:${this.id}.startChildWorkflow( workflowType=${workflowType}, startPayload=${JSON.stringify(startPayload, null, 2)}\n)`
       );
       this.handles[workflowId] = await workflow.startChild(String(workflowType), startPayload);
@@ -853,7 +894,7 @@ export abstract class StatefulWorkflow<
       const workflowId = includeParentId ? `${entityName}-${compositeId}-${this.id}` : `${entityName}-${compositeId}`;
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {
-        this.log.warn(
+        this.log.info(
           `[${this.constructor.name}]:${this.entityName}:${this.id} Circular update detected for workflowId: ${workflowId}. Skipping child workflow update.`
         );
         return;
@@ -949,6 +990,7 @@ export abstract class StatefulWorkflow<
       if (data && !updates) {
         updates = normalizeEntities(data, this.entityName);
       }
+
       this.schemaManager.dispatch(updateNormalizedEntities(updates, '$merge'), false);
     }
   }
@@ -1006,19 +1048,30 @@ export abstract class StatefulWorkflow<
       const methodName = method as keyof StatefulWorkflow<any, any>;
       const updateOptions: UpdateHandlerOptions<any[]> = {};
       const validatorMethod = validators[methodName];
+
       if (validatorMethod) {
         updateOptions.validator = (this as any)[validatorMethod].bind(this);
       }
+
       updateOptions.unfinishedPolicy = HandlerUnfinishedPolicy.ABANDON;
 
       workflow.setHandler(
         workflow.defineUpdate<any, any>(method),
         async (input: any): Promise<any> => {
+          // Ensure input is serialized
+          let serializedInput;
+          try {
+            serializedInput = JSON.stringify(input);
+          } catch (error: any) {
+            this.log.error('Error serializing input: ', error);
+            throw new Error('Input could not be serialized.');
+          }
+
           this._actionRunning = true;
           let result: any;
           let error: any;
           try {
-            result = await (this[methodName] as (input: any) => any)(input);
+            result = await (this[methodName] as (input: any) => any)(JSON.parse(serializedInput));
           } catch (err: any) {
             error = err;
             this.log.error(error);
@@ -1027,7 +1080,17 @@ export abstract class StatefulWorkflow<
           }
 
           await workflow.condition(() => !this.schemaManager.processing);
-          return result !== undefined ? result : this.data;
+
+          // Ensure result is serialized
+          let serializedResult;
+          try {
+            serializedResult = JSON.stringify(result !== undefined ? result : this.data);
+          } catch (error: any) {
+            this.log.error('Error serializing result: ', error);
+            throw new Error('Result could not be serialized.');
+          }
+
+          return serializedResult;
         },
         updateOptions
       );

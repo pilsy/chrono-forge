@@ -1,28 +1,29 @@
 import * as wf from '@temporalio/workflow';
 import { StreamingChatActivity } from '../activities/StreamingChatActivity';
 import { log } from '@temporalio/workflow';
-import { proxySinks, proxyActivities } from '@temporalio/workflow';
-import { ChronoFlow, Workflow, Signal, Query } from '.';
+import { proxyActivities } from '@temporalio/workflow';
+import { ChronoFlow, Workflow, Signal, Query, Property } from '.';
 
-type Status = 'requested' | 'pending' | 'connected' | 'connecting' | 'closed' | 'errored';
+type Status = 'requested' | 'pending' | 'connected' | 'closed' | 'errored';
 
 const MAX_ITERATIONS = 10000;
 
-const { readFile, readPositionFile } = proxyActivities<{
+const { readFile, readPositionFile, runStreamingChat } = proxyActivities<{
   readFile: (filePath: string) => Promise<string>;
   readPositionFile: (positionFilePath: string) => Promise<string>;
+  runStreamingChat: (host: string, port: number, sessionId: string) => Promise<void>;
 }>({
   startToCloseTimeout: '5s'
 });
 
 @ChronoFlow()
 export class StreamingChatWorkflow extends Workflow {
-  protected host: string;
-  protected port: number;
-  protected sessionId: string;
-  protected status: Status = 'requested';
-  protected desiredStatus: Status = 'requested';
-  protected iteration = 0;
+  @Property() protected host: string;
+  @Property() protected port: number;
+  @Property() protected sessionId: string;
+  @Property() protected status: Status = 'requested';
+  @Property() protected desiredStatus: Status = 'requested';
+  @Property() protected iteration: number = 0;
 
   constructor(host: string, port: number, sessionId: string) {
     super();
@@ -61,18 +62,15 @@ export class StreamingChatWorkflow extends Workflow {
       try {
         if (this.status !== 'closed') {
           this.status = 'pending';
-          await wf.executeChild(StreamingChatActivity, {
-            args: [this.host, this.port, this.sessionId],
-            retry: {
-              initialInterval: '1s',
-              maximumAttempts: 3
-            }
-          });
+
+          // Run the StreamingChatActivity through the proxy
+          await runStreamingChat(this.host, this.port, this.sessionId);
 
           this.status = 'connected';
         }
       } catch (error) {
         this.status = 'errored';
+        log.error(`Error in StreamingChatActivity: ${error.message}`);
         if (this.desiredStatus !== 'closed') {
           this.desiredStatus = 'errored';
         }
@@ -85,15 +83,7 @@ export class StreamingChatWorkflow extends Workflow {
         return;
       }
 
-      if (this.desiredStatus === 'requested' && this.status !== 'pending') {
-        this.status = 'requested';
-      } else if (this.desiredStatus === 'connected' && this.status !== 'connected') {
-        this.status = 'connected';
-      } else if (this.desiredStatus === 'closed') {
-        this.status = 'closed';
-        await this.cleanUpAndClose();
-        return;
-      }
+      this.updateStatus();
     }
 
     if (this.iteration >= MAX_ITERATIONS) {
@@ -110,9 +100,24 @@ export class StreamingChatWorkflow extends Workflow {
     const filePath = `./streams/${this.sessionId}.log`;
     const positionFilePath = `./streams/${this.sessionId}.pos`;
 
-    const data = await readFile(filePath);
-    const position = await readPositionFile(positionFilePath);
+    try {
+      const data = await readFile(filePath);
+      const position = await readPositionFile(positionFilePath);
+      log.info(`Resuming stream for session ${this.sessionId} from position ${position}`);
+    } catch (error) {
+      log.error(`Failed to resume streaming for session ${this.sessionId}: ${error.message}`);
+      this.status = 'errored';
+    }
+  }
 
-    log.info(`Resuming stream for session ${this.sessionId} from position ${position}`);
+  private updateStatus(): void {
+    if (this.desiredStatus === 'requested' && this.status !== 'pending') {
+      this.status = 'requested';
+    } else if (this.desiredStatus === 'connected' && this.status !== 'connected') {
+      this.status = 'connected';
+    } else if (this.desiredStatus === 'closed') {
+      this.status = 'closed';
+      this.cleanUpAndClose();
+    }
   }
 }

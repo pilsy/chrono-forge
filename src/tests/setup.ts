@@ -36,7 +36,7 @@ global.exporter = getExporter('temporal_worker');
 global.resource = getResource('temporal_worker');
 
 // @ts-ignore
-logger.trace = (...args) => logger.debug(...args);
+logger.trace = (...args) => logger.verbose(...args);
 
 Runtime.install({
   telemetryOptions: {

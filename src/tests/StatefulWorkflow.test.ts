@@ -20,16 +20,16 @@ import { cloneDeep } from 'lodash';
 import dottie, { get, set } from 'dottie';
 import { getExporter, getResource, getTracer } from '../utils/instrumentation';
 import { Photo } from './testSchemas';
-import { getCompositeKey, limitRecursion } from '../utils';
+import { getCompositeKey, getMemo, limitRecursion, unflatten } from '../utils';
 import { denormalize } from 'normalizr';
 
 describe('StatefulWorkflow', () => {
   let execute: (workflowName: string, params: StatefulWorkflowParams, timeout: number) => ReturnType<client.workflow.start>;
-
+  let client: ReturnType<typeof getClient>;
   jest.setTimeout(120000);
 
   beforeEach(() => {
-    const client = getClient();
+    client = getClient();
 
     execute = (workflowName: string, params: StatefulWorkflowParams, workflowExecutionTimeout = 120000) => {
       console.log(`Starting workflow: ${params.entityName}-${params.id}`);
@@ -106,6 +106,9 @@ describe('StatefulWorkflow', () => {
       const state = await handle.query('state');
       expect(state).toEqual(expectedInitial);
 
+      // const { state: memoState } = await getMemo(client.workflow.getHandle(`User-${data.id}`));
+      // expect(memoState).toEqual(expectedInitial);
+
       // Update state
       const updatedData = { ...data, update: 'fromUpdate', listings: [{ ...data.listings[0], update: 'fromUpdate' }] };
       const expectedUpdated = normalizeEntities(updatedData, SchemaManager.getInstance().getSchema('User'));
@@ -117,7 +120,6 @@ describe('StatefulWorkflow', () => {
       expect(updatedState).toEqual(expectedUpdated);
 
       // Verify child workflow state
-      const client = getClient();
       const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
       const updatedListingState = await childHandle.query('state');
       expect(updatedListingState).toEqual({ Listing: expectedUpdated.Listing });

@@ -102,6 +102,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   protected iteration = 0;
 
   @Property()
+  protected pendingIteration: boolean = false;
+
+  @Property()
   protected status: string = 'running';
 
   @Property()
@@ -142,7 +145,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   protected conditionTimeout: Duration = '1 day';
 
   protected condition(): boolean {
-    return this.pendingUpdate || this.status !== 'running';
+    return this.pendingIteration || this.pendingUpdate || this.status !== 'running';
   }
 
   protected isInTerminalState(): boolean {
@@ -176,8 +179,14 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
           if (++this.iteration >= this.maxIterations) {
             await this.handleMaxIterations();
             break;
-          } else {
+          }
+
+          if (this.pendingUpdate) {
             this.pendingUpdate = false;
+          }
+
+          if (this.pendingIteration) {
+            this.pendingIteration = false;
           }
         }
 
@@ -300,13 +309,13 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
         if (Array.isArray(before)) {
           for (const beforeHook of before) {
             if (typeof (this as any)[beforeHook] === 'function') {
-              this.log.debug(`[HOOK]:before(${methodName})`);
+              this.log.trace(`[HOOK]:before(${methodName})`);
               await (this as any)[beforeHook](...args);
             }
           }
         }
 
-        this.log.debug(`[HOOK]:${methodName}.call()...`);
+        this.log.info(`[HOOK]:${methodName}.call()...`);
         let result;
         try {
           result = await originalMethod.apply(this, args as any);
@@ -317,7 +326,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
         if (Array.isArray(after)) {
           for (const afterHook of after) {
             if (typeof (this as any)[afterHook] === 'function') {
-              this.log.debug(`[HOOK]:after(${methodName})`);
+              this.log.trace(`[HOOK]:after(${methodName})`);
               await (this as any)[afterHook](...args);
             }
           }

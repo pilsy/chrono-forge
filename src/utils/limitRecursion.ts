@@ -49,7 +49,7 @@ export const limitRecursion = (
   return result;
 };
 
-const getEntityName = (relation: any): string => {
+export const getEntityName = (relation: any): string => {
   if (Array.isArray(relation)) {
     return getEntityName(relation[0]);
   } else if (relation instanceof normalizrSchema.Entity) {
