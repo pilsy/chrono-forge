@@ -1048,30 +1048,19 @@ export abstract class StatefulWorkflow<
       const methodName = method as keyof StatefulWorkflow<any, any>;
       const updateOptions: UpdateHandlerOptions<any[]> = {};
       const validatorMethod = validators[methodName];
-
       if (validatorMethod) {
         updateOptions.validator = (this as any)[validatorMethod].bind(this);
       }
-
       updateOptions.unfinishedPolicy = HandlerUnfinishedPolicy.ABANDON;
 
       workflow.setHandler(
         workflow.defineUpdate<any, any>(method),
         async (input: any): Promise<any> => {
-          // Ensure input is serialized
-          let serializedInput;
-          try {
-            serializedInput = JSON.stringify(input);
-          } catch (error: any) {
-            this.log.error('Error serializing input: ', error);
-            throw new Error('Input could not be serialized.');
-          }
-
           this._actionRunning = true;
           let result: any;
           let error: any;
           try {
-            result = await (this[methodName] as (input: any) => any)(JSON.parse(serializedInput));
+            result = await (this[methodName] as (input: any) => any)(input);
           } catch (err: any) {
             error = err;
             this.log.error(error);
@@ -1080,17 +1069,7 @@ export abstract class StatefulWorkflow<
           }
 
           await workflow.condition(() => !this.schemaManager.processing);
-
-          // Ensure result is serialized
-          let serializedResult;
-          try {
-            serializedResult = JSON.stringify(result !== undefined ? result : this.data);
-          } catch (error: any) {
-            this.log.error('Error serializing result: ', error);
-            throw new Error('Result could not be serialized.');
-          }
-
-          return serializedResult;
+          return result !== undefined ? result : this.data;
         },
         updateOptions
       );
