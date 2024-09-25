@@ -409,17 +409,17 @@ export abstract class StatefulWorkflow<
         await this.processSubscriptions(newState, differences, previousState || {}, changeOrigins);
       }
 
-      this.upsertStateToMemo();
+      this.upsertStateToMemo(newState);
       this.pendingUpdate = false;
     }
   }
 
-  protected upsertStateToMemo(): void {
+  protected upsertStateToMemo(newState: EntitiesState): void {
     this.log.debug(`[StatefulWorkflow]: Checking if we should upsertStateToMemo: ${workflow.workflowInfo().workflowId}`);
     workflow.upsertMemo({
       iteration: this.iteration,
       status: this.status,
-      state: this.schemaManager.getState(),
+      state: newState,
       lastUpdated: new Date().toISOString()
     });
   }
