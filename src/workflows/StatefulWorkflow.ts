@@ -1068,7 +1068,7 @@ export abstract class StatefulWorkflow<
             this._actionRunning = false;
           }
 
-          await workflow.condition(() => !this.schemaManager.processing);
+          await workflow.condition(() => !this.schemaManager.processing && !this.pendingIteration);
           return result !== undefined ? result : this.data;
         },
         updateOptions
