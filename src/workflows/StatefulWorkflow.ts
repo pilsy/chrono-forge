@@ -1053,6 +1053,10 @@ export abstract class StatefulWorkflow<
       }
       updateOptions.unfinishedPolicy = HandlerUnfinishedPolicy.ABANDON;
 
+      function isTemporalProxy(obj: any): boolean {
+        return obj && typeof obj === 'object' && 'toJSON' in obj === false && 'valueOf' in obj === false;
+      }
+
       workflow.setHandler(
         workflow.defineUpdate<any, any>(method),
         async (input: any): Promise<any> => {
@@ -1069,7 +1073,18 @@ export abstract class StatefulWorkflow<
           }
 
           await workflow.condition(() => !this.schemaManager.processing && !this.pendingIteration);
-          return result !== undefined ? result : this.data;
+          // Use a safer JSON conversion or avoid if not necessary
+          return JSON.parse(
+            JSON.stringify(result !== undefined ? result : this.data, (key, value) => {
+              if (value instanceof Date) {
+                return value.toISOString();
+              }
+              if (isTemporalProxy(value)) {
+                return undefined; // Skip non-serializable Temporal proxy objects
+              }
+              return value;
+            })
+          );
         },
         updateOptions
       );

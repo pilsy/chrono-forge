@@ -10,5 +10,5 @@ export function flatten(nestedObject: Record<string, unknown>, maxDepth = 2): Re
       toPairs(obj_)
     );
 
-  return fromPairs(traverse(nestedObject));
+  return fromPairs(traverse(JSON.parse(JSON.stringify(nestedObject))));
 }
