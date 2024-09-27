@@ -318,6 +318,12 @@ export class SchemaManager extends EventEmitter {
           return true;
         },
         get: (target: any, prop: string | symbol) => {
+          if (prop === 'toJSON') {
+            return () => {
+              return JSON.parse(JSON.stringify(target)); // Deep copy to break proxy
+            };
+          }
+
           const val = target[prop];
           if (Array.isArray(val) || (typeof val === 'object' && val !== null)) {
             return new Proxy(val, handler);
