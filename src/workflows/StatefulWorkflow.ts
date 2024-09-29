@@ -1061,7 +1061,7 @@ export abstract class StatefulWorkflow<
     previousState: EntitiesState,
     changeOrigins: string[]
   ): Promise<void> {
-    this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.processSingleItem`);
+    this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.processSingleItem(${JSON.stringify(item, null, 2)})`);
 
     const compositeId = Array.isArray(config.idAttribute)
       ? getCompositeKey(newState[config.entityName as string][item], config.idAttribute)
