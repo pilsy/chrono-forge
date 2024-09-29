@@ -978,7 +978,10 @@ export abstract class StatefulWorkflow<
       if (Array.isArray(currentValue)) {
         await this.processArrayItems(newState, currentValue, config, differences, previousState, changeOrigins);
       } else if (currentValue) {
-        await this.processSingleItem(newState, currentValue, config, differences, previousState, changeOrigins);
+        const compositeId = Array.isArray(config.idAttribute)
+          ? getCompositeKey(currentValue, config.idAttribute)
+          : currentValue[config.idAttribute as string];
+        await this.processSingleItem(newState, compositeId, config, differences, previousState, changeOrigins);
       }
 
       if (Array.isArray(previousValue)) {
