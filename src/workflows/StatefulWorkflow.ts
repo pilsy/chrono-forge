@@ -13,7 +13,7 @@ import { DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
 import { isEmpty, isEqual, unset } from 'lodash';
 import { Workflow, ChronoFlowOptions } from './Workflow';
-import { Signal, Query, Before, Property, ACTIONS_METADATA_KEY, VALIDATOR_METADATA_KEY, ActionOptions, On, After } from '../decorators';
+import { Signal, Query, Before, Property, ACTIONS_METADATA_KEY, VALIDATOR_METADATA_KEY, ActionOptions, On, After, Mutex } from '../decorators';
 import { SchemaManager } from '../SchemaManager';
 import { limitRecursion } from '../utils/limitRecursion';
 import { getCompositeKey } from '../utils/getCompositeKey';
@@ -550,6 +550,7 @@ export abstract class StatefulWorkflow<
     this.status = memo?.status ?? this.params?.status ?? 'running';
   }
 
+  @Mutex('executeWorkflow')
   protected async executeWorkflow(): Promise<any> {
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.executeWorkflow`);
 
@@ -1357,39 +1358,47 @@ export abstract class StatefulWorkflow<
     const actions: ActionMetadata[] = Reflect.getMetadata(ACTIONS_METADATA_KEY, this.constructor.prototype) || [];
     const validators = Reflect.getMetadata(VALIDATOR_METADATA_KEY, this.constructor.prototype) || {};
 
-    for (const { method } of actions) {
+    for (const { method, options } of actions) {
       const methodName = method as keyof StatefulWorkflow<any, any>;
       const updateOptions: UpdateHandlerOptions<any[]> = {};
       const validatorMethod = validators[methodName];
-
       if (validatorMethod) {
         updateOptions.validator = (this as any)[validatorMethod].bind(this);
       }
-
       updateOptions.unfinishedPolicy = HandlerUnfinishedPolicy.ABANDON;
 
-      // @ts-ignore
-      workflow.setHandler(workflow.defineUpdate<any, any>(method), this.getUpdateHandler(methodName), updateOptions);
+      function isTemporalProxy(obj: any): boolean {
+        return obj && typeof obj === 'object' && 'toJSON' in obj === false && 'valueOf' in obj === false;
+      }
+
+      workflow.setHandler(
+        workflow.defineUpdate<any, any>(method),
+        async (input: any): Promise<any> => {
+          this._actionRunning = true;
+          let result: any;
+          let error: any;
+
+          try {
+            result = await (this[methodName] as (input: any) => any)(input);
+          } catch (err: any) {
+            error = err;
+            this.log.error(error);
+          } finally {
+            this._actionRunning = false;
+          }
+
+          await workflow.condition(() => !this.schemaManager.processing && !this.pendingIteration);
+
+          // Return the result or the error if it exists
+          if (error !== undefined) {
+            return Promise.reject(error);
+          }
+          return result !== undefined ? result : this.data;
+        },
+        updateOptions
+      );
     }
 
     this._actionsBound = true;
-  }
-
-  protected async getUpdateHandler(methodName: keyof StatefulWorkflow<any, any>, input: any): Promise<any> {
-    this._actionRunning = true;
-    let result: any;
-    let error: any;
-
-    try {
-      result = await (this[methodName] as (input: any) => any)(input);
-    } catch (err: any) {
-      error = err;
-      this.log.error(error);
-    } finally {
-      this._actionRunning = false;
-    }
-
-    await workflow.condition(() => !this.schemaManager.processing && !this.pendingIteration);
-    return result !== undefined ? result : this.data;
   }
 }

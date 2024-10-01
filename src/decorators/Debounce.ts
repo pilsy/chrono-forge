@@ -4,24 +4,26 @@ export function Debounce(debounceTimeMs: number): MethodDecorator {
   return (target: any, propertyKey: string | symbol, descriptor: PropertyDescriptor): void => {
     const originalMethod = descriptor.value;
     let debouncePromise: Promise<any> | undefined = undefined;
-    let latestArgs: any[] | null = null;
+    let lastCallTime: number = 0;
 
     descriptor.value = async function (...args: any[]) {
-      latestArgs = args;
+      const now = Date.now();
+      const timeSinceLastCall = now - lastCallTime;
+
+      if (timeSinceLastCall >= debounceTimeMs) {
+        lastCallTime = now;
+        return originalMethod.apply(this, args);
+      }
 
       if (debouncePromise) {
         return debouncePromise;
       }
 
-      debouncePromise = sleep(debounceTimeMs)
-        .then(async () => {
-          if (latestArgs) {
-            await originalMethod.apply(this, latestArgs);
-          }
-        })
-        .finally(() => {
-          debouncePromise = undefined;
-        });
+      debouncePromise = sleep(debounceTimeMs - timeSinceLastCall).then(async () => {
+        lastCallTime = Date.now();
+        debouncePromise = undefined;
+        return originalMethod.apply(this, args);
+      });
 
       return debouncePromise;
     };
