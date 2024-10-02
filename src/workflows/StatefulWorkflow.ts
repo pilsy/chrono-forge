@@ -21,6 +21,7 @@ import { PROPERTY_METADATA_KEY } from '../decorators';
 import { UpdateHandlerOptions, Handler } from '@temporalio/workflow/lib/interfaces';
 import { HandlerUnfinishedPolicy } from '@temporalio/common';
 import { flatten } from '../utils/flatten';
+import { unflatten } from '../utils';
 
 export type ManagedPath = {
   entityName?: string;
@@ -538,9 +539,11 @@ export abstract class StatefulWorkflow<
     }
 
     if (this.params?.state && !isEmpty(this.params?.state)) {
-      this.schemaManager.setState(this.params.state);
+      this.schemaManager.dispatch(updateNormalizedEntities(this.params.state, '$set'), false, workflow.workflowInfo().workflowId);
+      // this.schemaManager.setState(this.params.state);
     } else if (memo?.state && !isEmpty(memo.state)) {
-      this.schemaManager.setState(memo.state);
+      this.schemaManager.dispatch(updateNormalizedEntities(unflatten(memo.state), '$set'), false, workflow.workflowInfo().workflowId);
+      // this.schemaManager.setState(memo.state);
     }
 
     if (this.params?.data && !isEmpty(this.params?.data)) {
@@ -1140,7 +1143,8 @@ export abstract class StatefulWorkflow<
         args: [
           {
             id,
-            data,
+            // data,
+            state: normalizeEntities(data, SchemaManager.getInstance().getSchema(entityName as string)),
             entityName,
             subscriptions: [
               {
@@ -1366,10 +1370,6 @@ export abstract class StatefulWorkflow<
         updateOptions.validator = (this as any)[validatorMethod].bind(this);
       }
       updateOptions.unfinishedPolicy = HandlerUnfinishedPolicy.ABANDON;
-
-      function isTemporalProxy(obj: any): boolean {
-        return obj && typeof obj === 'object' && 'toJSON' in obj === false && 'valueOf' in obj === false;
-      }
 
       workflow.setHandler(
         workflow.defineUpdate<any, any>(method),
