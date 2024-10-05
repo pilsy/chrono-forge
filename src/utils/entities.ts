@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 import update, { Spec } from 'immutability-helper';
 import { normalize, schema, Schema } from 'normalizr';
-import { SchemaManager } from '../SchemaManager'; // Import the schema configuration module
+import { SchemaManager } from '../store/SchemaManager'; // Import the schema configuration module
 
 export type EntitiesState = Record<string, Record<string, any>>;
 

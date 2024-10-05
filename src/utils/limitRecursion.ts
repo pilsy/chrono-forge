@@ -1,10 +1,10 @@
 import { schema as normalizrSchema } from 'normalizr';
-import { SchemaManager } from '../SchemaManager';
+import { SchemaManager } from '../store/SchemaManager';
 
 export const limitRecursion = (
   entityId: string,
   entityName: string,
-  entities: Record<string, any> = SchemaManager.getInstance().getState(),
+  entities: Record<string, any>,
   visited: Map<string, number> = new Map(), // Track the depth at which entities are visited
   depth: number = 0 // Track the current recursion depth
 ): any => {

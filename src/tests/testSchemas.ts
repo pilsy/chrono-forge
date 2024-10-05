@@ -1,4 +1,4 @@
-import { SchemaManager } from '../SchemaManager';
+import { SchemaManager } from '../store/SchemaManager';
 
 const schemaManager = SchemaManager.getInstance();
 

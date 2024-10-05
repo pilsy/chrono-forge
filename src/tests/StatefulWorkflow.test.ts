@@ -10,7 +10,7 @@ import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { Worker, Runtime, DefaultLogger, LogEntry } from '@temporalio/worker';
 import { WorkflowClient } from '@temporalio/client';
 import { v4 as uuid4 } from 'uuid';
-import { SchemaManager } from '../SchemaManager';
+import { SchemaManager } from '../store/SchemaManager';
 import * as workflows from './testWorkflows';
 import { logger } from '../utils/logger';
 import { OpenTelemetryActivityInboundInterceptor, makeWorkflowExporter } from '@temporalio/interceptors-opentelemetry/lib/worker';

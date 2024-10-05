@@ -117,13 +117,11 @@ export function initTracer(serviceName: string, environmentName: string, url: st
           },
           '@opentelemetry/instrumentation-grpc': {
             enabled: true
+          },
+          '@opentelemetry/instrumentation-winston': {
+            enabled: true
           }
-        }),
-        // new IORedisInstrumentation({}),
-        // new PerfHooksInstrumentation({
-        //   eventLoopUtilizationMeasurementInterval: 5000
-        // }),
-        new WinstonInstrumentation({})
+        })
       ],
       tracerProvider: provider,
       loggerProvider

@@ -13,8 +13,21 @@ import { DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
 import { isEmpty, isEqual, unset } from 'lodash';
 import { Workflow, ChronoFlowOptions } from './Workflow';
-import { Signal, Query, Before, Property, ACTIONS_METADATA_KEY, VALIDATOR_METADATA_KEY, ActionOptions, On, After, Mutex } from '../decorators';
-import { SchemaManager } from '../SchemaManager';
+import {
+  Signal,
+  Query,
+  Before,
+  Property,
+  ACTIONS_METADATA_KEY,
+  VALIDATOR_METADATA_KEY,
+  ActionOptions,
+  On,
+  After,
+  Mutex,
+  Debounce
+} from '../decorators';
+import { SchemaManager } from '../store/SchemaManager';
+import { StateManager } from '../store/StateManager';
 import { limitRecursion } from '../utils/limitRecursion';
 import { getCompositeKey } from '../utils/getCompositeKey';
 import { PROPERTY_METADATA_KEY } from '../decorators';
@@ -30,7 +43,7 @@ export type ManagedPath = {
   idAttribute?: string | string[];
   isMany?: boolean;
   includeParentId?: boolean;
-  autoStartChildren?: boolean;
+  autoStart?: boolean;
   cancellationType?: workflow.ChildWorkflowCancellationType;
   parentClosePolicy?: workflow.ParentClosePolicy;
   condition?: (entity: Record<string, any>, data: StatefulWorkflow['data']) => boolean;
@@ -66,14 +79,14 @@ export type StatefulWorkflowParams<D = {}> = {
   apiUrl?: string;
   apiToken?: string;
   subscriptions?: Subscription[];
-  autoStartChildren?: boolean;
+  autoStart?: boolean;
   ancestorWorkflowIds?: string[];
 };
 
 export type StatefulWorkflowOptions = {
   schema?: schema.Entity;
   schemaName?: string;
-  autoStartChildren?: boolean;
+  autoStart?: boolean;
   apiUrl?: string;
 };
 
@@ -105,7 +118,8 @@ export abstract class StatefulWorkflow<
   private _actionsBound: boolean = false;
   private _actionRunning: boolean = false;
   protected continueAsNew: boolean = true;
-  protected schemaManager: SchemaManager;
+  protected stateManager!: StateManager;
+  protected schemaManager = SchemaManager.getInstance();
   protected iteration = 0;
   protected schema: Schema;
 
@@ -212,11 +226,11 @@ export abstract class StatefulWorkflow<
    */
   @Property()
   get state() {
-    return this.schemaManager.getState();
+    return this.stateManager.state;
   }
 
   set state(state: EntitiesState) {
-    this.schemaManager.setState(state);
+    this.stateManager.state = state;
   }
 
   /**
@@ -235,7 +249,7 @@ export abstract class StatefulWorkflow<
    */
   @Property()
   protected get data(): P['data'] {
-    return this.schemaManager.query(this.entityName, this.id);
+    return this.stateManager.query(this.entityName, this.id);
   }
 
   /**
@@ -264,7 +278,7 @@ export abstract class StatefulWorkflow<
    * @Workflow({
    *    schema: schemas.Book,
    *    schemaName: 'Book',
-   *    autoStartChildren: true
+   *    autoStart: true
    * })
    * export class BookWorkflow extends StatefulWorkflow<
    *    StatefulWorkflowParams<BookModel>,
@@ -316,7 +330,7 @@ export abstract class StatefulWorkflow<
 
   @Query('pendingChanges')
   get pendingChanges() {
-    return this.schemaManager.pendingChanges;
+    return this.stateManager.queue;
   }
 
   @Property({ set: false })
@@ -360,7 +374,7 @@ export abstract class StatefulWorkflow<
    *   This is useful when child workflows need to track their parent entity (e.g., a chapter must know
    *   which book it belongs to).
    *
-   * - **`autoStartChildren`**: Automatically starts child workflows for the entities at this path.
+   * - **`autoStart`**: Automatically starts child workflows for the entities at this path.
    *   When `true`, each entity in the path will have its corresponding child workflow started automatically.
    *
    * - **`cancellationType`**: Defines the cancellation policy for the child workflows. For example, this
@@ -384,7 +398,7 @@ export abstract class StatefulWorkflow<
    * @Workflow({
    *   schema: schemas.Project,
    *   schemaName: 'Project',
-   *   autoStartChildren: true
+   *   autoStart: true
    * })
    * export class ProjectWorkflow extends StatefulWorkflow<
    *   StatefulWorkflowParams<ProjectModel>,
@@ -395,7 +409,7 @@ export abstract class StatefulWorkflow<
    *       idAttribute: 'id',
    *       entityName: 'Task',
    *       workflowType: 'TaskWorkflow',
-   *       autoStartChildren: true,
+   *       autoStart: true,
    *       includeParentId: true,
    *       processData: (task, project) => {
    *         task.projectId = project.id;  // Attach the project ID to the task
@@ -413,7 +427,7 @@ export abstract class StatefulWorkflow<
    *
    * - **`idAttribute: 'id'`**: The unique identifier for each task is the `id` field.
    *
-   * - **`autoStartChildren: true`**: Child workflows for tasks are automatically started when the project
+   * - **`autoStart: true`**: Child workflows for tasks are automatically started when the project
    *   workflow is executed.
    *
    * - **`includeParentId: true`**: The `TaskWorkflow` will receive the `projectId` to keep track of which
@@ -434,7 +448,7 @@ export abstract class StatefulWorkflow<
    *     idAttribute: 'id',
    *     entityName: 'Task',
    *     workflowType: 'TaskWorkflow',
-   *     autoStartChildren: true,
+   *     autoStart: true,
    *     condition: (task, project) => task.isImportant
    *   }
    * };
@@ -452,7 +466,7 @@ export abstract class StatefulWorkflow<
    *     idAttribute: 'id',
    *     entityName: 'Task',
    *     workflowType: 'TaskWorkflow',
-   *     autoStartChildren: true,
+   *     autoStart: true,
    *     cancellationType: workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_COMPLETED,
    *     parentClosePolicy: workflow.ParentClosePolicy.PARENT_CLOSE_POLICY_REQUEST_CANCEL
    *   }
@@ -498,6 +512,8 @@ export abstract class StatefulWorkflow<
     this.params = params;
     this.options = options;
 
+    this.stateManager = StateManager.getInstance(workflow.workflowInfo().workflowId);
+
     if (this.params?.ancestorWorkflowIds) {
       this.ancestorWorkflowIds = this.params.ancestorWorkflowIds;
     }
@@ -514,13 +530,9 @@ export abstract class StatefulWorkflow<
       }
     }
 
-    this.schemaManager = SchemaManager.getInstance(workflow.workflowInfo().workflowId);
-
     this.id = this.params?.id;
     this.entityName = (this.params?.entityName || options?.schemaName) as string;
     this.schema = this.entityName ? (this.schemaManager.getSchema(this.entityName) as schema.Entity) : (options.schema as schema.Entity);
-    this.apiUrl = this.params?.apiUrl || options?.apiUrl;
-    this.apiToken = this.params?.apiToken;
 
     if (this.params?.subscriptions) {
       for (const subscription of this.params.subscriptions) {
@@ -528,29 +540,29 @@ export abstract class StatefulWorkflow<
       }
     }
 
-    this.schemaManager.on('stateChange', this.stateChanged.bind(this));
-    // this.schemaManager.on('stateChange', this.upsertStateToMemo.bind(this));
+    this.stateManager.on('stateChange', this.stateChanged.bind(this));
     this.pendingUpdate = true;
     this.pendingIteration = true;
 
     const memo = (workflow.workflowInfo().memo || {}) as { state?: EntitiesState; iteration?: number; status?: string };
-    if (memo?.iteration !== undefined) {
+    if (memo?.iteration !== undefined && memo?.iteration < this.maxIterations) {
       this.iteration = Number(memo.iteration);
     }
 
     if (this.params?.state && !isEmpty(this.params?.state)) {
-      this.schemaManager.dispatch(updateNormalizedEntities(this.params.state, '$set'), false, workflow.workflowInfo().workflowId);
-      // this.schemaManager.setState(this.params.state);
+      this.stateManager.dispatch(updateNormalizedEntities(this.params.state, '$set'), false, workflow.workflowInfo().workflowId);
     } else if (memo?.state && !isEmpty(memo.state)) {
-      this.schemaManager.dispatch(updateNormalizedEntities(unflatten(memo.state), '$set'), false, workflow.workflowInfo().workflowId);
-      // this.schemaManager.setState(memo.state);
+      this.stateManager.dispatch(updateNormalizedEntities(unflatten(memo.state), '$set'), false, workflow.workflowInfo().workflowId);
     }
 
     if (this.params?.data && !isEmpty(this.params?.data)) {
-      this.schemaManager.dispatch(updateEntity(this.params.data, this.entityName), false);
+      this.stateManager.dispatch(updateEntity(this.params.data, this.entityName), false);
     }
 
     this.status = memo?.status ?? this.params?.status ?? 'running';
+
+    this.apiUrl = this.params?.apiUrl || options?.apiUrl;
+    this.apiToken = this.params?.apiToken;
   }
 
   @Mutex('executeWorkflow')
@@ -576,7 +588,7 @@ export abstract class StatefulWorkflow<
           }
 
           if (this.shouldLoadData()) {
-            await this.loadDataAndEnqueueChanges();
+            await this.loadDataAndEnqueue();
           }
 
           if (!this.isInTerminalState()) {
@@ -625,7 +637,7 @@ export abstract class StatefulWorkflow<
       updates = normalizeEntities(data, entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName));
     }
     if (updates) {
-      this.schemaManager.dispatch(updateNormalizedEntities(updates, strategy), sync, changeOrigin);
+      this.stateManager.dispatch(updateNormalizedEntities(updates, strategy), sync, changeOrigin);
     } else {
       this.log.error(`Invalid Update: ${JSON.stringify(data, null, 2)}, \n${JSON.stringify(updates, null, 2)}`);
     }
@@ -638,7 +650,7 @@ export abstract class StatefulWorkflow<
       deletions = normalizeEntities(data, entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName));
     }
     if (deletions) {
-      this.schemaManager.dispatch(deleteNormalizedEntities(deletions), false);
+      this.stateManager.dispatch(deleteNormalizedEntities(deletions), false);
     }
   }
 
@@ -690,7 +702,7 @@ export abstract class StatefulWorkflow<
 
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.processState`);
     if (this.pendingChanges.length) {
-      await this.schemaManager.processChanges();
+      await this.stateManager.processChanges();
     }
   }
 
@@ -732,6 +744,7 @@ export abstract class StatefulWorkflow<
   }
 
   @After('processState')
+  @Mutex('memo')
   protected async upsertStateToMemo(): Promise<void> {
     this.log.info(`[StatefulWorkflow]: Saving state to memo: ${workflow.workflowInfo().workflowId}`);
 
@@ -1103,18 +1116,26 @@ export abstract class StatefulWorkflow<
         includeParentId,
         cancellationType = workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_COMPLETED,
         parentClosePolicy = workflow.ParentClosePolicy.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
-        autoStartChildren
+        autoStart
       } = config;
 
-      if (!autoStartChildren) {
-        this.log.trace(
-          `${workflowType} with entityName ${entityName} not configured to autoStartChildren...\n${JSON.stringify(config, null, 2)}`
-        );
+      if (!autoStart) {
+        this.log.trace(`${workflowType} with entityName ${entityName} not configured to autoStart...\n${JSON.stringify(config, null, 2)}`);
         return;
       }
 
       const { [idAttribute as string]: id, ...rest } = state;
       const parentData = limitRecursion(this.id, this.entityName, newState);
+
+      // if (config.isMany) {
+      //   parentData[String(config.path)] = parentData[String(config.path)].map((entity: any) => {
+      //     if (entity[String(idAttribute)] !== compositeId) {
+      //       return entity[String(idAttribute)];
+      //     }
+      //     return entity;
+      //   })
+      // }
+
       const rawData = limitRecursion(id, String(entityName), newState);
       const data = typeof config.processData === 'function' ? config.processData(rawData, parentData) : rawData;
       const compositeId = Array.isArray(idAttribute) ? getCompositeKey(data, idAttribute) : id;
@@ -1139,11 +1160,10 @@ export abstract class StatefulWorkflow<
         workflowId,
         cancellationType,
         parentClosePolicy,
-        startToCloseTimeout: '1 minute',
+        startToCloseTimeout: '10 minutes',
         args: [
           {
             id,
-            // data,
             state: normalizeEntities(data, SchemaManager.getInstance().getSchema(entityName as string)),
             entityName,
             subscriptions: [
@@ -1175,7 +1195,7 @@ export abstract class StatefulWorkflow<
           this.log.error(`[${this.constructor.name}]:${this.entityName}:${this.id} Child workflow error: ${error.message}\n${error.stack}`);
           if (workflow.isCancellation(error) && this.status !== 'cancelled') {
             this.log.info(`[${this.constructor.name}]:${this.entityName}:${this.id} Restarting child workflow due to cancellation.`);
-            await this.startChildWorkflow(config, this.schemaManager.query(String(entityName), compositeId, false), this.state);
+            await this.startChildWorkflow(config, this.stateManager.query(String(entityName), compositeId, false), this.state);
           } else {
             this.emit(`child:${entityName}:errored`, { ...config, workflowId, error });
           }
@@ -1195,12 +1215,10 @@ export abstract class StatefulWorkflow<
   protected async updateChildWorkflow(handle: workflow.ChildWorkflowHandle<any>, state: any, newState: any, config: ManagedPath): Promise<void> {
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.updateChildWorkflow`);
     try {
-      const { workflowType, entityName, idAttribute, includeParentId, autoStartChildren } = config;
+      const { workflowType, entityName, idAttribute, includeParentId, autoStart } = config;
 
-      if (!autoStartChildren) {
-        this.log.warn(
-          `${workflowType} with entityName ${entityName} not configured to autoStartChildren...\n${JSON.stringify(config, null, 2)}`
-        );
+      if (!autoStart) {
+        this.log.warn(`${workflowType} with entityName ${entityName} not configured to autoStart...\n${JSON.stringify(config, null, 2)}`);
         return;
       }
 
@@ -1296,7 +1314,7 @@ export abstract class StatefulWorkflow<
     }
   }
 
-  protected async loadDataAndEnqueueChanges(): Promise<void> {
+  protected async loadDataAndEnqueue(): Promise<void> {
     // @ts-ignore
     if (typeof this?.loadData === 'function') {
       // @ts-ignore
@@ -1309,7 +1327,7 @@ export abstract class StatefulWorkflow<
         updates = normalizeEntities(data, this.entityName);
       }
 
-      this.schemaManager.dispatch(updateNormalizedEntities(updates, '$merge'), false);
+      this.stateManager.dispatch(updateNormalizedEntities(updates, '$merge'), false);
     }
   }
 
@@ -1327,8 +1345,9 @@ export abstract class StatefulWorkflow<
         path,
         idAttribute: schema._idAttribute,
         workflowType: `${schema._key}Workflow`,
-        autoStartChildren: typeof this.options?.autoStartChildren === 'boolean' ? this.options?.autoStartChildren : true,
+        autoStart: typeof this.options?.autoStart === 'boolean' ? this.options?.autoStart : true,
         entityName: schema._key,
+        isMany: _schema instanceof Array,
         ...(this.managedPaths[path] || {})
       };
     }
@@ -1387,7 +1406,7 @@ export abstract class StatefulWorkflow<
             this._actionRunning = false;
           }
 
-          await workflow.condition(() => !this.schemaManager.processing && !this.pendingIteration);
+          await workflow.condition(() => !this.stateManager.processing && !this.pendingIteration);
 
           // Return the result or the error if it exists
           if (error !== undefined) {
