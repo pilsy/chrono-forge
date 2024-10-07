@@ -12,22 +12,22 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
   protected maxIterations: number = 1000;
   protected managedPaths: ManagedPaths = {
     listings: {
-      autoStartChildren: true,
+      autoStart: true,
       workflowType: 'ShouldExecuteStatefulChild',
       entityName: 'Listing'
     },
     photos: {
-      autoStartChildren: true,
+      autoStart: true,
       workflowType: 'ShouldExecuteStatefulChild',
       entityName: 'Photo'
     },
     likes: {
-      autoStartChildren: true,
+      autoStart: true,
       workflowType: 'ShouldExecuteStatefulChild',
       entityName: 'Like'
     },
     photo: {
-      autoStartChildren: true,
+      autoStart: true,
       workflowType: 'ShouldExecuteStatefulChild',
       entityName: 'Photo'
     }

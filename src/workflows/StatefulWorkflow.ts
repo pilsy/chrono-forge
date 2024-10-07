@@ -1180,7 +1180,10 @@ export abstract class StatefulWorkflow<
             apiToken: this.apiToken,
             ancestorWorkflowIds: [...this.ancestorWorkflowIds, workflow.workflowInfo().workflowId]
           }
-        ]
+        ],
+        retry: {
+          maximumAttempts: 30
+        }
       };
 
       this.log.trace(

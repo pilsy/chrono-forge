@@ -9,6 +9,7 @@ export class StateManager extends EventEmitter {
   private constructor(private instanceId: string) {
     super();
     this.instanceId = instanceId;
+    this._state = {};
   }
 
   static getInstance(instanceId: string): StateManager {
