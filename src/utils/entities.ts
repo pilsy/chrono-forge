@@ -166,7 +166,7 @@ export const handleDeleteEntities = (state: EntitiesState, entities: Record<stri
     deleteStatement[entityName] = {
       $unset: []
     };
-    for (const entityId of entities[entityName]) {
+    for (const entityId of Object.keys(entities[entityName])) {
       deleteStatement[entityName].$unset.push(entityId);
     }
   }

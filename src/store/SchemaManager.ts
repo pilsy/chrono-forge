@@ -25,7 +25,7 @@ export class SchemaManager {
    * @param schemaConfig The schema configuration to set.
    * @returns The current schemas.
    */
-  setSchemas(schemaConfig: SchemasDefinition): typeof this.schemas {
+  setSchemas(schemaConfig: SchemasDefinition): { [key: string]: schema.Entity } {
     this.schemas = this.createSchemas(schemaConfig);
     return this.schemas;
   }

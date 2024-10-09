@@ -580,7 +580,7 @@ export abstract class StatefulWorkflow<
           if (this.status === 'paused') {
             await this.emitAsync('paused');
             await this.forwardSignalToChildren('pause');
-            await workflow.condition(() => this.status !== 'paused');
+            await workflow.condition(() => this.status !== 'paused' || this.isInTerminalState());
           }
 
           if (this.status === 'cancelled') {
@@ -604,12 +604,14 @@ export abstract class StatefulWorkflow<
             break;
           }
 
-          if (this.pendingUpdate) {
-            this.pendingUpdate = false;
-          }
+          if (!this._actionRunning) {
+            if (this.pendingUpdate) {
+              this.pendingUpdate = false;
+            }
 
-          if (this.pendingIteration) {
-            this.pendingIteration = false;
+            if (this.pendingIteration) {
+              this.pendingIteration = false;
+            }
           }
         }
 
@@ -801,32 +803,45 @@ export abstract class StatefulWorkflow<
     this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.processSubscriptions`);
 
     for (const subscription of this.subscriptions) {
-      const { workflowId, signalName, selector, parent, child, condition, entityName, subscriptionId } = subscription;
+      const { workflowId, selector, condition, entityName, subscriptionId } = subscription;
 
-      const shouldUpdate = this.shouldPropagateUpdate(newState, differences, selector, condition, changeOrigins, this.ancestorWorkflowIds);
-      if (!shouldUpdate) {
+      const shouldPropagate = this.shouldPropagate(newState, differences, selector, condition, changeOrigins, this.ancestorWorkflowIds);
+      if (!shouldPropagate) {
         continue;
       }
 
-      const relevantChanges = this.extractChangesForSelector(differences, selector, newState);
-      if (isEmpty(relevantChanges)) {
-        continue;
-      }
+      const { updates, deletions } = this.extractChangesForSelector(differences, selector, newState, previousState);
 
       const handle = this.subscriptionHandles[workflowId];
       if (handle) {
         try {
-          this.log.trace(
-            `[${this.constructor.name}]:${this.entityName}:${this.id}.Sending update to workflow: ${workflowId}, Subscription ID: ${subscriptionId}`
-          );
+          if (!isEmpty(updates)) {
+            this.log.trace(
+              `[${this.constructor.name}]:${this.entityName}:${this.id}.Sending update to workflow: ${workflowId}, Subscription ID: ${subscriptionId}`
+            );
 
-          await handle.signal(signalName, {
-            updates: relevantChanges,
-            entityName: entityName,
-            changeOrigin: workflow.workflowInfo().workflowId,
-            subscriptionId,
-            sync: true
-          });
+            await handle.signal('update', {
+              updates,
+              entityName,
+              changeOrigin: workflow.workflowInfo().workflowId,
+              subscriptionId,
+              sync: true
+            });
+          }
+
+          if (!isEmpty(deletions)) {
+            this.log.trace(
+              `[${this.constructor.name}]:${this.entityName}:${this.id}.Sending delete to workflow: ${workflowId}, Subscription ID: ${subscriptionId}`
+            );
+
+            await handle.signal('delete', {
+              deletions,
+              entityName,
+              changeOrigin: workflow.workflowInfo().workflowId,
+              subscriptionId,
+              sync: true
+            });
+          }
         } catch (err) {
           this.log.error(`Failed to signal workflow '${workflowId}': ${(err as Error).message}`);
         }
@@ -844,7 +859,7 @@ export abstract class StatefulWorkflow<
    * @param ancestorWorkflowIds - Ancestor workflow IDs to prevent circular dependencies.
    * @returns True if the changes should be propagated, false otherwise.
    */
-  private shouldPropagateUpdate(
+  private shouldPropagate(
     newState: EntitiesState,
     differences: DetailedDiff,
     selector: string,
@@ -933,36 +948,45 @@ export abstract class StatefulWorkflow<
    * @param newState - The new state after changes.
    * @returns A subset of EntitiesState containing only the relevant changes.
    */
-  private extractChangesForSelector(differences: DetailedDiff, selector: string, newState: EntitiesState): EntitiesState {
-    const changedEntities: EntitiesState = {};
+  private extractChangesForSelector(
+    differences: DetailedDiff,
+    selector: string,
+    newState: EntitiesState,
+    previousState: EntitiesState
+  ): { updates: EntitiesState; deletions: EntitiesState } {
+    const updates: EntitiesState = {};
+    const deletions: EntitiesState = {};
 
     const selectorRegex = new RegExp('^' + selector.replace(/\*/g, '.*') + '$');
-    const traverseDifferences = (diffType: 'added' | 'updated') => {
+
+    const traverseDifferences = (diffType: 'added' | 'updated' | 'deleted') => {
       const entities = differences[diffType] as EntitiesState;
       if (!entities) return;
 
       for (const [entityName, entityChanges] of Object.entries(entities)) {
-        const schema = this.schemaManager.getSchema(entityName);
         for (const [entityId, entityData] of Object.entries(entityChanges)) {
-          if (!changedEntities[entityName]) {
-            changedEntities[entityName] = {};
-          }
+          const entityPath = `${entityName}.${entityId}`;
 
-          for (const key in entityData) {
-            if (Object.prototype.hasOwnProperty.call(entityData, key)) {
-              const value = entityData[key];
-              const currentPath = key;
-
-              if (!changedEntities[entityName][entityId]) {
-                changedEntities[entityName][entityId] = {};
+          if (diffType === 'deleted') {
+            if (selectorRegex.test(entityPath)) {
+              if (!deletions[entityName]) {
+                deletions[entityName] = {};
               }
-
-              // @ts-ignore
-              if (!Array.isArray(schema.schema[currentPath])) {
-                changedEntities[entityName][entityId][key] = value;
-              } else {
-                // Assign the entire array from newState
-                changedEntities[entityName][entityId][currentPath] = get(newState, `${entityName}.${entityId}.${currentPath}`);
+              deletions[entityName][entityId] = null; // Indicate deletion
+            }
+          } else {
+            for (const key in entityData) {
+              if (Object.prototype.hasOwnProperty.call(entityData, key)) {
+                const path = `${entityPath}.${key}`;
+                if (selectorRegex.test(path)) {
+                  if (!updates[entityName]) {
+                    updates[entityName] = {};
+                  }
+                  if (!updates[entityName][entityId]) {
+                    updates[entityName][entityId] = {};
+                  }
+                  updates[entityName][entityId][key] = get(newState, path);
+                }
               }
             }
           }
@@ -970,11 +994,12 @@ export abstract class StatefulWorkflow<
       }
     };
 
-    // Process 'added' and 'updated' differences
+    // Process 'added', 'updated', and 'deleted' differences
     traverseDifferences('added');
     traverseDifferences('updated');
+    traverseDifferences('deleted');
 
-    return changedEntities;
+    return { updates, deletions };
   }
 
   protected async processChildState(
@@ -1281,6 +1306,8 @@ export abstract class StatefulWorkflow<
         return;
       }
 
+      await workflow.condition(() => workflow.allHandlersFinished());
+
       if (handle && 'cancel' in handle && typeof handle.cancel === 'function') {
         this.log.debug(
           `[${this.constructor.name}]:${this.entityName}:${this.id}.Cancelling child workflow for ${config.entityName} with ID ${id}`
@@ -1321,7 +1348,7 @@ export abstract class StatefulWorkflow<
     // @ts-ignore
     if (typeof this?.loadData === 'function') {
       // @ts-ignore
-      let { data, updates } = await this.loadData();
+      let { data, updates, strategy = '$merge' } = await this.loadData();
       if (!data && !updates) {
         console.log(`No data or updates returned from loadData(), skipping state change...`);
         return;
@@ -1330,7 +1357,7 @@ export abstract class StatefulWorkflow<
         updates = normalizeEntities(data, this.entityName);
       }
 
-      this.stateManager.dispatch(updateNormalizedEntities(updates, '$merge'), false);
+      this.stateManager.dispatch(updateNormalizedEntities(updates, strategy), false);
     }
   }
 
