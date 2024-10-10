@@ -11,7 +11,7 @@ import { normalize } from 'normalizr';
 import { cloneDeep } from 'lodash';
 import StateManager from '../store/StateManager';
 
-describe('SchemaManager with Undo/Redo Functionality', () => {
+describe('SchemaManager Functionality', () => {
   let schemaManager: ReturnType<typeof SchemaManager.getInstance>;
   let stateManager!: ReturnType<typeof StateManager.getInstance>;
   const userSchemaConfig: SchemasDefinition = {

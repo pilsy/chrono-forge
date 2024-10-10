@@ -967,26 +967,17 @@ export abstract class StatefulWorkflow<
         for (const [entityId, entityData] of Object.entries(entityChanges)) {
           const entityPath = `${entityName}.${entityId}`;
 
-          if (diffType === 'deleted') {
-            if (selectorRegex.test(entityPath)) {
-              if (!deletions[entityName]) {
-                deletions[entityName] = {};
-              }
-              deletions[entityName][entityId] = null; // Indicate deletion
-            }
-          } else {
-            for (const key in entityData) {
-              if (Object.prototype.hasOwnProperty.call(entityData, key)) {
-                const path = `${entityPath}.${key}`;
-                if (selectorRegex.test(path)) {
-                  if (!updates[entityName]) {
-                    updates[entityName] = {};
-                  }
-                  if (!updates[entityName][entityId]) {
-                    updates[entityName][entityId] = {};
-                  }
-                  updates[entityName][entityId][key] = get(newState, path);
+          for (const key in entityData) {
+            if (Object.prototype.hasOwnProperty.call(entityData, key)) {
+              const path = `${entityPath}.${key}`;
+              if (selectorRegex.test(path)) {
+                if (!(diffType === 'deleted' ? deletions : updates)[entityName]) {
+                  (diffType === 'deleted' ? deletions : updates)[entityName] = {};
                 }
+                if (!(diffType === 'deleted' ? deletions : updates)[entityName][entityId]) {
+                  (diffType === 'deleted' ? deletions : updates)[entityName][entityId] = {};
+                }
+                (diffType === 'deleted' ? deletions : updates)[entityName][entityId][key] = get(newState, path);
               }
             }
           }
@@ -1422,32 +1413,35 @@ export abstract class StatefulWorkflow<
 
       workflow.setHandler(
         workflow.defineUpdate<any, any>(method),
-        async (input: any): Promise<any> => {
-          this._actionRunning = true;
-          let result: any;
-          let error: any;
-
-          try {
-            result = await (this[methodName] as (input: any) => any)(input);
-          } catch (err: any) {
-            error = err;
-            this.log.error(error);
-          } finally {
-            this._actionRunning = false;
-          }
-
-          await workflow.condition(() => !this.stateManager.processing && !this.pendingIteration);
-
-          // Return the result or the error if it exists
-          if (error !== undefined) {
-            return Promise.reject(error);
-          }
-          return result !== undefined ? result : this.data;
-        },
+        (input: any) => this.runAction(methodName, input), // Adjust runAction call to pass methodName
         updateOptions
       );
     }
 
     this._actionsBound = true;
+  }
+
+  @Mutex('Action')
+  protected async runAction(methodName: keyof StatefulWorkflow<any, any>, input: any): Promise<any> {
+    this._actionRunning = true;
+    let result: any;
+    let error: any;
+
+    try {
+      result = await (this[methodName] as (input: any) => any).call(this, input); // Use .call to ensure correct context
+    } catch (err: any) {
+      error = err;
+      this.log.error(error);
+    } finally {
+      this._actionRunning = false;
+    }
+
+    await workflow.condition(() => !this.stateManager.processing && !this.pendingIteration);
+
+    // Return the result or the error if it exists
+    if (error !== undefined) {
+      return Promise.reject(error);
+    }
+    return result !== undefined ? result : this.data;
   }
 }
