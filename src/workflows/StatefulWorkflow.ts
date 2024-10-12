@@ -44,6 +44,10 @@ export type ManagedPath = {
   isMany?: boolean;
   includeParentId?: boolean;
   autoStart?: boolean;
+  subscriptions?: {
+    update?: boolean;
+    deletion?: boolean;
+  };
   cancellationType?: workflow.ChildWorkflowCancellationType;
   parentClosePolicy?: workflow.ParentClosePolicy;
   condition?: (entity: Record<string, any>, data: StatefulWorkflow['data']) => boolean;
@@ -646,13 +650,15 @@ export abstract class StatefulWorkflow<
   }
 
   @Signal()
-  public delete({ data, deletions, entityName }: PendingChange & { data?: Record<string, any> }): void {
+  public delete({ data, deletions, entityName, changeOrigin, sync = true }: PendingChange & { data?: Record<string, any> }): void {
     this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.delete`);
     if (!isEmpty(data)) {
       deletions = normalizeEntities(data, entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName));
     }
     if (deletions) {
-      this.stateManager.dispatch(deleteNormalizedEntities(deletions), false);
+      this.stateManager.dispatch(deleteNormalizedEntities(deletions), sync, changeOrigin);
+    } else {
+      this.log.error(`Invalid Delete: ${JSON.stringify(data, null, 2)}, \n${JSON.stringify(deletions, null, 2)}`);
     }
   }
 
@@ -964,20 +970,32 @@ export abstract class StatefulWorkflow<
       if (!entities) return;
 
       for (const [entityName, entityChanges] of Object.entries(entities)) {
-        for (const [entityId, entityData] of Object.entries(entityChanges)) {
+        for (const entityId in entityChanges) {
           const entityPath = `${entityName}.${entityId}`;
 
-          for (const key in entityData) {
-            if (Object.prototype.hasOwnProperty.call(entityData, key)) {
-              const path = `${entityPath}.${key}`;
-              if (selectorRegex.test(path)) {
-                if (!(diffType === 'deleted' ? deletions : updates)[entityName]) {
-                  (diffType === 'deleted' ? deletions : updates)[entityName] = {};
+          if (diffType === 'deleted') {
+            // Check if entire entity is missing in newState, implying full deletion
+            if (!get(newState, entityPath) && selectorRegex.test(entityPath)) {
+              if (!deletions[entityName]) {
+                deletions[entityName] = {};
+              }
+              deletions[entityName][entityId] = get(previousState, entityPath); // Snapshot of the entire entity from previousState
+            }
+          } else {
+            // For `added` and `updated`, continue processing key-level changes
+            const entityData = entityChanges[entityId];
+            for (const key in entityData) {
+              if (Object.prototype.hasOwnProperty.call(entityData, key)) {
+                const path = `${entityPath}.${key}`;
+                if (selectorRegex.test(path)) {
+                  if (!updates[entityName]) {
+                    updates[entityName] = {};
+                  }
+                  if (!updates[entityName][entityId]) {
+                    updates[entityName][entityId] = {};
+                  }
+                  updates[entityName][entityId][key] = get(newState, path);
                 }
-                if (!(diffType === 'deleted' ? deletions : updates)[entityName][entityId]) {
-                  (diffType === 'deleted' ? deletions : updates)[entityName][entityId] = {};
-                }
-                (diffType === 'deleted' ? deletions : updates)[entityName][entityId][key] = get(newState, path);
               }
             }
           }
