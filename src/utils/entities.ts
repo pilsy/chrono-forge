@@ -1,12 +1,9 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 import update, { Spec } from 'immutability-helper';
-import { normalize, schema, Schema } from 'normalizr';
-import { SchemaManager } from '../store/SchemaManager'; // Import the schema configuration module
+import { normalize, Schema } from 'normalizr';
+import { SchemaManager } from '../store/SchemaManager';
 
+// Types
 export type EntitiesState = Record<string, Record<string, any>>;
-
-export const defaultState: EntitiesState = {};
-export const initialState: EntitiesState = {};
 
 export type EntityAction = {
   type: string;
@@ -14,168 +11,191 @@ export type EntityAction = {
   entities?: Record<string, any>;
   entityId?: string;
   entityName?: string;
-  strategy?: '$set' | '$merge';
+  updates?: Record<string, any>; // Add this line
+  strategy?: '$set' | '$merge' | '$unset' | '$push' | '$unshift' | '$splice' | '$apply';
+  value?: any; // This if any extra value for a specific update operation
 };
 
-// Update Entity Actions
+export const defaultState: EntitiesState = {};
+export const initialState: EntitiesState = {};
+
 export const UPDATE_ENTITY = 'entities.upsertEntity';
-export const updateEntity = (entity: any, entityName: string): EntityAction => {
-  const schemas = SchemaManager.getInstance().getSchemas();
-  if (!schemas || !schemas[entityName]) {
-    throw new Error(`Schema ${entityName} not found. Make sure to set the schema using setSchema.`);
-  }
-  return updateNormalizedEntities(normalize(entity, schemas[entityName]).entities);
-};
-export const updateNormalizedEntity = (entity: Record<string, any>, entityName: string): EntityAction => {
-  if (!entity || !entityName) {
-    throw new Error('Entity and entityName must be provided.');
-  }
-  return {
-    type: UPDATE_ENTITY,
-    entity,
-    entityName
-  };
-};
-
-// Update Entities Actions
 export const UPDATE_ENTITIES = 'entities.upsertEntities';
-export const updateEntities = (entities: any[], entityName: string): EntityAction => {
-  const schemas = SchemaManager.getInstance().getSchemas();
-  if (!schemas || !schemas[entityName]) {
-    throw new Error(`Schema ${entityName} not found. Make sure to set the schema using setSchema.`);
-  }
-  return updateNormalizedEntities(normalize(entities, schemas[entityName]).entities);
-};
-export const updateNormalizedEntities = (entities: Record<string, unknown>, strategy: '$set' | '$merge' = '$merge'): EntityAction => {
-  if (!entities || typeof entities !== 'object') {
-    throw new Error('Entities must be provided and must be an object.');
-  }
-  return {
-    type: UPDATE_ENTITIES,
-    entities,
-    strategy
-  };
-};
-
-// Delete Entity Actions
+export const PARTIAL_UPDATE = 'entities.partialUpdate';
 export const DELETE_ENTITY = 'entities.deleteEntity';
-export const deleteEntity = (entityId: string, entityName: string): EntityAction => deleteNormalizedEntity(entityId, entityName);
-export const deleteNormalizedEntity = (entityId: string, entityName: string): EntityAction => {
-  if (!entityId || !entityName) {
-    throw new Error('EntityId and entityName must be provided.');
-  }
-  return {
-    type: DELETE_ENTITY,
-    entityId,
-    entityName
-  };
-};
-
-// Delete Entities Actions
 export const DELETE_ENTITIES = 'entities.deleteEntities';
-export const deleteEntities = (entities: string[], entityName: string): EntityAction => deleteNormalizedEntities({ [entityName]: entities });
-export const deleteNormalizedEntities = (entities: Record<string, string[]>): EntityAction => {
-  if (!entities || typeof entities !== 'object') {
-    throw new Error('Entities must be provided and must be an object.');
+export const CLEAR_ENTITIES = 'entities.clearEntities';
+
+function getSchema(entityName: string): Schema {
+  const schemas = SchemaManager.getInstance().getSchemas();
+  const schema = schemas[entityName];
+  if (!schema) {
+    throw new Error(`Schema for ${entityName} not found.`);
   }
-  return {
-    type: DELETE_ENTITIES,
-    entities
-  };
+  return schema;
+}
+
+export const updateEntity = (entity: any, entityName: string): EntityAction => {
+  const schema = getSchema(entityName);
+  return updateNormalizedEntities(normalize(entity, schema).entities);
 };
 
-// Action to clear the state (set it back to its initialState)
-export const CLEAR_ENTITIES = 'entities.clearEntities';
+export const updateNormalizedEntity = (entity: Record<string, any>, entityName: string): EntityAction => ({
+  type: UPDATE_ENTITY,
+  entity,
+  entityName
+});
+
+export const updateEntities = (entities: any[], entityName: string): EntityAction => {
+  const schema = getSchema(entityName);
+  return updateNormalizedEntities(normalize(entities, schema).entities);
+};
+
+export const updateNormalizedEntities = (entities: Record<string, unknown>, strategy: '$set' | '$merge' = '$merge'): EntityAction => ({
+  type: UPDATE_ENTITIES,
+  entities,
+  strategy
+});
+
+export const updatePartialEntity = (entityName: string, entityId: string, updates: Record<string, { [key: string]: any }>): EntityAction => ({
+  type: PARTIAL_UPDATE,
+  entityName,
+  entityId,
+  entities: updates
+});
+
+export const deleteEntity = (entityId: string, entityName: string): EntityAction => ({
+  type: DELETE_ENTITY,
+  entityId,
+  entityName
+});
+
+export const deleteNormalizedEntity = (entityId: string, entityName: string): EntityAction => ({
+  type: DELETE_ENTITY,
+  entityId,
+  entityName
+});
+
+export const deleteEntities = (entities: string[], entityName: string): EntityAction => deleteNormalizedEntities({ [entityName]: entities });
+
+export const deleteNormalizedEntities = (entities: Record<string, string[]>): EntityAction => ({
+  type: DELETE_ENTITIES,
+  entities
+});
+
 export const clearEntities = (): EntityAction => ({
   type: CLEAR_ENTITIES
 });
 
-// Helper to normalise entities in the format we need them to be in.
 export const normalizeEntities = <T>(data: T | T[], entitySchema: Schema | string): EntitiesState => {
-  const schemas = SchemaManager.getInstance().getSchemas();
-  if (!schemas) {
-    throw new Error('Schemas not set. Make sure to set the schema using setSchema.');
-  }
+  const schema = typeof entitySchema === 'string' ? getSchema(entitySchema) : entitySchema;
+  const { entities } = normalize(data, Array.isArray(data) ? [schema] : schema);
 
-  const schema = typeof entitySchema === 'string' ? schemas[entitySchema] : entitySchema;
-
-  if (!schema) {
-    throw new Error(`Schema ${entitySchema} not found.`);
-  }
-
-  const normalizedData = normalize(data, Array.isArray(data) ? [schema] : schema);
-
-  const entities: EntitiesState = {};
-  for (const key in normalizedData.entities) {
-    if (Object.prototype.hasOwnProperty.call(normalizedData.entities, key)) {
-      entities[key] = normalizedData.entities[key] || {};
-    }
-  }
-  return entities;
+  return entities as EntitiesState;
 };
 
-// Helpers
+type IndexableSpec<T> = Spec<T> & {
+  [key: string]: any;
+};
+
 export const createUpdateStatement = (state: EntitiesState, normalizedEntities: EntitiesState): Spec<EntitiesState> => {
-  const updateStatement: Spec<EntitiesState> = {};
+  return Object.entries(normalizedEntities).reduce<IndexableSpec<EntitiesState>>((acc, [entityName, entityGroup]) => {
+    acc[entityName] = state[entityName]
+      ? Object.entries(entityGroup).reduce<IndexableSpec<Record<string, any>>>(
+          (subAcc, [entityId, entityData]) => {
+            subAcc[entityId] = state[entityName][entityId] ? { $merge: entityData } : { $set: entityData };
+            return subAcc;
+          },
+          {} as IndexableSpec<Record<string, any>>
+        )
+      : { $set: entityGroup };
+    return acc;
+  }, {} as IndexableSpec<EntitiesState>);
+};
 
-  for (const entityName in normalizedEntities) {
-    if (!state[entityName]) {
-      updateStatement[entityName] = {
-        $set: normalizedEntities[entityName]
-      };
-    } else {
-      updateStatement[entityName] = {};
-      for (const entityId in normalizedEntities[entityName]) {
-        if (state[entityName][entityId]) {
-          updateStatement[entityName][entityId] = {
-            $merge: normalizedEntities[entityName][entityId]
-          };
-        } else {
-          updateStatement[entityName][entityId] = {
-            $set: normalizedEntities[entityName][entityId]
-          };
+const applyArrayOperation = (
+  stateArray: Record<string, any>,
+  entityGroup: Record<string, any>,
+  operation: '$push' | '$unshift'
+): Spec<EntitiesState> => {
+  const actions = Object.entries(entityGroup).reduce<IndexableSpec<Record<string, any>>>(
+    (acc, [key, update]) => {
+      // Iterate through properties of the update object
+      Object.entries(update).forEach(([propKey, arrayValues]) => {
+        // Initialize array if it doesn't exist
+        const currentArray = stateArray[key][propKey] ?? []; // Defaults to an empty array if it doesn't already exist
+
+        if (!Array.isArray(currentArray)) {
+          throw new Error(`Expected array for ${operation} operation on key '${key}.${propKey}'`);
         }
-      }
-    }
-  }
 
-  return updateStatement;
-};
-export const handleUpdateEntities = (state: EntitiesState, entities: Record<string, any>, strategy = '$merge') => {
-  const updateStatement: Record<string, any> = {};
+        acc[key] = acc[key] || {};
+        acc[key][propKey] = { [operation]: Array.isArray(arrayValues) ? arrayValues : [arrayValues] };
+      });
 
-  for (const entityName of Object.keys(entities)) {
-    if (!state[entityName] || strategy === '$set') {
-      updateStatement[entityName] = {
-        $set: entities[entityName]
-      };
-    } else {
-      updateStatement[entityName] = {};
-      for (const entityId of Object.keys(entities[entityName])) {
-        updateStatement[entityName][entityId] = {
-          [state[entityName][entityId] ? '$merge' : '$set']: entities[entityName][entityId]
-        };
-      }
-    }
-  }
-  return updateStatement;
+      return acc;
+    },
+    {} as IndexableSpec<Record<string, any>>
+  );
+
+  return actions;
 };
-export const handleDeleteEntities = (state: EntitiesState, entities: Record<string, any>) => {
-  const deleteStatement: Record<string, any> = {};
-  for (const entityName of Object.keys(entities)) {
-    deleteStatement[entityName] = {
-      $unset: []
-    };
-    if (entities[entityName] instanceof Array) {
-      deleteStatement[entityName].$unset.push(...entities[entityName]);
-    } else {
-      for (const entityId of Object.keys(entities[entityName])) {
-        deleteStatement[entityName].$unset.push(entityId);
-      }
-    }
-  }
-  return deleteStatement;
+
+// Control structure for the handleUpdateEntities function
+export const handleUpdateEntities = (
+  state: EntitiesState,
+  entities: Record<string, any>,
+  strategy: '$set' | '$merge' | '$unset' | '$push' | '$unshift' | '$splice' | '$apply' = '$merge',
+  value?: any
+): Spec<EntitiesState> => {
+  return Object.entries(entities).reduce<IndexableSpec<EntitiesState>>((acc, [entityName, entityGroup]) => {
+    acc[entityName] = state[entityName]
+      ? (() => {
+          switch (strategy) {
+            case '$set':
+              return { $set: entityGroup };
+            case '$merge':
+              return { ...(createUpdateStatement(state, { [entityName]: entityGroup }) as IndexableSpec<EntitiesState>)[entityName] };
+            case '$unset':
+              return { $unset: Object.keys(entityGroup) };
+            case '$push':
+            case '$unshift':
+              return applyArrayOperation(state[entityName], entityGroup, strategy);
+            case '$splice':
+              return Object.keys(entityGroup).reduce(
+                (actions, key) => {
+                  actions[key] = { items: { $splice: value[key] || [] } };
+                  return actions;
+                },
+                {} as IndexableSpec<Record<string, any>>
+              );
+            case '$apply':
+              // The function should be called with only the original state
+              return Object.fromEntries(
+                Object.entries(entityGroup).map(([key, _]) => [
+                  key,
+                  { $apply: (original: any) => value(original) } // Only pass original
+                ])
+              );
+
+            default:
+              return {};
+          }
+        })()
+      : { $set: entityGroup };
+    return acc;
+  }, {} as IndexableSpec<EntitiesState>);
 };
+
+export const handleDeleteEntities = (entities: Record<string, string[]>): Spec<EntitiesState> =>
+  Object.fromEntries(
+    Object.entries(entities).map(([entityName, entityIds]) => [
+      entityName,
+      {
+        $unset: entityIds
+      }
+    ])
+  );
 
 export function reducer(state: EntitiesState = initialState, action: EntityAction): EntitiesState {
   switch (action.type) {
@@ -183,35 +203,46 @@ export function reducer(state: EntitiesState = initialState, action: EntityActio
       if (!action.entityName || !action.entity) {
         return state;
       }
-
       return update(state, handleUpdateEntities(state, { [action.entityName]: action.entity }));
+
     case UPDATE_ENTITIES:
       if (!action.entities) {
         return state;
       }
+      return update(state, handleUpdateEntities(state, action.entities, action.strategy, action.value));
+    case PARTIAL_UPDATE:
+      const { entityName, entityId, updates } = action;
+      if (entityName && entityId && updates && updates[entityId]) {
+        return update(state, {
+          [entityName]: {
+            [entityId]: updates[entityId]
+          }
+        });
+      }
+      return state;
 
-      return update(state, handleUpdateEntities(state, action.entities, action.strategy));
     case DELETE_ENTITY:
       if (!action.entityName || !action.entityId) {
         return state;
       }
-
       return update(
         state,
-        handleDeleteEntities(state, {
+        handleDeleteEntities({
           [action.entityName]: [action.entityId]
         })
       );
+
     case DELETE_ENTITIES:
       if (!action.entities) {
         return state;
       }
+      return update(state, handleDeleteEntities(action.entities));
 
-      return update(state, handleDeleteEntities(state, action.entities));
     case CLEAR_ENTITIES:
       return update(state, {
         $set: { ...defaultState }
       });
+
     default:
       return state;
   }

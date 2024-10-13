@@ -3,6 +3,7 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 /* eslint-disable @typescript-eslint/no-var-requires */
 
+import update, { Spec } from 'immutability-helper';
 import { normalize } from 'normalizr';
 import reducer, {
   updateNormalizedEntity,
@@ -158,48 +159,193 @@ describe('Entities', () => {
   describe('handleUpdateEntities', () => {
     const state = {
       User: {
-        2: { id: 2, name: 'OldEntity2' }
+        '1': { id: '1', items: [1, 2, 3], name: 'OldName' },
+        '2': { id: '2', items: [4, 5, 6], name: 'OtherName' }
       }
     };
 
-    it('should create a spec to update entities with $merge strategy', () => {
+    it('should create a spec to update entities with $push strategy', () => {
       const entities = {
         User: {
-          2: { name: 'UpdatedEntity2' },
-          3: { id: 3, name: 'Entity3' }
+          '1': { someArray: [4] },
+          '2': { someArray: [7, 8] }
         }
       };
 
       const expectedSpec = {
         User: {
-          2: { $merge: { name: 'UpdatedEntity2' } },
-          3: { $set: { id: 3, name: 'Entity3' } }
+          '1': { someArray: { $push: [4] } },
+          '2': { someArray: { $push: [7, 8] } }
         }
       };
 
-      const updateSpec = handleUpdateEntities(state, entities);
+      const updateSpec = handleUpdateEntities(state, entities, '$push');
       expect(updateSpec).toEqual(expectedSpec);
     });
 
-    it('should create a spec to update entities with $set strategy', () => {
+    it('should create a spec to update entities with $splice strategy', () => {
+      // Define the entities to perform the $splice operation
+      const entities = {
+        '1': { items: [] }, // The items field will be spliced, so its initial definition doesn't matter much aside from existing
+        '2': { items: [] }
+      };
+
+      const value = {
+        '1': [[2, 0, 99]], // For entity '1', splice in 99 at index 2
+        '2': [[1, 1]] // For entity '2', remove one element at index 1
+      };
+
+      const expectedSpec = {
+        User: {
+          '1': { items: { $splice: [[2, 0, 99]] } },
+          '2': { items: { $splice: [[1, 1]] } }
+        }
+      };
+
+      const updateSpec = handleUpdateEntities(state, { User: { ...entities } }, '$splice', value);
+      expect(updateSpec).toEqual(expectedSpec);
+    });
+
+    it('should create a spec to update entities with $apply strategy', () => {
+      const applyFunction = jest.fn((original) => ({ ...original, name: original.name.toUpperCase() }));
+
       const entities = {
         User: {
-          2: { name: 'UpdatedEntity2' },
-          3: { id: 3, name: 'Entity3' }
+          '1': { name: 'ignoreThis' }, // Placeholder for mimicry; this field is not actually used in $apply
+          '2': { name: 'ignoreThisToo' } // Same as above
         }
       };
 
       const expectedSpec = {
         User: {
-          $set: {
-            2: { name: 'UpdatedEntity2' },
-            3: { id: 3, name: 'Entity3' }
+          '1': { $apply: expect.any(Function) },
+          '2': { $apply: expect.any(Function) }
+        }
+      };
+
+      const updateSpec = handleUpdateEntities(state, entities, '$apply', applyFunction);
+      expect(updateSpec).toEqual(expectedSpec);
+
+      // Simulate application to verify the behavior
+      const resultState = {
+        User: {
+          // @ts-ignore
+          '1': updateSpec.User['1'].$apply(state.User['1']), // @ts-ignore
+          '2': updateSpec.User['2'].$apply(state.User['2'])
+        }
+      };
+
+      // Verify that the apply function was called with correct arguments
+      expect(applyFunction).toHaveBeenCalledWith({ id: '1', items: [1, 2, 3], name: 'OldName' });
+      expect(applyFunction).toHaveBeenCalledWith({ id: '2', items: [4, 5, 6], name: 'OtherName' });
+
+      // Verify result state after application for correctness
+      expect(resultState).toEqual({
+        User: {
+          '1': { id: '1', items: [1, 2, 3], name: 'OLDNAME' },
+          '2': { id: '2', items: [4, 5, 6], name: 'OTHERNAME' }
+        }
+      });
+    });
+
+    it('should handle $push with initially undefined array', () => {
+      const state = { User: { '1': {} } };
+      const entities = { User: { '1': { items: [1, 2] } } };
+      const expectedSpec = { User: { '1': { items: { $push: [1, 2] } } } };
+
+      const updateSpec = handleUpdateEntities(state, entities, '$push');
+      expect(updateSpec).toEqual(expectedSpec);
+    });
+
+    it('should throw an error when $push is used on a non-array field', () => {
+      const state = { User: { '1': { items: 'notAnArray' } } };
+      const entities = { User: { '1': { items: [1, 2] } } };
+
+      expect(() => handleUpdateEntities(state, entities, '$push')).toThrow("Expected array for $push operation on key '1.items'");
+    });
+
+    it('should apply a complex transformation function to entities', () => {
+      const applyFunction = jest.fn((original) => {
+        if (original.id === '1') {
+          return { ...original, extraField: 42 };
+        }
+        return { ...original, name: original.name.toLowerCase() };
+      });
+
+      const state = {
+        User: {
+          '1': { id: '1', name: 'OldName' },
+          '2': { id: '2', name: 'AnotherName' }
+        }
+      };
+
+      const entities = {
+        User: {
+          '1': { name: 'ignore' }, // Placeholder for an update
+          '2': { name: 'ignore' }
+        }
+      };
+
+      const expectedSpec = {
+        User: {
+          '1': { $apply: expect.any(Function) },
+          '2': { $apply: expect.any(Function) }
+        }
+      };
+
+      const updateSpec = handleUpdateEntities(state, entities, '$apply', applyFunction);
+      expect(updateSpec).toEqual(expectedSpec);
+
+      const resultState = {
+        User: {
+          // @ts-ignore
+          '1': updateSpec.User['1'].$apply(state.User['1']), // @ts-ignore
+          '2': updateSpec.User['2'].$apply(state.User['2'])
+        }
+      };
+
+      expect(resultState).toEqual({
+        User: {
+          '1': { id: '1', name: 'OldName', extraField: 42 },
+          '2': { id: '2', name: 'anothername' }
+        }
+      });
+    });
+    it('should correctly splice elements at boundary indices', () => {
+      const state = {
+        User: {
+          '1': { items: [1, 2, 3, 4, 5] }
+        }
+      };
+      const entities = { User: { '1': { items: [] } } };
+      const value = {
+        '1': [
+          [0, 1],
+          [4, 0, 99]
+        ]
+      }; // Remove first element, add 99 at the end
+      const expectedSpec = {
+        User: {
+          '1': {
+            items: {
+              $splice: [
+                [0, 1],
+                [4, 0, 99]
+              ]
+            }
           }
         }
       };
 
-      const updateSpec = handleUpdateEntities({}, entities, '$set');
+      const updateSpec = handleUpdateEntities(state, entities, '$splice', value);
       expect(updateSpec).toEqual(expectedSpec);
+
+      const resultState = update(state, updateSpec);
+      expect(resultState).toEqual({
+        User: {
+          '1': { items: [2, 3, 4, 5, 99] }
+        }
+      });
     });
   });
 
@@ -209,7 +355,7 @@ describe('Entities', () => {
       const expectedSpec = {
         entities: { $unset: ['1', '2'] }
       };
-      expect(handleDeleteEntities({}, entities)).toEqual(expectedSpec);
+      expect(handleDeleteEntities(entities)).toEqual(expectedSpec);
     });
   });
 

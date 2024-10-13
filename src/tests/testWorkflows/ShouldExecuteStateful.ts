@@ -37,17 +37,17 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
     console.log('execute');
   }
 
-  @On('updated')
-  async onUpdated(update: Record<string, any>, newState: Record<string, any>, previousState: Record<string, any>) {
-    this.log.info(JSON.stringify(update));
-    this.log.debug(JSON.stringify(newState));
-    this.log.debug(JSON.stringify(previousState));
-  }
+  // @On('updated')
+  // async onUpdated(update: Record<string, any>, newState: Record<string, any>, previousState: Record<string, any>) {
+  //   this.log.info(JSON.stringify(update));
+  //   this.log.debug(JSON.stringify(newState));
+  //   this.log.debug(JSON.stringify(previousState));
+  // }
 
-  @On('created')
-  async onCreated(created: Record<string, any>, newState: Record<string, any>, previousState: Record<string, any>) {
-    this.log.info(JSON.stringify(created));
-    this.log.debug(JSON.stringify(newState));
-    this.log.debug(JSON.stringify(previousState));
-  }
+  // @On('created')
+  // async onCreated(created: Record<string, any>, newState: Record<string, any>, previousState: Record<string, any>) {
+  //   this.log.info(JSON.stringify(created));
+  //   this.log.debug(JSON.stringify(newState));
+  //   this.log.debug(JSON.stringify(previousState));
+  // }
 }

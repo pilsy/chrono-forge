@@ -7,7 +7,8 @@ schemaManager.setSchemas({
     idAttribute: 'id',
     listings: ['Listing'],
     likes: ['Like'],
-    photos: ['Photo']
+    photos: ['Photo'],
+    nested: 'Nested'
   },
   Listing: {
     idAttribute: 'id',
@@ -23,6 +24,10 @@ schemaManager.setSchemas({
   Like: {
     idAttribute: 'id',
     photo: 'Photo',
+    user: 'User'
+  },
+  Nested: {
+    idAttribute: 'id',
     user: 'User'
   }
 });

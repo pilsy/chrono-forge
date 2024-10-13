@@ -884,14 +884,13 @@ export abstract class StatefulWorkflow<
       }
     }
 
-    const selectorRegex = new RegExp('^' + selector.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
+    const selectorRegex = new RegExp('^' + selector.replace(/\\./g, '\\.').replace(/\*/g, '.*') + '$');
     for (const diffType of ['added', 'updated'] as const) {
       const entities = differences[diffType] as EntitiesState;
       if (!entities) continue;
 
       for (const [entityName, entityChanges] of Object.entries(entities)) {
         for (const [entityId, entityData] of Object.entries(entityChanges)) {
-          // Iterate through the keys in entityData
           for (const key in entityData) {
             if (Object.prototype.hasOwnProperty.call(entityData, key)) {
               const path = `${entityName}.${entityId}.${key}`;
@@ -899,10 +898,9 @@ export abstract class StatefulWorkflow<
               if (selectorRegex.test(path)) {
                 const selectedData = get(newState, path);
 
-                // If a custom condition is provided, use it
                 if (condition && !condition(selectedData)) {
                   this.log.debug(`Custom condition for selector ${selector} not met.`);
-                  continue; // Skip propagation if condition fails
+                  continue;
                 }
 
                 this.log.debug(`Differences detected that match selector ${selector}, propagation allowed.`);
@@ -915,7 +913,7 @@ export abstract class StatefulWorkflow<
 
                 for (let i = 0; i < selectorParts.length; i++) {
                   if (selectorParts[i] === '*') {
-                    continue; // Wildcard matches any segment
+                    continue;
                   }
                   if (selectorParts[i] !== keyParts[i]) {
                     isParent = false;
@@ -924,13 +922,12 @@ export abstract class StatefulWorkflow<
                 }
 
                 if (isParent) {
-                  const parentKey = selector.split('.').slice(-1)[0]; // last segment of selector
+                  const parentKey = selector.split('.').slice(-1)[0];
                   const selectedData = get(newState, `${entityName}.${entityId}.${parentKey}`);
 
-                  // If a custom condition is provided, use it
                   if (condition && !condition(selectedData)) {
                     this.log.debug(`Custom condition for selector ${selector} not met.`);
-                    continue; // Skip propagation if condition fails
+                    continue;
                   }
 
                   this.log.debug(`Differences detected within selector ${selector}, propagation allowed.`);
@@ -965,24 +962,22 @@ export abstract class StatefulWorkflow<
 
     const selectorRegex = new RegExp('^' + selector.replace(/\*/g, '.*') + '$');
 
-    const traverseDifferences = (diffType: 'added' | 'updated' | 'deleted') => {
+    for (const diffType of ['added', 'updated', 'deleted'] as const) {
       const entities = differences[diffType] as EntitiesState;
-      if (!entities) return;
+      if (!entities) continue;
 
       for (const [entityName, entityChanges] of Object.entries(entities)) {
         for (const entityId in entityChanges) {
           const entityPath = `${entityName}.${entityId}`;
 
           if (diffType === 'deleted') {
-            // Check if entire entity is missing in newState, implying full deletion
             if (!get(newState, entityPath) && selectorRegex.test(entityPath)) {
               if (!deletions[entityName]) {
                 deletions[entityName] = {};
               }
-              deletions[entityName][entityId] = get(previousState, entityPath); // Snapshot of the entire entity from previousState
+              deletions[entityName][entityId] = get(previousState, entityPath); // Get snapshot from previous state
             }
           } else {
-            // For `added` and `updated`, continue processing key-level changes
             const entityData = entityChanges[entityId];
             for (const key in entityData) {
               if (Object.prototype.hasOwnProperty.call(entityData, key)) {
@@ -1001,12 +996,7 @@ export abstract class StatefulWorkflow<
           }
         }
       }
-    };
-
-    // Process 'added', 'updated', and 'deleted' differences
-    traverseDifferences('added');
-    traverseDifferences('updated');
-    traverseDifferences('deleted');
+    }
 
     return { updates, deletions };
   }
