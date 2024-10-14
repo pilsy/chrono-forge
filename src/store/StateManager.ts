@@ -128,10 +128,6 @@ export class StateManager extends EventEmitter {
   }
 
   query(entityName: string, id: string, denormalizeData = true): any {
-    if (!entityName || !id) {
-      return null;
-    }
-
     const cacheKey = `${entityName}.${id}`;
 
     if (this.cache.has(cacheKey)) {
@@ -151,118 +147,31 @@ export class StateManager extends EventEmitter {
 
     let result: any;
     if (denormalizeData) {
-      const denormalized = JSON.parse(JSON.stringify(limitRecursion(id, entityName, this._state)));
-
-      const createHandler = (entityName: string, entityId: string, parentPath: string[] = []) => ({
-        set: (target: any, prop: string | symbol, value: any): boolean => {
-          // If there is no change, do nothing
-          if (Object.is(target[prop], value)) {
+      const denormalized = limitRecursion(id, entityName, this._state);
+      const handler = {
+        set: (target: any, prop: string | symbol, value: any) => {
+          if (target[prop] === value) {
             return true;
           }
-
-          const schemaManager = SchemaManager.getInstance();
-          const currentSchema = schemaManager.getSchema(entityName);
-
-          const updates: Record<string, any> = {};
-          const propKey = String(prop);
-          const currentPath = [...parentPath, propKey];
-          const childKey = Array.isArray(target) ? parentPath[parentPath.length - 1] : propKey;
-          const childSchema: schema.Entity & { _idAttribute: string } = get(
-            currentSchema,
-            `schema.${childKey}${Array.isArray(target) ? '.0' : ''}`
-          );
-
-          // Handle array operations specifically
-          if (Array.isArray(target)) {
-            if (prop === 'length') {
-              if (value < target.length) {
-                // Handle .pop() or a similar operation
-                updates[entityId] = buildNestedPath(parentPath, {
-                  $splice: [[value, target.length - value]]
-                });
-              }
-            } else {
-              const index = Number(prop);
-              if (!isNaN(index)) {
-                if (index < target.length) {
-                  // Detect if the operation is a .pop() or .shift()
-                  if (typeof value === 'undefined' && index === target.length - 1) {
-                    // Handling .pop()
-                    updates[entityId] = buildNestedPath(currentPath.slice(0, -1), {
-                      $splice: [[index, 1]]
-                    });
-                  } else if (typeof value === 'undefined' && index === 0) {
-                    // Handling .shift()
-                    updates[entityId] = buildNestedPath(currentPath.slice(0, -1), {
-                      $splice: [[0, 1]]
-                    });
-                  } else {
-                    // Update existing element
-                    updates[entityId] = buildNestedPath(currentPath.slice(0, -1), {
-                      $splice: [[index, 1, childSchema ? value[childSchema._idAttribute] : value]]
-                    });
-                  }
-                } else {
-                  // Append new element and possibly add a new entity
-                  updates[entityId] = buildNestedPath(currentPath.slice(0, -1), {
-                    $push: [childSchema ? value[childSchema._idAttribute] : value]
-                  });
-                }
-              }
-            }
-          } else {
-            // Handle objects directly using the schema
-            updates[entityId] = buildNestedPath(currentPath, {
-              [typeof value === 'object' ? '$merge' : '$set']: childSchema ? value[childSchema._idAttribute] : value
-            });
-          }
-
-          if (childSchema && value) {
-            this.dispatch(updateEntity(value, getEntityName(childSchema)), false, this.instanceId);
-          } else if (childSchema && !value) {
-            this.dispatch(deleteEntity(Reflect.get(target, prop), getEntityName(childSchema)), false, this.instanceId);
-          }
-
-          // Dispatch the partial update for reference changes
-          this.dispatch(
-            {
-              type: PARTIAL_UPDATE,
-              entityName,
-              entityId,
-              updates
-            },
-            false,
-            this.instanceId
-          );
-
-          // Reflect the change in the target object after dispatching updates
-          Reflect.set(target, prop, value);
-
+          target[prop] = value;
+          this.dispatch(updateEntity(denormalized, entityName), false, this.instanceId);
           return true;
         },
         get: (target: any, prop: string | symbol) => {
           if (prop === 'toJSON') {
-            return () => JSON.parse(JSON.stringify(target));
+            return () => {
+              return JSON.parse(JSON.stringify(target)); // Deep copy to break proxy
+            };
           }
-          const val = target[prop];
-          const propKey = String(prop);
-          const nextPath = [...parentPath, propKey];
 
+          const val = target[prop];
           if (Array.isArray(val) || (typeof val === 'object' && val !== null)) {
-            return new Proxy(val, createHandler(entityName, entityId, nextPath));
+            return new Proxy(val, handler);
           }
           return val;
         }
-      });
-
-      /**
-       * Constructs a nested path structure.
-       */
-      function buildNestedPath(path: string[], value: any): any {
-        return path.reduceRight((acc, key) => ({ [key]: acc }), value);
-      }
-
-      result = new Proxy(denormalized, createHandler(entityName, id));
+      };
+      result = new Proxy(denormalized, handler);
       this.cache.set(cacheKey, { data: result, lastState: this._state });
     } else {
       result = entity;
