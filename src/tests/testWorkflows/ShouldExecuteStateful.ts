@@ -1,9 +1,16 @@
 import { ChronoFlow } from '../../workflows';
 import { ManagedPaths, StatefulWorkflow } from '../../workflows/StatefulWorkflow';
-import { User } from '../testSchemas';
+import { User, Listing } from '../testSchemas';
 import { trace } from '@opentelemetry/api';
 import { condition } from '@temporalio/workflow';
-import { On } from '../../decorators';
+import { Action, On, Property } from '../../decorators';
+
+export type TestAction = {
+  actionId: string;
+  payload: {
+    testUpdate: string;
+  };
+};
 
 @ChronoFlow({
   schema: User
@@ -33,8 +40,30 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
     }
   };
 
+  @Property({ path: 'listings' })
+  protected listings: any;
+
+  @Action()
+  protected testAction(action: TestAction) {
+    if (!this.data) {
+      throw new Error(`There is no data available yet...`);
+    }
+    console.log(this.data);
+  }
+
   async execute(params: any) {
     console.log('execute');
+    // console.log(this.listings);
+    // // if (this.listings.length < 3) {
+    // //   this.listings.push({
+    // //     id: 'fake',
+    // //     user: this.id,
+    // //     test: true
+    // //   });
+    // // }
+    // if (this.listings.length === 2) {
+    //   this.listings.pop();
+    // }
   }
 
   // @On('updated')

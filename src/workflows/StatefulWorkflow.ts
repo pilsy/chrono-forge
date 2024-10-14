@@ -1442,6 +1442,7 @@ export abstract class StatefulWorkflow<
       this.log.error(error);
     } finally {
       this._actionRunning = false;
+      this.pendingIteration = true;
     }
 
     await workflow.condition(() => !this.stateManager.processing && !this.pendingIteration);

@@ -199,18 +199,19 @@ export const handleDeleteEntities = (entities: Record<string, string[]>): Spec<E
 
 export function reducer(state: EntitiesState = initialState, action: EntityAction): EntitiesState {
   switch (action.type) {
-    case UPDATE_ENTITY:
+    case UPDATE_ENTITY: {
       if (!action.entityName || !action.entity) {
         return state;
       }
       return update(state, handleUpdateEntities(state, { [action.entityName]: action.entity }));
-
-    case UPDATE_ENTITIES:
+    }
+    case UPDATE_ENTITIES: {
       if (!action.entities) {
         return state;
       }
       return update(state, handleUpdateEntities(state, action.entities, action.strategy, action.value));
-    case PARTIAL_UPDATE:
+    }
+    case PARTIAL_UPDATE: {
       const { entityName, entityId, updates } = action;
       if (entityName && entityId && updates && updates[entityId]) {
         return update(state, {
@@ -220,8 +221,8 @@ export function reducer(state: EntitiesState = initialState, action: EntityActio
         });
       }
       return state;
-
-    case DELETE_ENTITY:
+    }
+    case DELETE_ENTITY: {
       if (!action.entityName || !action.entityId) {
         return state;
       }
@@ -231,20 +232,21 @@ export function reducer(state: EntitiesState = initialState, action: EntityActio
           [action.entityName]: [action.entityId]
         })
       );
-
-    case DELETE_ENTITIES:
+    }
+    case DELETE_ENTITIES: {
       if (!action.entities) {
         return state;
       }
       return update(state, handleDeleteEntities(action.entities));
-
-    case CLEAR_ENTITIES:
+    }
+    case CLEAR_ENTITIES: {
       return update(state, {
         $set: { ...defaultState }
       });
-
-    default:
+    }
+    default: {
       return state;
+    }
   }
 }
 

@@ -236,6 +236,62 @@ describe('StatefulWorkflow', () => {
     });
   });
 
+  describe('@Action', () => {
+    it.skip('Should update state and child workflow and maintain state in parent and child correctly', async () => {
+      const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Awesome test listing' }] };
+      const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
+      const expectedInitial = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
+      await sleep();
+
+      // Initial state verification
+      const state = await handle.query('state');
+      expect(state).toEqual(expectedInitial);
+
+      // const { state: memoState } = await getMemo(client.workflow.getHandle(`User-${data.id}`));
+      // expect(memoState).toEqual(expectedInitial);
+
+      // Update state
+      const updatedData = { ...data, update: 'fromUpdate', listings: [{ ...data.listings[0], update: 'fromUpdate' }] };
+      const expectedUpdated = normalizeEntities(updatedData, SchemaManager.getInstance().getSchema('User'));
+
+      await handle.signal('update', { data: updatedData, entityName: 'User' });
+      await sleep(5000);
+
+      const updatedState = await handle.query('state');
+      expect(updatedState).toEqual(expectedUpdated);
+
+      // Verify child workflow state
+      const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
+      const updatedListingState = await childHandle.query('state');
+      expect(updatedListingState).toEqual({ Listing: expectedUpdated.Listing });
+
+      await childHandle.signal('update', {
+        data: { id: data.listings[0].id, update: 'directly' },
+        entityName: 'Listing',
+        strategy: '$merge'
+      });
+      await sleep();
+
+      const parentData = await handle.query('state');
+      const childData = await childHandle.query('state');
+
+      expect(parentData).toEqual(
+        normalizeEntities(
+          { ...data, update: 'fromUpdate', listings: [{ ...data.listings[0], update: 'directly' }] },
+          SchemaManager.getInstance().getSchema('User')
+        )
+      );
+      expect(childData).toEqual({
+        Listing: {
+          [data.listings[0]?.id]: {
+            ...data.listings[0],
+            update: 'directly'
+          }
+        }
+      });
+    });
+  });
+
   describe('Child Workflow Management', () => {
     it('Should correctly manage one parent User and three child Listing workflows', async () => {
       // Initialize data for one User and three Listings
@@ -476,6 +532,57 @@ describe('StatefulWorkflow', () => {
           name: 'Updated Listing2 Name'
         })
       );
+    });
+
+    it.skip('Shound have a working data proxy', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const listing2Id = uuid4();
+      const photoId = uuid4();
+      const photo2Id = uuid4();
+      const likeId = uuid4();
+
+      // Initial data for User with Listings, Photos, and Likes, forming a recursive structure
+      const data = {
+        id: userId,
+        listings: [
+          {
+            id: listingId,
+            user: userId,
+            photos: [
+              {
+                id: photoId,
+                user: userId,
+                listing: listingId,
+                likes: [{ id: likeId, user: userId, photo: photoId }]
+              }
+            ]
+          },
+          {
+            id: listing2Id,
+            user: userId
+          }
+        ]
+      };
+      // const expectedState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
+
+      // console.dir(expectedState, { depth: 12 });
+      // process.exit(1);
+
+      // Start the User workflow
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: data.id,
+        entityName: 'User',
+        data
+      });
+      await sleep(5000); // Wait for workflows to initialize
+
+      // Ensure the User workflow is initialized with the correct normalized state
+      const expectedState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
+      const state = await handle.query('state');
+      expect(state).toEqual(expectedState);
+
+      await sleep(1000 * 30); // Wait for workflows to initialize
     });
 
     it('Should handle restarting child workflow after cancellation', async () => {

@@ -1,11 +1,22 @@
 import EventEmitter from 'eventemitter3';
-import { EntitiesState, EntityAction, reducer, updateEntity, clearEntities, UPDATE_ENTITIES, PARTIAL_UPDATE } from '../utils/entities';
+import {
+  EntitiesState,
+  EntityAction,
+  reducer,
+  updateEntity,
+  clearEntities,
+  UPDATE_ENTITIES,
+  PARTIAL_UPDATE,
+  updateNormalizedEntity,
+  deleteEntity
+} from '../utils/entities';
 import { DetailedDiff, detailedDiff } from 'deep-object-diff';
-import { isEmpty } from 'lodash';
-import { limitRecursion } from '../utils/limitRecursion';
+import { isEmpty, isObject } from 'lodash';
+import { getEntityName, limitRecursion } from '../utils/limitRecursion';
 import { Mutex } from '../decorators';
-import { Schema } from 'normalizr';
 import { SchemaManager } from './SchemaManager';
+import { get } from 'dottie';
+import { schema } from 'normalizr';
 
 export class StateManager extends EventEmitter {
   private constructor(private instanceId: string) {
@@ -144,52 +155,75 @@ export class StateManager extends EventEmitter {
 
       const createHandler = (entityName: string, entityId: string, parentPath: string[] = []) => ({
         set: (target: any, prop: string | symbol, value: any): boolean => {
-          if (target[prop] === value) {
+          // If there is no change, do nothing
+          if (Object.is(target[prop], value)) {
             return true;
           }
 
           const schemaManager = SchemaManager.getInstance();
           const currentSchema = schemaManager.getSchema(entityName);
 
-          // Determine if there's an idAttribute and adjust the target path accordingly
           const updates: Record<string, any> = {};
           const propKey = String(prop);
           const currentPath = [...parentPath, propKey];
+          const childKey = Array.isArray(target) ? parentPath[parentPath.length - 1] : propKey;
+          const childSchema: schema.Entity & { _idAttribute: string } = get(
+            currentSchema,
+            `schema.${childKey}${Array.isArray(target) ? '.0' : ''}`
+          );
 
+          // Handle array operations specifically
           if (Array.isArray(target)) {
-            const index = Number(prop);
-            if (!isNaN(index)) {
-              if (index < target.length) {
-                // Use $splice for updating elements at a specific index in nested list
-                updates[entityId] = buildNestedPath(currentPath.slice(0, -1), { $splice: [[index, 1, value]] });
-              } else {
-                // Append elements via $push
-                updates[entityId] = buildNestedPath(currentPath.slice(0, -1), { $push: [value] });
+            if (prop === 'length') {
+              if (value < target.length) {
+                // Handle .pop() or a similar operation
+                updates[entityId] = buildNestedPath(parentPath, {
+                  $splice: [[value, target.length - value]]
+                });
+              }
+            } else {
+              const index = Number(prop);
+              if (!isNaN(index)) {
+                if (index < target.length) {
+                  // Detect if the operation is a .pop() or .shift()
+                  if (typeof value === 'undefined' && index === target.length - 1) {
+                    // Handling .pop()
+                    updates[entityId] = buildNestedPath(currentPath.slice(0, -1), {
+                      $splice: [[index, 1]]
+                    });
+                  } else if (typeof value === 'undefined' && index === 0) {
+                    // Handling .shift()
+                    updates[entityId] = buildNestedPath(currentPath.slice(0, -1), {
+                      $splice: [[0, 1]]
+                    });
+                  } else {
+                    // Update existing element
+                    updates[entityId] = buildNestedPath(currentPath.slice(0, -1), {
+                      $splice: [[index, 1, childSchema ? value[childSchema._idAttribute] : value]]
+                    });
+                  }
+                } else {
+                  // Append new element and possibly add a new entity
+                  updates[entityId] = buildNestedPath(currentPath.slice(0, -1), {
+                    $push: [childSchema ? value[childSchema._idAttribute] : value]
+                  });
+                }
               }
             }
           } else {
-            const updateStrategy = typeof value === 'object' ? '$merge' : '$set';
-
-            // @ts-ignore Check for nested schema with an ID reference
-            if (currentSchema && currentSchema.schema && currentSchema.schema[propKey]) {
-              // @ts-ignore
-              const childSchema = currentSchema.schema[propKey];
-              const childIdAttribute = Array.isArray(childSchema) ? childSchema[0]._idAttribute : childSchema._idAttribute;
-
-              // Replace the nested ID reference instead of the object if applicable
-              if (value && value[childIdAttribute]) {
-                updates[entityId] = buildNestedPath(currentPath, { [updateStrategy]: value[childIdAttribute] });
-              } else {
-                updates[entityId] = buildNestedPath(currentPath, { [updateStrategy]: value });
-              }
-            } else {
-              // Handle directly if no schema reference manipulation needed
-              updates[entityId] = buildNestedPath(currentPath, { [updateStrategy]: value });
-            }
+            // Handle objects directly using the schema
+            updates[entityId] = buildNestedPath(currentPath, {
+              [typeof value === 'object' ? '$merge' : '$set']: childSchema ? value[childSchema._idAttribute] : value
+            });
           }
 
-          Reflect.set(target, prop, value);
+          if (childSchema && value) {
+            this.dispatch(updateEntity(value, getEntityName(childSchema)), false, this.instanceId);
+          } else if (childSchema && !value) {
+            this.dispatch(deleteEntity(Reflect.get(target, prop), getEntityName(childSchema)), false, this.instanceId);
+          }
 
+          // Dispatch the partial update for reference changes
           this.dispatch(
             {
               type: PARTIAL_UPDATE,
@@ -201,6 +235,9 @@ export class StateManager extends EventEmitter {
             this.instanceId
           );
 
+          // Reflect the change in the target object after dispatching updates
+          Reflect.set(target, prop, value);
+
           return true;
         },
         get: (target: any, prop: string | symbol) => {
@@ -210,6 +247,7 @@ export class StateManager extends EventEmitter {
           const val = target[prop];
           const propKey = String(prop);
           const nextPath = [...parentPath, propKey];
+
           if (Array.isArray(val) || (typeof val === 'object' && val !== null)) {
             return new Proxy(val, createHandler(entityName, entityId, nextPath));
           }
