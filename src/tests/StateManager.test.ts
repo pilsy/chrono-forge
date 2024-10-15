@@ -2,6 +2,13 @@ import { StateManager } from '../store/StateManager';
 import { EntityAction, PARTIAL_UPDATE, reducer } from '../utils/entities';
 import schemas from './testSchemas';
 
+const sleep = async (duration = 1000) =>
+  new Promise((resolve) => {
+    setTimeout(async () => {
+      resolve(true);
+    }, duration);
+  });
+
 const { User, Nested } = schemas;
 describe('StateManager', () => {
   let stateManager: StateManager;
@@ -31,7 +38,7 @@ describe('StateManager', () => {
     console.dir(stateManager.state, { depth: 12 });
   }
 
-  it.skip('should append to the nested list using ID reference', async () => {
+  it('should append to the nested list using ID reference', async () => {
     stateManager.state = {
       User: {
         '1': { id: '1', name: 'John Doe', nested: '100' }
@@ -42,6 +49,8 @@ describe('StateManager', () => {
     };
 
     console.dir(stateManager, { depth: 12 }); // Display initial state
+
+    await sleep(5000);
 
     const nested = stateManager.query('Nested', '100');
     nested.list.push(21); // Modify list
@@ -64,7 +73,7 @@ describe('StateManager', () => {
   });
 
   describe('Proxy Operations', () => {
-    it.skip('should update the state correctly alongside dispatching the proper actions for top-level changes', async () => {
+    it('should update the state correctly alongside dispatching the proper actions for top-level changes', async () => {
       const user = stateManager.query('User', '1');
       user.name = 'Jane Doe';
 
@@ -86,7 +95,7 @@ describe('StateManager', () => {
       expect(stateManager.state.User['1'].name).toBe('Jane Doe');
     });
 
-    it.skip('should update the state and dispatch the proper actions for nested changes', async () => {
+    it('should update the state and dispatch the proper actions for nested changes', async () => {
       stateManager.state = {
         User: {
           '1': { id: '1', attributes: { score: 10 } }
@@ -112,7 +121,7 @@ describe('StateManager', () => {
       expect(stateManager.state.User['1'].attributes.score).toBe(20); // Ensure state reflects update
     });
 
-    it.skip('should handle setting array elements in state and dispatch the proper actions', async () => {
+    it('should handle setting array elements in state and dispatch the proper actions', async () => {
       stateManager.state = {
         User: {
           '1': { id: '1', nested: { list: [1, 2, 3] } }
@@ -138,7 +147,7 @@ describe('StateManager', () => {
       expect(stateManager.state.User['1'].nested.list).toEqual([1, 10, 3]);
     });
 
-    it.skip('should handle nested array modifications correctly', async () => {
+    it('should handle nested array modifications correctly', async () => {
       // Initial state setup
       stateManager.state = {
         User: {
@@ -193,7 +202,7 @@ describe('StateManager', () => {
   });
 
   describe('StateManager with ID-Based Nested References', () => {
-    it.skip('should update nested list item correctly using ID reference', async () => {
+    it('should update nested list item correctly using ID reference', async () => {
       const user = stateManager.query('User', '1');
       const nested = stateManager.query('Nested', '100');
       nested.list[0] = 15; // Modify first element
@@ -214,7 +223,7 @@ describe('StateManager', () => {
       expect(stateManager.state.Nested['100'].list).toEqual([15, 20]); // Verify state update
     });
 
-    it.skip('should append to the nested list using ID reference', async () => {
+    it('should append to the nested list using ID reference', async () => {
       console.dir(stateManager.state, { depth: 12 });
       const nested = stateManager.query('Nested', '100');
       console.dir(nested, { depth: 12 });

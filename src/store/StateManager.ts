@@ -100,7 +100,12 @@ export class StateManager extends EventEmitter {
     this._processing = false;
   }
 
-  private emitStateChangeEvents(differences: DetailedDiff, previousState: EntitiesState, newState: EntitiesState, origins: string[]): void {
+  private emitStateChangeEvents(
+    differences: DetailedDiff,
+    previousState: EntitiesState,
+    newState: EntitiesState,
+    origins: string[]
+  ): void {
     const changedPaths = ['added', 'updated', 'deleted'] as const;
 
     changedPaths.forEach((changeType) => {
@@ -128,6 +133,10 @@ export class StateManager extends EventEmitter {
   }
 
   query(entityName: string, id: string, denormalizeData = true): any {
+    if (!entityName || !id) {
+      return null;
+    }
+
     const cacheKey = `${entityName}.${id}`;
 
     if (this.cache.has(cacheKey)) {
@@ -147,31 +156,158 @@ export class StateManager extends EventEmitter {
 
     let result: any;
     if (denormalizeData) {
-      const denormalized = limitRecursion(id, entityName, this._state);
-      const handler = {
-        set: (target: any, prop: string | symbol, value: any) => {
-          if (target[prop] === value) {
-            return true;
+      const denormalized = JSON.parse(JSON.stringify(limitRecursion(id, entityName, this._state)));
+
+      const createHandler = (entityName: string, entityId: string, parentPath: string[] = []) => ({
+        set: (target: any, prop: string | symbol, value: any): boolean => {
+          if (Object.is(target[prop], value)) {
+            return true; // Early exit if no change
           }
-          target[prop] = value;
-          this.dispatch(updateEntity(denormalized, entityName), false, this.instanceId);
+
+          const { currentSchema, propKey, currentPath, childKey, targetSchema, index } = buildContext(
+            target,
+            prop,
+            entityName,
+            parentPath
+          );
+          const updates = buildUpdates(target, prop, value, entityId, currentPath, targetSchema, index);
+
+          applyNestedEntityUpdates(targetSchema, value, target, prop, this);
+          dispatchPartialUpdate(entityName, entityId, updates, this);
+
+          Reflect.set(target, prop, value); // Reflect the change in the target object
+
           return true;
         },
         get: (target: any, prop: string | symbol) => {
           if (prop === 'toJSON') {
-            return () => {
-              return JSON.parse(JSON.stringify(target)); // Deep copy to break proxy
-            };
+            return () => JSON.parse(JSON.stringify(target)); // Custom toJSON method
           }
 
-          const val = target[prop];
+          const { val, propKey, nextPath, nextEntityName } = navigateToProp(target, prop, entityName, parentPath);
+
           if (Array.isArray(val) || (typeof val === 'object' && val !== null)) {
-            return new Proxy(val, handler);
+            return new Proxy(val, createHandler(nextEntityName, entityId, nextPath));
           }
+
           return val;
         }
-      };
-      result = new Proxy(denormalized, handler);
+      });
+
+      function buildContext(target: any, prop: string | symbol, entityName: string, parentPath: string[]) {
+        const schemaManager = SchemaManager.getInstance();
+        const currentSchema = schemaManager.getSchema(entityName);
+        const propKey = String(prop);
+        const currentPath = [...parentPath, propKey];
+        const childKey = Array.isArray(target) ? parentPath[parentPath.length - 1] : propKey;
+        const targetSchema: schema.Entity & { _idAttribute: string } = get(
+          currentSchema,
+          `schema.${childKey}${Array.isArray(target) ? '.0' : ''}`
+        );
+        const index = Array.isArray(target) ? Number(prop) : -1;
+        return { currentSchema, propKey, currentPath, childKey, targetSchema, index };
+      }
+
+      function buildUpdates(
+        target: any,
+        prop: string | symbol,
+        value: any,
+        entityId: string,
+        currentPath: string[],
+        targetSchema: schema.Entity & { _idAttribute: string },
+        index: number
+      ) {
+        const updates: Record<string, any> = {};
+        if (Array.isArray(target)) {
+          handleArrayOperations(target, prop, value, entityId, currentPath, targetSchema, index, updates);
+        } else {
+          handleObjectOperations(value, entityId, currentPath, targetSchema, updates);
+        }
+        return updates;
+      }
+
+      function handleArrayOperations(
+        target: any,
+        prop: string | symbol,
+        value: any,
+        entityId: string,
+        currentPath: string[],
+        targetSchema: schema.Entity & { _idAttribute: string },
+        index: number,
+        updates: Record<string, any>
+      ) {
+        if (!isNaN(index)) {
+          if (index < target.length) {
+            updates[entityId] = buildNestedPath(currentPath.slice(0, -1), {
+              $splice: [[index, 1, targetSchema ? value[targetSchema._idAttribute] : value]]
+            });
+          } else {
+            updates[entityId] = buildNestedPath(currentPath.slice(0, -1), {
+              $push: [targetSchema ? value[targetSchema._idAttribute] : value]
+            });
+          }
+        }
+      }
+
+      function handleObjectOperations(
+        value: any,
+        entityId: string,
+        currentPath: string[],
+        targetSchema: schema.Entity & { _idAttribute: string },
+        updates: Record<string, any>
+      ) {
+        updates[entityId] = buildNestedPath(currentPath, {
+          [typeof value === 'object' ? '$merge' : '$set']: targetSchema ? value[targetSchema._idAttribute] : value
+        });
+      }
+
+      function applyNestedEntityUpdates(
+        targetSchema: schema.Entity & { _idAttribute: string },
+        value: any,
+        target: any,
+        prop: string | symbol,
+        context: any
+      ) {
+        if (targetSchema && value !== undefined && value !== null) {
+          context.dispatch(updateEntity(value, getEntityName(targetSchema)), false, context.instanceId);
+        } else if (targetSchema && (value === undefined || value === null)) {
+          context.dispatch(
+            deleteEntity(Reflect.get(target, prop), getEntityName(targetSchema)),
+            false,
+            context.instanceId
+          );
+        }
+      }
+
+      function dispatchPartialUpdate(entityName: string, entityId: string, updates: Record<string, any>, context: any) {
+        context.dispatch(
+          {
+            type: PARTIAL_UPDATE,
+            entityName,
+            entityId,
+            updates
+          },
+          false,
+          context.instanceId
+        );
+      }
+
+      function navigateToProp(target: any, prop: string | symbol, entityName: string, parentPath: string[]) {
+        const val = Reflect.get(target, prop);
+        const propKey = String(prop);
+        const nextPath = [...parentPath, propKey];
+        const nextEntityName = val && Array.isArray(target) && entityName ? getEntityName(entityName) : entityName;
+        return { val, propKey, nextPath, nextEntityName };
+      }
+
+      /**
+       * Constructs a nested path structure.
+       */
+      function buildNestedPath(path: string[], value: any): any {
+        return path.reduceRight((acc, key) => ({ [key]: acc }), value);
+      }
+
+      result = new Proxy(denormalized, createHandler(entityName, id));
       this.cache.set(cacheKey, { data: result, lastState: this._state });
     } else {
       result = entity;

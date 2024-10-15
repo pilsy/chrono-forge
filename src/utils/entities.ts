@@ -51,13 +51,20 @@ export const updateEntities = (entities: any[], entityName: string): EntityActio
   return updateNormalizedEntities(normalize(entities, schema).entities);
 };
 
-export const updateNormalizedEntities = (entities: Record<string, unknown>, strategy: '$set' | '$merge' = '$merge'): EntityAction => ({
+export const updateNormalizedEntities = (
+  entities: Record<string, unknown>,
+  strategy: '$set' | '$merge' = '$merge'
+): EntityAction => ({
   type: UPDATE_ENTITIES,
   entities,
   strategy
 });
 
-export const updatePartialEntity = (entityName: string, entityId: string, updates: Record<string, { [key: string]: any }>): EntityAction => ({
+export const updatePartialEntity = (
+  entityName: string,
+  entityId: string,
+  updates: Record<string, { [key: string]: any }>
+): EntityAction => ({
   type: PARTIAL_UPDATE,
   entityName,
   entityId,
@@ -76,7 +83,8 @@ export const deleteNormalizedEntity = (entityId: string, entityName: string): En
   entityName
 });
 
-export const deleteEntities = (entities: string[], entityName: string): EntityAction => deleteNormalizedEntities({ [entityName]: entities });
+export const deleteEntities = (entities: string[], entityName: string): EntityAction =>
+  deleteNormalizedEntities({ [entityName]: entities });
 
 export const deleteNormalizedEntities = (entities: Record<string, string[]>): EntityAction => ({
   type: DELETE_ENTITIES,
@@ -155,7 +163,11 @@ export const handleUpdateEntities = (
             case '$set':
               return { $set: entityGroup };
             case '$merge':
-              return { ...(createUpdateStatement(state, { [entityName]: entityGroup }) as IndexableSpec<EntitiesState>)[entityName] };
+              return {
+                ...(createUpdateStatement(state, { [entityName]: entityGroup }) as IndexableSpec<EntitiesState>)[
+                  entityName
+                ]
+              };
             case '$unset':
               return { $unset: Object.keys(entityGroup) };
             case '$push':
