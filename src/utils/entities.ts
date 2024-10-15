@@ -192,7 +192,7 @@ export const handleDeleteEntities = (entities: Record<string, string[]>): Spec<E
     Object.entries(entities).map(([entityName, entityIds]) => [
       entityName,
       {
-        $unset: entityIds
+        $unset: entityIds instanceof Array ? entityIds : [entityIds]
       }
     ])
   );
