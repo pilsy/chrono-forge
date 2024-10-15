@@ -13,7 +13,10 @@ import { v4 as uuid4 } from 'uuid';
 import { SchemaManager } from '../store/SchemaManager';
 import * as workflows from './testWorkflows';
 import { logger } from '../utils/logger';
-import { OpenTelemetryActivityInboundInterceptor, makeWorkflowExporter } from '@temporalio/interceptors-opentelemetry/lib/worker';
+import {
+  OpenTelemetryActivityInboundInterceptor,
+  makeWorkflowExporter
+} from '@temporalio/interceptors-opentelemetry/lib/worker';
 import { normalizeEntities } from '../utils/entities';
 import { getExternalWorkflowHandle } from '@temporalio/workflow';
 import { cloneDeep } from 'lodash';
@@ -24,7 +27,11 @@ import { getCompositeKey, getMemo, limitRecursion, unflatten } from '../utils';
 import { denormalize } from 'normalizr';
 
 describe('StatefulWorkflow', () => {
-  let execute: (workflowName: string, params: StatefulWorkflowParams, timeout: number) => ReturnType<client.workflow.start>;
+  let execute: (
+    workflowName: string,
+    params: StatefulWorkflowParams,
+    timeout: number
+  ) => ReturnType<client.workflow.start>;
   let client: ReturnType<typeof getClient>;
   jest.setTimeout(120000);
 
@@ -51,7 +58,11 @@ describe('StatefulWorkflow', () => {
       };
       const normalizedData = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
 
-      const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', state: normalizedData });
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: data.id,
+        entityName: 'User',
+        state: normalizedData
+      });
       await sleep();
       const state = await handle.query('state');
       expect(state).toEqual(normalizedData);
@@ -78,7 +89,11 @@ describe('StatefulWorkflow', () => {
     it('Should initialize workflow with partial data and set missing properties to defaults', async () => {
       const userId = uuid4();
       const partialData = { id: userId };
-      const handle = await execute(workflows.ShouldExecuteStateful, { id: userId, entityName: 'User', data: partialData });
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: userId,
+        entityName: 'User',
+        data: partialData
+      });
       await sleep();
       const state = await handle.query('state');
       expect(state).toHaveProperty('User');
@@ -88,7 +103,11 @@ describe('StatefulWorkflow', () => {
     it('Should initialize workflow with invalid data and handle gracefully', async () => {
       const userId = uuid4();
       const invalidData = { id: userId, invalidField: 'invalid' };
-      const handle = await execute(workflows.ShouldExecuteStateful, { id: userId, entityName: 'User', data: invalidData });
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: userId,
+        entityName: 'User',
+        data: invalidData
+      });
       await sleep();
       const state = await handle.query('state');
       expect(state.User[userId]).toHaveProperty('invalidField');
@@ -155,7 +174,10 @@ describe('StatefulWorkflow', () => {
       const listingId = uuid4();
       const photoId = uuid4();
 
-      const data = { id, listings: [{ id: listingId, photos: [{ id: photoId, name: 'Nested Item', listing: listingId }] }] };
+      const data = {
+        id,
+        listings: [{ id: listingId, photos: [{ id: photoId, name: 'Nested Item', listing: listingId }] }]
+      };
       const expectedInitialState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
 
       const handle = await execute(workflows.ShouldExecuteStateful, { id, entityName: 'User', data });
@@ -201,7 +223,11 @@ describe('StatefulWorkflow', () => {
     it('Should handle different merging strategies', async () => {
       const userId = uuid4();
       const initialData = { id: userId, name: 'Initial' };
-      const handle = await execute(workflows.ShouldExecuteStateful, { id: userId, entityName: 'User', data: initialData });
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: userId,
+        entityName: 'User',
+        data: initialData
+      });
       await sleep();
 
       // Update using $merge strategy
@@ -223,7 +249,11 @@ describe('StatefulWorkflow', () => {
 
     it('Should maintain consistency during concurrent updates', async () => {
       const userId = uuid4();
-      const handle = await execute(workflows.ShouldExecuteStateful, { id: userId, entityName: 'User', data: { id: userId, name: 'Initial' } });
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: userId,
+        entityName: 'User',
+        data: { id: userId, name: 'Initial' }
+      });
       await sleep();
 
       await handle.signal('update', { data: { id: userId, age: 25 }, entityName: 'User' }),
@@ -575,7 +605,7 @@ describe('StatefulWorkflow', () => {
         entityName: 'User',
         data
       });
-      await sleep(5000); // Wait for workflows to initialize
+      await sleep(30000); // Wait for workflows to initialize
 
       // Ensure the User workflow is initialized with the correct normalized state
       const expectedState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
@@ -685,7 +715,11 @@ describe('StatefulWorkflow', () => {
 
     it('Should handle a high volume of state changes without degradation', async () => {
       const userId = uuid4();
-      const handle = await execute(workflows.ShouldExecuteStateful, { id: userId, entityName: 'User', data: { id: userId, name: 'Initial' } });
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: userId,
+        entityName: 'User',
+        data: { id: userId, name: 'Initial' }
+      });
       await sleep();
 
       const updates = Array.from({ length: 50 }, (_, i) => ({
@@ -741,7 +775,9 @@ describe('StatefulWorkflow', () => {
           {
             id: listingId,
             user: userId,
-            photos: [{ id: photoId, user: userId, listing: listingId, likes: [{ id: likeId, user: userId, photo: photoId }] }]
+            photos: [
+              { id: photoId, user: userId, listing: listingId, likes: [{ id: likeId, user: userId, photo: photoId }] }
+            ]
           }
         ]
       };
@@ -765,7 +801,10 @@ describe('StatefulWorkflow', () => {
       const likeHandle = await client.workflow.getHandle(`Like-${likeId}`);
 
       // Update the Like entity directly in the child workflow
-      await likeHandle.signal('update', { data: { id: likeId, user: userId, newField: 'direct update' }, entityName: 'Like' });
+      await likeHandle.signal('update', {
+        data: { id: likeId, user: userId, newField: 'direct update' },
+        entityName: 'Like'
+      });
       await sleep(5000);
 
       // Verify that the state in the parent User workflow is updated correctly

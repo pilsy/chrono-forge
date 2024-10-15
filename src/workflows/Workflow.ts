@@ -95,6 +95,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   @Property({ set: false })
   protected continueAsNew = false;
 
+  @Property()
+  protected shouldContinueAsNew = false;
+
   @Property({ set: false })
   protected maxIterations = 10000;
 
@@ -132,6 +135,17 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
   }
 
+  @Signal()
+  public cancel(): void {
+    if (this.status !== 'cancelling') {
+      this.log.info(`Cancelling...`);
+      this.status = 'cancelling';
+      this.forwardSignalToChildren('cancel');
+    } else {
+      this.log.info(`Already cancelling...`);
+    }
+  }
+
   constructor(
     protected args: P,
     protected options: O
@@ -144,12 +158,10 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   @Property()
   protected conditionTimeout: Duration = '1 day';
 
-  protected condition(): boolean {
-    return this.pendingIteration || this.pendingUpdate || this.status !== 'running';
-  }
-
   protected isInTerminalState(): boolean {
-    return ['complete', 'completed', 'cancel', 'cancelling', 'cancelled', 'error', 'erroring', 'errored'].includes(this.status);
+    return ['complete', 'completed', 'cancel', 'cancelling', 'cancelled', 'error', 'erroring', 'errored'].includes(
+      this.status
+    );
   }
 
   protected abstract execute(...args: unknown[]): Promise<unknown>;
@@ -157,8 +169,15 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   protected async executeWorkflow(...args: unknown[]): Promise<any> {
     return new Promise(async (resolve, reject) => {
       try {
-        while (this.iteration <= this.maxIterations && !this.isInTerminalState()) {
-          await workflow.condition(this.condition.bind(this), this.conditionTimeout);
+        while (this.iteration <= this.maxIterations) {
+          await workflow.condition(
+            () =>
+              (typeof (this as any).condition === 'function' && (this as any).condition()) ||
+              this.pendingIteration ||
+              this.pendingUpdate ||
+              this.status !== 'running',
+            this.conditionTimeout
+          );
 
           if (this.status === 'paused') {
             await this.emitAsync('paused');
@@ -176,7 +195,11 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
             return this.status !== 'errored' ? resolve(this.result) : reject(this.result);
           }
 
-          if (++this.iteration >= this.maxIterations) {
+          if (
+            ++this.iteration >= this.maxIterations ||
+            workflow.workflowInfo().continueAsNewSuggested ||
+            this.shouldContinueAsNew
+          ) {
             await this.handleMaxIterations();
             break;
           }
@@ -204,7 +227,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     if (continueAsNewMethod && typeof (this as any)[continueAsNewMethod] === 'function') {
       return await (this as any)[continueAsNewMethod]();
     } else {
-      throw new Error(`No method decorated with @ContinueAsNew found in ${this.constructor.name}. Cannot continue as new.`);
+      throw new Error(
+        `No method decorated with @ContinueAsNew found in ${this.constructor.name}. Cannot continue as new.`
+      );
     }
   }
 
@@ -230,7 +255,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       });
       reject(err);
     } else {
-      this.log.error(`Handling non-cancellation error: ${err?.message}`);
+      this.log.error(`Handling non-cancellation error: ${err?.message} \n ${err.stack}`);
       reject(err);
     }
   }
@@ -284,7 +309,8 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
     const eventHandlers = this.collectMetadata(EVENTS_METADATA_KEY, this.constructor.prototype);
     eventHandlers.forEach((handler: { event: string; method: string }) => {
-      this.on(handler.event, async (...args: any[]) => {
+      // @ts-ignore
+      (/^state/.test(handler.event) ? this.stateManager : this).on(handler.event, async (...args: any[]) => {
         if (typeof (this as any)[handler.method] === 'function') {
           return await (this as any)[handler.method](...args);
         }
