@@ -84,9 +84,9 @@ export const deleteNormalizedEntity = (entityId: string, entityName: string): En
 });
 
 export const deleteEntities = (entities: string[], entityName: string): EntityAction =>
-  deleteNormalizedEntities({ [entityName]: entities });
+  deleteNormalizedEntities(normalizeEntities(entities, entityName));
 
-export const deleteNormalizedEntities = (entities: Record<string, string[]>): EntityAction => ({
+export const deleteNormalizedEntities = (entities: EntitiesState): EntityAction => ({
   type: DELETE_ENTITIES,
   entities
 });
@@ -199,12 +199,12 @@ export const handleUpdateEntities = (
   }, {} as IndexableSpec<EntitiesState>);
 };
 
-export const handleDeleteEntities = (entities: Record<string, string[]>): Spec<EntitiesState> =>
+export const handleDeleteEntities = (entities: EntitiesState): Spec<EntitiesState> =>
   Object.fromEntries(
     Object.entries(entities).map(([entityName, entityIds]) => [
       entityName,
       {
-        $unset: entityIds instanceof Array ? entityIds : [entityIds]
+        $unset: Object.keys(entityIds)
       }
     ])
   );
@@ -241,7 +241,11 @@ export function reducer(state: EntitiesState = initialState, action: EntityActio
       return update(
         state,
         handleDeleteEntities({
-          [action.entityName]: [action.entityId]
+          [action.entityName]: {
+            [action.entityId]: {
+              id: action.entityId
+            }
+          }
         })
       );
     }

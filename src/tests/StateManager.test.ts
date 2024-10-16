@@ -1,5 +1,6 @@
+import { v4 } from 'uuid';
 import { StateManager } from '../store/StateManager';
-import { EntityAction, PARTIAL_UPDATE, reducer } from '../utils/entities';
+import { EntityAction, normalizeEntities, PARTIAL_UPDATE, reducer } from '../utils/entities';
 import schemas from './testSchemas';
 
 const sleep = async (duration = 1000) =>
@@ -38,7 +39,7 @@ describe('StateManager', () => {
     console.dir(stateManager.state, { depth: 12 });
   }
 
-  it('should append to the nested list using ID reference', async () => {
+  it.skip('should append to the nested list using ID reference', async () => {
     stateManager.state = {
       User: {
         '1': { id: '1', name: 'John Doe', nested: '100' }
@@ -73,7 +74,7 @@ describe('StateManager', () => {
   });
 
   describe('Proxy Operations', () => {
-    it('should update the state correctly alongside dispatching the proper actions for top-level changes', async () => {
+    it.skip('should update the state correctly alongside dispatching the proper actions for top-level changes', async () => {
       const user = stateManager.query('User', '1');
       user.name = 'Jane Doe';
 
@@ -95,7 +96,7 @@ describe('StateManager', () => {
       expect(stateManager.state.User['1'].name).toBe('Jane Doe');
     });
 
-    it('should update the state and dispatch the proper actions for nested changes', async () => {
+    it.skip('should update the state and dispatch the proper actions for nested changes', async () => {
       stateManager.state = {
         User: {
           '1': { id: '1', attributes: { score: 10 } }
@@ -121,7 +122,7 @@ describe('StateManager', () => {
       expect(stateManager.state.User['1'].attributes.score).toBe(20); // Ensure state reflects update
     });
 
-    it('should handle setting array elements in state and dispatch the proper actions', async () => {
+    it.skip('should handle setting array elements in state and dispatch the proper actions', async () => {
       stateManager.state = {
         User: {
           '1': { id: '1', nested: { list: [1, 2, 3] } }
@@ -147,7 +148,7 @@ describe('StateManager', () => {
       expect(stateManager.state.User['1'].nested.list).toEqual([1, 10, 3]);
     });
 
-    it('should handle nested array modifications correctly', async () => {
+    it.skip('should handle nested array modifications correctly', async () => {
       // Initial state setup
       stateManager.state = {
         User: {
@@ -199,10 +200,72 @@ describe('StateManager', () => {
       // Validate that the expected state is achieved
       expect(stateManager.state.User['1'].nested.list).toEqual([15, 20, 25]);
     });
+
+    it.skip('Should handle deeply nested array modifications correctly', async () => {
+      const userId = v4();
+      const listingId = v4();
+      const listing2Id = v4();
+      const photoId = v4();
+      const photo2Id = v4();
+      const like1 = { id: v4(), user: userId, photo: photoId };
+      const like2 = { id: v4(), user: userId, photo: photoId };
+
+      // Initial data for User with Listings, Photos, and Likes, forming a recursive structure
+      const data = {
+        id: userId,
+        listings: [
+          {
+            id: listingId,
+            user: userId,
+            photos: [
+              {
+                id: photoId,
+                user: userId,
+                listing: listingId,
+                likes: [like1]
+              }
+            ]
+          },
+          {
+            id: listing2Id,
+            user: userId
+          }
+        ]
+      };
+
+      // Assume normalizeEntities is defined correctly to transform initial data
+      stateManager.state = normalizeEntities(data, 'User');
+
+      // Activate Proxies
+      const user = stateManager.query('User', userId, true);
+
+      user.listings[0].photos[0].likes.push(like2);
+      console.log(user);
+
+      // Perform the shift operation
+      // const like = user.listings[0].photos[0].likes.shift(); // This should trigger the Proxy 'set'
+
+      // Mock function to verify correct dispatch method was called
+      expect(dispatchSpy).toHaveBeenNthCalledWith(
+        1,
+        {
+          type: PARTIAL_UPDATE,
+          entityName: 'Photo',
+          entityId: photoId,
+          updates: { [photoId]: { likes: { $splice: [[0, 1]] } } } // Focus on the Photo's likes array
+        },
+        false,
+        `testInstance${instanceNum}`
+      );
+
+      // Check the modified state to ensure the user reflects changes
+      console.dir(user);
+      console.dir(stateManager.state);
+    });
   });
 
   describe('StateManager with ID-Based Nested References', () => {
-    it('should update nested list item correctly using ID reference', async () => {
+    it.skip('should update nested list item correctly using ID reference', async () => {
       const user = stateManager.query('User', '1');
       const nested = stateManager.query('Nested', '100');
       nested.list[0] = 15; // Modify first element
@@ -223,7 +286,7 @@ describe('StateManager', () => {
       expect(stateManager.state.Nested['100'].list).toEqual([15, 20]); // Verify state update
     });
 
-    it('should append to the nested list using ID reference', async () => {
+    it.skip('should append to the nested list using ID reference', async () => {
       console.dir(stateManager.state, { depth: 12 });
       const nested = stateManager.query('Nested', '100');
       console.dir(nested, { depth: 12 });

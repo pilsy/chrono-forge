@@ -698,21 +698,19 @@ export abstract class StatefulWorkflow<
     }
   }
 
-  private async unsubscribeHandle(handle: workflow.ExternalWorkflowHandle | workflow.ChildWorkflowHandle<any>) {
+  private async cancelChildWorkflow(handle: workflow.ChildWorkflowHandle<any>) {
     this.log.trace(
       `[${this.constructor.name}]:${this.entityName}:${this.id}: Successfully Unsubscribing from workflow handle: ${handle.workflowId}`
     );
     try {
-      if ('cancel' in handle && typeof handle.cancel === 'function') {
+      if (handle) {
         this.log.info(`[${this.constructor.name}]:${this.entityName}:${this.id}: Cancelling child workflow...`);
-        await handle.cancel();
+        const extHandle = workflow.getExternalWorkflowHandle(handle.workflowId);
+        await extHandle.cancel();
       }
-      this.log.debug(
-        `[${this.constructor.name}]:${this.entityName}:${this.id}: Successfully unsubscribed from workflow handle: ${handle.workflowId}`
-      );
     } catch (error: any) {
       this.log.error(
-        `[${this.constructor.name}]:${this.entityName}:${this.id}: Failed to unsubscribe from workflow handle: ${(error as Error).message}`
+        `[${this.constructor.name}]:${this.entityName}:${this.id}: Failed to cancel from workflow handle: ${(error as Error).message}`
       );
     }
   }
@@ -1093,7 +1091,8 @@ export abstract class StatefulWorkflow<
   }
 
   private isItemDeleted(differences: DetailedDiff, entityName: string, itemId: string): boolean {
-    return Boolean(get(differences, `deleted.${entityName}.${itemId}`));
+    const deletedEntitiesByName = get(differences, `deleted.${entityName}`, {});
+    return Object.keys(deletedEntitiesByName).includes(itemId);
   }
 
   private async handleDeletion(config: ManagedPath, compositeId: string): Promise<void> {
@@ -1103,13 +1102,8 @@ export abstract class StatefulWorkflow<
 
     const handle = this.handles[workflowId];
     if (handle) {
-      await this.unsubscribeHandle(handle);
-    } else {
-      await this.unsubscribe({ workflowId, signalName: 'update', selector: '*' });
+      await this.cancelChildWorkflow(handle);
     }
-
-    // Optionally handle any deletion event emission here if necessary
-    // Example: this.emit(`child:${config.entityName}:deleted`, { ...config, workflowId });
   }
 
   protected async processArrayItems(
@@ -1165,42 +1159,6 @@ export abstract class StatefulWorkflow<
       } else if (!existingHandle && !isEmpty(differences)) {
         await this.startChildWorkflow(config, newItem, newState);
       }
-    }
-  }
-
-  protected async processDeletion(id: string, config: ManagedPath): Promise<void> {
-    try {
-      const workflowId = `${config.entityName}-${id}`;
-      const handle = this.handles[workflowId];
-
-      if (!handle) {
-        this.log.warn(
-          `[${this.constructor.name}]:${this.entityName}:${this.id} Child handle not found for workflowId: ${workflowId}. Skipping child workflow cancellation.`
-        );
-        return;
-      }
-
-      if (this.ancestorWorkflowIds.includes(workflowId)) {
-        this.log.warn(
-          `[${this.constructor.name}]:${this.entityName}:${this.id} Circular stop detected for workflowId: ${workflowId}. Skipping child workflow cancellation.`
-        );
-        return;
-      }
-
-      await workflow.condition(() => workflow.allHandlersFinished(), '15 seconds');
-
-      if (handle && 'cancel' in handle) {
-        this.log.debug(
-          `[${this.constructor.name}]:${this.entityName}:${this.id}.Cancelling child workflow for ${config.entityName} with ID ${id}`
-        );
-        await (handle as any).cancel();
-      }
-      this.emit(`child:${config.entityName}:deleted`, { ...config, workflowId, id });
-      delete this.handles[workflowId];
-    } catch (err) {
-      this.log.error(
-        `[${this.constructor.name}]:${this.entityName}:${this.id} Failed to cancel child workflow: ${(err as Error).message}`
-      );
     }
   }
 

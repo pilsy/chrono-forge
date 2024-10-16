@@ -46,10 +46,10 @@ describe('SchemaManager Functionality', () => {
     stateManager.state = cloneDeep(initialUserState);
   });
 
-  afterEach(() => {
-    stateManager.clear();
-    stateManager.state = {}; // Reset state after each test
-  });
+  // afterEach(() => {
+  //   stateManager.clear();
+  //   stateManager.state = {}; // Reset state after each test
+  // });
 
   // Basic State Management Tests
   it('should add a new entity correctly', async () => {

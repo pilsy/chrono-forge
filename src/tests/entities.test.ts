@@ -261,7 +261,9 @@ describe('Entities', () => {
       const state = { User: { '1': { items: 'notAnArray' } } };
       const entities = { User: { '1': { items: [1, 2] } } };
 
-      expect(() => handleUpdateEntities(state, entities, '$push')).toThrow("Expected array for $push operation on key '1.items'");
+      expect(() => handleUpdateEntities(state, entities, '$push')).toThrow(
+        "Expected array for $push operation on key '1.items'"
+      );
     });
 
     it('should apply a complex transformation function to entities', () => {
@@ -351,9 +353,9 @@ describe('Entities', () => {
 
   describe('handleDeleteEntities', () => {
     it('should create a spec to delete entities', () => {
-      const entities = { entities: ['1', '2'] };
+      const entities = { User: { '1': { id: '1' }, '2': { id: '2' } } };
       const expectedSpec = {
-        entities: { $unset: ['1', '2'] }
+        User: { $unset: ['1', '2'] }
       };
       expect(handleDeleteEntities(entities)).toEqual(expectedSpec);
     });
@@ -413,7 +415,16 @@ describe('Entities', () => {
     });
 
     it('should handle DELETE_ENTITIES', () => {
-      const User = { User: ['1', '2'] };
+      const User = {
+        User: {
+          '1': {
+            id: '1'
+          },
+          '2': {
+            id: '2'
+          }
+        }
+      };
       const action = deleteNormalizedEntities(User);
       const newState = reducer(state, action);
 

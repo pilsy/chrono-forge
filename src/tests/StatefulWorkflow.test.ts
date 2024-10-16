@@ -631,7 +631,7 @@ describe('StatefulWorkflow', () => {
       expect(childState.Listing).toHaveProperty(data.listings[0].id);
     });
 
-    it.skip('Should cancel children upon parent cancellation', async () => {
+    it('Should cancel children upon parent cancellation', async () => {
       const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Test Listing' }] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
       await sleep();

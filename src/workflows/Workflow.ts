@@ -245,9 +245,8 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
           workflow.condition(() => workflow.allHandlersFinished()),
           ...Object.values(this.handles).map(async (handle: workflow.ChildWorkflowHandle<any>) => {
             try {
-              if ('cancel' in handle && typeof handle.cancel === 'function') {
-                await handle.cancel();
-              }
+              const extHandle = workflow.getExternalWorkflowHandle(handle.workflowId);
+              await extHandle.cancel();
             } catch (e) {}
           })
         ]);
