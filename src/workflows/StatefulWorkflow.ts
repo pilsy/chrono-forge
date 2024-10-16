@@ -1254,11 +1254,13 @@ export abstract class StatefulWorkflow<
             this.log.info(
               `[${this.constructor.name}]:${this.entityName}:${this.id} Restarting child workflow due to cancellation.`
             );
-            await this.startChildWorkflow(
-              config,
-              this.stateManager.query(String(entityName), compositeId, false),
-              this.state
-            );
+            try {
+              await this.startChildWorkflow(
+                config,
+                this.stateManager.query(String(entityName), compositeId, false),
+                this.state
+              );
+            } catch {}
           } else {
             this.emit(`child:${entityName}:errored`, { ...config, workflowId, error });
           }
