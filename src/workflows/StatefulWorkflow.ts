@@ -752,7 +752,7 @@ export abstract class StatefulWorkflow<
         await this.emit('created', created, newState, previousState, changeOrigins);
       } else if (updated) {
         await this.emit('updated', updated, newState, previousState, changeOrigins);
-      } else if (deleted) {
+      } else if (deleted && this.isItemDeleted(differences, this.entityName, this.id)) {
         if (!(await this.emit('deleted', deleted, newState, previousState, changeOrigins))) {
           this.status = 'cancelled';
         }
