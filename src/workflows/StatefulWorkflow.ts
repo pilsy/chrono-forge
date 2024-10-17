@@ -1329,7 +1329,7 @@ export abstract class StatefulWorkflow<
         data,
         entityName: config.entityName,
         strategy: '$merge',
-        sync: false,
+        sync: true,
         changeOrigin: workflow.workflowInfo().workflowId
       });
       this.emit(`child:${entityName}:updated`, {
