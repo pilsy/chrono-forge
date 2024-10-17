@@ -600,7 +600,7 @@ export abstract class StatefulWorkflow<
 
           if (
             ++this.iteration >= this.maxIterations ||
-            workflow.workflowInfo().continueAsNewSuggested ||
+            (workflow.workflowInfo().continueAsNewSuggested && workflow.workflowInfo().historySize >= 20971520) ||
             this.shouldContinueAsNew
           ) {
             await this.handleMaxIterations();
@@ -767,14 +767,10 @@ export abstract class StatefulWorkflow<
     }
   }
 
-  @After('processState')
   @Mutex('memo')
+  @After('processState')
   protected async upsertStateToMemo(): Promise<void> {
     this.log.info(`[StatefulWorkflow]: Saving state to memo: ${workflow.workflowInfo().workflowId}`);
-
-    if (!this.pendingIteration) {
-      return;
-    }
 
     // Get the current memo state
     const memo = (workflow.workflowInfo().memo || {}) as { state?: EntitiesState; iteration?: number; status?: string };
@@ -1091,8 +1087,15 @@ export abstract class StatefulWorkflow<
   }
 
   private isItemDeleted(differences: DetailedDiff, entityName: string, itemId: string): boolean {
-    const deletedEntitiesByName = get(differences, `deleted.${entityName}`, {});
-    return Object.keys(deletedEntitiesByName).includes(itemId);
+    const deletedEntitiesByName: any = get(differences, `deleted.${entityName}`, {});
+    const keyExistsInDeletions = Object.keys(deletedEntitiesByName).includes(itemId);
+
+    if (keyExistsInDeletions) {
+      if (deletedEntitiesByName[itemId] === undefined) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private async handleDeletion(config: ManagedPath, compositeId: string): Promise<void> {

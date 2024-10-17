@@ -197,7 +197,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
           if (
             ++this.iteration >= this.maxIterations ||
-            workflow.workflowInfo().continueAsNewSuggested ||
+            (workflow.workflowInfo().continueAsNewSuggested && workflow.workflowInfo().historySize >= 20971520) ||
             this.shouldContinueAsNew
           ) {
             await this.handleMaxIterations();
