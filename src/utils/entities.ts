@@ -83,7 +83,7 @@ export const deleteNormalizedEntity = (entityId: string, entityName: string): En
   entityName
 });
 
-export const deleteEntities = (entities: string[], entityName: string): EntityAction =>
+export const deleteEntities = (entities: EntitiesState, entityName: string): EntityAction =>
   deleteNormalizedEntities(normalizeEntities(entities, entityName));
 
 export const deleteNormalizedEntities = (entities: EntitiesState): EntityAction => ({
