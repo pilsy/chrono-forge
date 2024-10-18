@@ -92,6 +92,7 @@ export type StatefulWorkflowOptions = {
   schemaName?: string;
   autoStart?: boolean;
   apiUrl?: string;
+  workflowType?: string;
 };
 
 export type PendingChange = {
@@ -120,6 +121,7 @@ export abstract class StatefulWorkflow<
   O extends StatefulWorkflowOptions = StatefulWorkflowOptions
 > extends Workflow<P, O> {
   private _actionsBound: boolean = false;
+  private _memoProperties: Record<string, any> = {};
   protected actionRunning: boolean = false;
   protected continueAsNew: boolean = true;
   protected stateManager!: StateManager;
@@ -527,20 +529,24 @@ export abstract class StatefulWorkflow<
     this.pendingUpdate = true;
     this.pendingIteration = true;
 
-    const memo = (workflow.workflowInfo().memo || {}) as { state?: EntitiesState; iteration?: number; status?: string };
-    if (memo?.iteration !== undefined && memo?.iteration < this.maxIterations) {
-      this.iteration = Number(memo.iteration);
+    const memo = unflatten(workflow.workflowInfo()?.memo ?? {}) as {
+      state?: EntitiesState;
+      iteration?: number;
+      status?: string;
+      properties: Record<string, any>;
+    };
+
+    if (!isEmpty(memo?.properties ?? {})) {
+      this._memoProperties = memo.properties;
+    }
+
+    if (memo?.state && !isEmpty(memo.state)) {
+      this.stateManager.state = memo.state;
     }
 
     if (this.params?.state && !isEmpty(this.params?.state)) {
       this.stateManager.dispatch(
         updateNormalizedEntities(this.params.state, '$set'),
-        false,
-        workflow.workflowInfo().workflowId
-      );
-    } else if (memo?.state && !isEmpty(memo.state)) {
-      this.stateManager.dispatch(
-        updateNormalizedEntities(unflatten(memo.state), '$set'),
         false,
         workflow.workflowInfo().workflowId
       );
@@ -550,7 +556,7 @@ export abstract class StatefulWorkflow<
       this.stateManager.dispatch(updateEntity(this.params.data, this.entityName), false);
     }
 
-    this.status = memo?.status ?? this.params?.status ?? 'running';
+    this.status = this.params?.status ?? 'running';
 
     this.apiUrl = this.params?.apiUrl || options?.apiUrl;
     this.apiToken = this.params?.apiToken;
@@ -1354,12 +1360,18 @@ export abstract class StatefulWorkflow<
   protected async handleMaxIterations(): Promise<void> {
     // @ts-ignore
     const continueAsNewMethod = (this as any)._continueAsNewMethod || this.continueAsNewHandler;
+    await workflow.condition(() => workflow.allHandlersFinished(), '30 seconds');
 
     if (continueAsNewMethod && typeof (this as any)[continueAsNewMethod] === 'function') {
       return await (this as any)[continueAsNewMethod]();
     } else {
-      // @ts-ignore
-      await workflow.continueAsNew<typeof this>({
+      const continueFn = workflow.makeContinueAsNewFunc({
+        workflowType: String(this.options.workflowType),
+        memo: workflow.workflowInfo().memo,
+        searchAttributes: workflow.workflowInfo().searchAttributes
+      });
+
+      await continueFn({
         state: this.state,
         status: this.status,
         subscriptions: this.subscriptions,
@@ -1417,13 +1429,31 @@ export abstract class StatefulWorkflow<
     await super.bindProperties();
 
     const properties = this.collectMetadata(PROPERTY_METADATA_KEY, this.constructor.prototype);
-    properties.forEach(({ propertyKey, path }) => {
-      if (typeof path === 'string') {
+
+    properties.forEach(({ propertyKey, path, memo }) => {
+      const isStringPath = typeof path === 'string';
+      const useMemoPath = memo === true && isStringPath;
+      const memoKeyString = typeof memo === 'string';
+
+      const resolveMemoKey = () => (useMemoPath ? path : memo);
+
+      if (isStringPath || memoKeyString) {
         Object.defineProperty(this, propertyKey, {
-          get: () => dottie.get(this.data || {}, path),
+          get: () => {
+            if (useMemoPath || memoKeyString) {
+              return this._memoProperties ? this._memoProperties[resolveMemoKey()] : undefined;
+            } else if (isStringPath) {
+              return dottie.get(this.data || {}, path);
+            }
+            return undefined;
+          },
           set: (value) => {
-            dottie.set(this.data || (this.data = {}), path, value);
-            // setWithProxy(this.data || (this.data = {}), path, value);
+            if (useMemoPath || memoKeyString) {
+              dottie.set(this._memoProperties, resolveMemoKey(), value);
+            }
+            if (isStringPath) {
+              dottie.set(this.data || (this.data = {}), path, value);
+            }
           },
           configurable: false,
           enumerable: true

@@ -1,30 +1,48 @@
 import { schema as normalizrSchema } from 'normalizr';
 import { SchemaManager } from '../store/SchemaManager';
+import { StateManager } from '../store/StateManager'; // Assuming the StateManager class is imported from here
+import { updateEntity } from './entities';
 
 export const limitRecursion = (
   entityId: string,
   entityName: string,
   entities: Record<string, any>,
-  visited: Map<string, number> = new Map(), // Track the depth at which entities are visited
-  depth: number = 0 // Track the current recursion depth
+  proxy: boolean | StateManager = false,
+  visited: Map<string, number> = new Map(),
+  depth: number = 0
 ): any => {
   const entity = entities[entityName]?.[entityId];
   if (!entity) {
-    return entityId; // Entity not found, return the id
+    return entityId;
   }
 
   const entityKey = `${entityName}:${entityId}`;
 
-  // If the entity has been visited at a shallower depth, return the id
   if (visited.has(entityKey) && visited.get(entityKey)! <= depth) {
     return entityId;
   }
-
-  // Mark this entity as visited at the current depth
   visited.set(entityKey, depth);
 
   const schema = SchemaManager.getInstance().getSchema(entityName);
-  const result: Record<string, any> = {};
+  let result: Record<string, any> = {};
+
+  if (proxy instanceof StateManager) {
+    const denormalized = result;
+    result = new Proxy(result, {
+      get(target, prop, receiver) {
+        if (prop === 'toJSON') {
+          return () => JSON.parse(JSON.stringify(target));
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+      set(target, prop, value) {
+        target[prop as string] = value;
+        proxy.dispatch(updateEntity(denormalized, entityName), false, proxy.instanceId);
+        // proxy.dispatch(entityName, entityId, { [prop as string]: value }); // Call the dispatch method of StateManager
+        return true;
+      }
+    });
+  }
 
   for (const key in entity) {
     if (Object.prototype.hasOwnProperty.call(entity, key)) {
@@ -34,11 +52,11 @@ export const limitRecursion = (
 
       if (relation) {
         if (Array.isArray(value)) {
-          result[key] = value.map(
-            (childId: string) => limitRecursion(childId, getEntityName(relation), entities, new Map(visited), depth + 1) // Increase depth for each recursion
+          result[key] = value.map((childId: string) =>
+            limitRecursion(childId, getEntityName(relation), entities, proxy, new Map(visited), depth + 1)
           );
         } else {
-          result[key] = limitRecursion(value, getEntityName(relation), entities, new Map(visited), depth + 1); // Increase depth for each object child
+          result[key] = limitRecursion(value, getEntityName(relation), entities, proxy, new Map(visited), depth + 1);
         }
       } else {
         result[key] = value;

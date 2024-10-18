@@ -19,9 +19,12 @@ import { get } from 'dottie';
 import { schema } from 'normalizr';
 
 export class StateManager extends EventEmitter {
-  private constructor(private instanceId: string) {
+  get instanceId() {
+    return this._instanceId;
+  }
+  private constructor(private _instanceId: string) {
     super();
-    this.instanceId = instanceId;
+    this._instanceId = _instanceId;
     this._state = {};
   }
 
@@ -67,7 +70,7 @@ export class StateManager extends EventEmitter {
     }
 
     if (sync) {
-      await this.processChanges([action], origins || Set<string>);
+      await this.processChanges([action], origins);
     } else {
       this._queue.push(action);
     }
@@ -139,6 +142,7 @@ export class StateManager extends EventEmitter {
 
     const cacheKey = `${entityName}.${id}`;
 
+    // Retrieve from cache if valid
     if (this.cache.has(cacheKey)) {
       const cachedEntry = this.cache.get(cacheKey)!;
       if (cachedEntry.lastState === this._state) {
@@ -156,300 +160,7 @@ export class StateManager extends EventEmitter {
 
     let result: any;
     if (denormalizeData) {
-      const denormalized = limitRecursion(id, entityName, this._state);
-      const handler = {
-        set: (target: any, prop: string | symbol, value: any) => {
-          if (target[prop] === value) {
-            return true;
-          }
-          target[prop] = value;
-          this.dispatch(updateEntity(denormalized, entityName), false, this.instanceId);
-          return true;
-        },
-        get: (target: any, prop: string | symbol) => {
-          if (prop === 'toJSON') {
-            return () => {
-              return JSON.parse(JSON.stringify(target)); // Deep copy to break proxy
-            };
-          }
-
-          const val = target[prop];
-          if (Array.isArray(val) || (typeof val === 'object' && val !== null)) {
-            return new Proxy(val, handler);
-          }
-          return val;
-        }
-      };
-      result = new Proxy(denormalized, handler);
-      this.cache.set(cacheKey, { data: result, lastState: this._state });
-      // const denormalized = JSON.parse(JSON.stringify(limitRecursion(id, entityName, this._state)));
-
-      // const createHandler = (entityName: string, entityId: string, parentPath: string[] = []) => ({
-      //   set: (target: any, prop: string | symbol, value: any): boolean => {
-      //     // Early exit if no change
-      //     if (Object.is(target[prop], value)) {
-      //       return true;
-      //     }
-
-      //     // Build the context for determining schema, paths, and other relevant information
-      //     const { currentSchema, propKey, currentPath, childKey, parentSchema, targetSchema, index } = buildContext(
-      //       target,
-      //       prop,
-      //       entityName,
-      //       parentPath
-      //     );
-
-      //     // Build updates for the given property based on the entity and schema
-      //     const updates = buildUpdates(target, prop, value, entityId, currentPath, targetSchema, parentSchema);
-
-      //     // Apply nested entity updates (e.g., add Like to Photo's likes array)
-      //     applyNestedEntityUpdates(targetSchema, value, target, prop, entityId, parentSchema);
-
-      //     // Only dispatch the partial update if updates are not empty
-      //     if (Object.keys(updates).length > 0) {
-      //       dispatchPartialUpdate(entityName, entityId, updates);
-      //     }
-
-      //     // Reflect the change in the original target object
-      //     Reflect.set(target, prop, value);
-
-      //     return true;
-      //   },
-
-      //   get: (target: any, prop: string | symbol) => {
-      //     // Custom `toJSON` method to handle JSON serialization
-      //     if (prop === 'toJSON') {
-      //       return () => JSON.parse(JSON.stringify(target));
-      //     }
-
-      //     // Navigate to the property and find its value, next path, and schema details
-      //     const { val, propKey, nextPath, nextEntityName } = navigateToProp(target, prop, entityName, parentPath);
-
-      //     // If the value is an object or an array, create a proxy to continue tracking changes
-      //     if (Array.isArray(val) || (typeof val === 'object' && val !== null)) {
-      //       return new Proxy(val, createHandler(nextEntityName, entityId, nextPath));
-      //     }
-
-      //     // Return the value directly if it's not an object or array
-      //     return val;
-      //   }
-      // });
-
-      // const buildContext = (target: any, prop: string | symbol, entityName: string, parentPath: string[]) => {
-      //   const targetIsArray = Array.isArray(target);
-      //   const schemaManager = SchemaManager.getInstance();
-      //   const currentSchema = schemaManager.getSchema(entityName);
-      //   const propKey = String(prop);
-      //   const currentPath = [...parentPath, propKey];
-      //   if (targetIsArray && propKey === 'length') {
-      //     currentPath.pop();
-      //   }
-
-      //   let targetSchema!: schema.Entity & { _idAttribute: string };
-      //   let parentSchema!: schema.Entity & { _idAttribute: string };
-      //   let targetPath;
-      //   let schemaPath = [];
-      //   let childKey = propKey;
-
-      //   // Traverse the parent path to find the exact targetSchema
-      //   let traversedSchema: schema.Entity & { _idAttribute: string; schema: any } = currentSchema as any;
-
-      //   for (const segment of parentPath.slice(0, -2)) {
-      //     if (traversedSchema && traversedSchema.schema) {
-      //       if (isNaN(parseInt(segment)) && traversedSchema.schema[segment]) {
-      //         traversedSchema = Array.isArray(traversedSchema.schema[segment])
-      //           ? traversedSchema.schema[segment][0]
-      //           : traversedSchema.schema[segment];
-      //       }
-      //     }
-      //   }
-
-      //   // Now get the child schema based on property key in the target context
-      //   if (traversedSchema && traversedSchema.schema && traversedSchema.schema[parentPath[parentPath.length - 1]]) {
-      //     parentSchema = traversedSchema;
-      //     targetSchema = traversedSchema.schema[parentPath[parentPath.length - 1]];
-      //     targetSchema = Array.isArray(targetSchema) ? targetSchema[0] : targetSchema;
-      //   }
-
-      //   const index = Array.isArray(target) ? Number(prop) : -1;
-
-      //   return { currentSchema, propKey, currentPath, childKey, parentSchema, targetSchema, index };
-      // };
-
-      // const buildUpdates: any = (
-      //   target: any,
-      //   prop: string | symbol,
-      //   value: any,
-      //   entityId: string,
-      //   currentPath: string[],
-      //   targetSchema: schema.Entity & { _idAttribute: string },
-      //   parentSchema: schema.Entity & { _idAttribute: string }
-      // ) => {
-      //   const updates: Record<string, any> = {};
-
-      //   if (Array.isArray(target)) {
-      //     const mappedValue = mapValueToSchema(value, targetSchema);
-      //     if (value[targetSchema._idAttribute] === mappedValue) {
-      //       // @ts-ignore Use the property name instead of array index when updating arrays
-      //       const path = buildNestedPath(
-      //         // @ts-ignore
-      //         [...currentPath.slice(-2, 1), !isNaN(parseInt(prop)) ? currentPath[currentPath.length - 2] : prop],
-      //         {
-      //           $push: [mappedValue] // Ensure the correct property name is used
-      //         }
-      //       );
-      //       updates[entityId] = path;
-      //     } else {
-      //       console.warn('Mapped value is undefined. Skipping update.');
-      //     }
-
-      //     // Dispatch partial update for the parent entity
-      //     dispatchPartialUpdate(getEntityName(parentSchema), entityId, updates);
-      //   }
-
-      //   return updates; // Return the updates to avoid empty dispatches
-      // };
-
-      // const handleArrayOperations = (
-      //   target: any,
-      //   prop: string | symbol,
-      //   value: any,
-      //   entityId: string,
-      //   currentPath: string[],
-      //   targetSchema: schema.Entity & { _idAttribute: string },
-      //   index: number,
-      //   updates: Record<string, any>
-      // ) => {
-      //   const pathPrefix = currentPath.slice(0, -1); // Path excluding index
-      //   const mappedValue = mapValueToSchema(value, targetSchema);
-
-      //   if (index === target.length) {
-      //     // Handle array push operation (new item)
-      //     updates[entityId] = buildNestedPath(pathPrefix, {
-      //       $push: [mappedValue]
-      //     });
-      //   } else {
-      //     // Handle update of an existing array item
-      //     updates[entityId] = buildNestedPath(pathPrefix, {
-      //       $splice: [[index, 1, mappedValue]]
-      //     });
-      //   }
-
-      //   // Also dispatch an updateEntity action for the new entity
-      //   if (typeof value === 'object' && value !== null) {
-      //     this.dispatch(updateEntity(value, getEntityName(targetSchema)), false, this.instanceId);
-      //   }
-      // };
-
-      // const handleObjectOperations = (
-      //   value: any,
-      //   entityId: string,
-      //   currentPath: string[],
-      //   targetSchema: schema.Entity & { _idAttribute: string },
-      //   updates: Record<string, any>
-      // ) => {
-      //   const mappedValue = mapValueToSchema(value, targetSchema);
-      //   if (typeof mappedValue === 'object' && mappedValue !== null && !isEmpty(mappedValue)) {
-      //     updates[entityId] = buildNestedPath(currentPath, {
-      //       $merge: mappedValue
-      //     });
-      //   } else {
-      //     updates[entityId] = buildNestedPath(currentPath, {
-      //       $set: mappedValue
-      //     });
-      //   }
-      // };
-
-      // const mapValueToSchema = (value: any, targetSchema: any) => {
-      //   if (targetSchema && targetSchema._idAttribute) {
-      //     const { _idAttribute } = targetSchema;
-      //     return Array.isArray(value)
-      //       ? value.map((item) => (typeof item === 'object' ? item[_idAttribute] || item : item))
-      //       : typeof value === 'object'
-      //         ? value[_idAttribute] || value
-      //         : value;
-      //   }
-      //   return value;
-      // };
-
-      // const applyNestedEntityUpdates = (
-      //   targetSchema: schema.Entity & { _idAttribute: string },
-      //   value: any,
-      //   target: any,
-      //   prop: string | symbol,
-      //   parentId: string,
-      //   parentSchema: schema.Entity & { _idAttribute: string }
-      // ) => {
-      //   if (targetSchema && value !== undefined && value !== null) {
-      //     const entityName = getEntityName(targetSchema);
-      //     const entityId = typeof value === 'object' ? value[targetSchema._idAttribute] : value;
-
-      //     // Ensure entityId is defined before pushing
-      //     if (entityId) {
-      //       const updates = {
-      //         [parentId]: {
-      //           [prop]: {
-      //             $push: [entityId] // Ensure the correct property (e.g., likes) is used, not an array index
-      //           }
-      //         }
-      //       };
-
-      //       // Update the parent entity (e.g., Photo.likes)
-      //       // dispatchPartialUpdate(getEntityName(parentSchema), parentId, updates);
-
-      //       // Upsert the nested entity (e.g., Like)
-      //       this.dispatch(updateEntity(value, entityName), false, this.instanceId);
-      //     } else {
-      //       console.warn('Entity ID is undefined. Skipping nested entity update.');
-      //     }
-      //   }
-      // };
-
-      // const dispatchPartialUpdate = (entityName: string, entityId: string, updates: Record<string, any>) => {
-      //   // Only dispatch if updates are not empty
-      //   if (updates && Object.keys(updates).length > 0) {
-      //     // Check for existing partial updates to avoid duplicates
-      //     const existingUpdate = this.queue.find(
-      //       (action: any) =>
-      //         action.type === PARTIAL_UPDATE && action.entityName === entityName && action.entityId === entityId
-      //     );
-
-      //     if (existingUpdate) {
-      //       // Merge updates if the same entity is already queued
-      //       existingUpdate.updates = {
-      //         ...existingUpdate.updates,
-      //         ...updates
-      //       };
-      //     } else {
-      //       // Dispatch a new partial update for the entity
-      //       this.dispatch(
-      //         {
-      //           type: PARTIAL_UPDATE,
-      //           entityName,
-      //           entityId,
-      //           updates
-      //         },
-      //         false,
-      //         this.instanceId
-      //       );
-      //     }
-      //   }
-      // };
-
-      // const navigateToProp = (target: any, prop: string | symbol, entityName: string, parentPath: string[]) => {
-      //   const val = Reflect.get(target, prop);
-      //   const propKey = String(prop);
-      //   const nextPath = [...parentPath, propKey];
-      //   const nextEntityName = val && Array.isArray(target) && entityName ? getEntityName(entityName) : entityName;
-      //   return { val, propKey, nextPath, nextEntityName };
-      // };
-
-      // const buildNestedPath = (path: string[], value: any): any => {
-      //   return path.reduceRight((acc, key) => ({ [key]: acc }), value);
-      // };
-
-      // result = new Proxy(denormalized, createHandler(entityName, id));
-      // this.cache.set(cacheKey, { data: result, lastState: this._state });
+      this.cache.set(cacheKey, { data: limitRecursion(id, entityName, this._state, this), lastState: this._state });
     } else {
       result = entity;
     }

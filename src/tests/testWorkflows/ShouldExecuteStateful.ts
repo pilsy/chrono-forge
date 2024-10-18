@@ -43,6 +43,7 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
   @Property({ path: 'listings' })
   protected listings: any;
 
+  @Property({ memo: '' })
   @Action()
   protected testAction(action: TestAction) {
     if (!this.data) {

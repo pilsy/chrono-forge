@@ -32,7 +32,7 @@ export interface ChronoFlowOptions {
 export function ChronoFlow(options?: ChronoFlowOptions) {
   return function (constructor: any) {
     const { name: optionalName, taskQueue, tracerName = 'temporal_worker', ...extraOptions } = options || {};
-    const workflowName = optionalName || constructor.name;
+    const workflowName: string = optionalName || constructor.name;
 
     if (!(constructor.prototype instanceof Workflow)) {
       abstract class DynamicChronoFlow extends Workflow {
@@ -50,6 +50,7 @@ export function ChronoFlow(options?: ChronoFlowOptions) {
       'extraOptions',
       `
       return async function ${workflowName}(...args) {
+        extraOptions.workflowType = '${workflowName}';
         const instance = new constructor(args[0], extraOptions);
 
         try {

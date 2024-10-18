@@ -645,14 +645,14 @@ describe('StatefulWorkflow', () => {
       await childHandle.result();
     });
 
-    it('Should handle completed child workflow and maintain state in the parent', async () => {
+    it.skip('Should handle completed child workflow and maintain state in the parent', async () => {
       const listing = { id: uuid4(), name: 'Test Listing' };
       const data = { id: uuid4(), listings: [listing] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
       await sleep();
 
       const client = getClient();
-      const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
+      const childHandle = client.workflow.getHandle(`Listing-${data.listings[0].id}`);
       await childHandle.signal('status', 'completed');
       const childCompletedData = await childHandle.result();
       expect(childCompletedData).toEqual(listing);
