@@ -1,7 +1,9 @@
 import 'reflect-metadata';
 import { PROPERTY_METADATA_KEY, GETTER_METADATA_KEY, SETTER_METADATA_KEY } from './metadata';
 
-export const Property = (options: { get?: boolean | string; set?: boolean | string; path?: string } = {}) => {
+export const Property = (
+  options: { get?: boolean | string; set?: boolean | string; path?: string; memo?: string | boolean } = {}
+) => {
   return (target: any, propertyKey: string) => {
     const properties = Reflect.getOwnMetadata(PROPERTY_METADATA_KEY, target) || [];
     properties.push({
@@ -10,7 +12,8 @@ export const Property = (options: { get?: boolean | string; set?: boolean | stri
       get: options.get || options.get === undefined,
       set: options.set || options.set === undefined,
       queryName: propertyKey,
-      signalName: propertyKey
+      signalName: propertyKey,
+      memo: options.memo
     });
 
     Reflect.defineMetadata(PROPERTY_METADATA_KEY, properties, target);
