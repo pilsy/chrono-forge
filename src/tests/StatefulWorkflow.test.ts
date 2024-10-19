@@ -128,6 +128,10 @@ describe('StatefulWorkflow', () => {
       // const { state: memoState } = await getMemo(client.workflow.getHandle(`User-${data.id}`));
       // expect(memoState).toEqual(expectedInitial);
 
+      const initalExpectedMemo = { foo: true };
+      const initialMemoValue = await getMemo(handle);
+      expect(initialMemoValue).toEqual(initalExpectedMemo);
+
       // Update state
       const updatedData = { ...data, update: 'fromUpdate', listings: [{ ...data.listings[0], update: 'fromUpdate' }] };
       const expectedUpdated = normalizeEntities(updatedData, SchemaManager.getInstance().getSchema('User'));

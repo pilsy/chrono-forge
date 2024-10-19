@@ -801,7 +801,7 @@ export abstract class StatefulWorkflow<
     // Handle deletions: Check if any keys in the current memo state are missing in the new state
     for (const key of Object.keys(flattenedCurrentState)) {
       if (!(key in flattenedNewState)) {
-        unset(updatedMemo, `state_${key}`); // Unset keys that are no longer present
+        updatedMemo[`state_${key}`] = undefined;
         hasChanges = true;
       }
     }
@@ -1436,6 +1436,10 @@ export abstract class StatefulWorkflow<
       const memoKeyString = typeof memo === 'string';
 
       const resolveMemoKey = () => (useMemoPath ? path : memo);
+
+      if (memo || memoKeyString) {
+        this._memoProperties[propertyKey] = Reflect.get(this, propertyKey);
+      }
 
       if (isStringPath || memoKeyString) {
         Object.defineProperty(this, propertyKey, {

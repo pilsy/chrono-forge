@@ -160,7 +160,8 @@ export class StateManager extends EventEmitter {
 
     let result: any;
     if (denormalizeData) {
-      this.cache.set(cacheKey, { data: limitRecursion(id, entityName, this._state, this), lastState: this._state });
+      result = limitRecursion(id, entityName, this._state, this);
+      this.cache.set(cacheKey, { data: result, lastState: this._state });
     } else {
       result = entity;
     }

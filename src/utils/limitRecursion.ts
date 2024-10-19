@@ -3,7 +3,7 @@ import { SchemaManager } from '../store/SchemaManager';
 import { StateManager } from '../store/StateManager'; // Assuming the StateManager class is imported from here
 import { updateEntity } from './entities';
 
-export const limitRecursion = (
+export const limitRecursion: Function = (
   entityId: string,
   entityName: string,
   entities: Record<string, any>,
@@ -26,24 +26,6 @@ export const limitRecursion = (
   const schema = SchemaManager.getInstance().getSchema(entityName);
   let result: Record<string, any> = {};
 
-  if (proxy instanceof StateManager) {
-    const denormalized = result;
-    result = new Proxy(result, {
-      get(target, prop, receiver) {
-        if (prop === 'toJSON') {
-          return () => JSON.parse(JSON.stringify(target));
-        }
-        return Reflect.get(target, prop, receiver);
-      },
-      set(target, prop, value) {
-        target[prop as string] = value;
-        proxy.dispatch(updateEntity(denormalized, entityName), false, proxy.instanceId);
-        // proxy.dispatch(entityName, entityId, { [prop as string]: value }); // Call the dispatch method of StateManager
-        return true;
-      }
-    });
-  }
-
   for (const key in entity) {
     if (Object.prototype.hasOwnProperty.call(entity, key)) {
       const value = entity[key];
@@ -62,6 +44,23 @@ export const limitRecursion = (
         result[key] = value;
       }
     }
+  }
+
+  if (proxy instanceof StateManager) {
+    return new Proxy(result, {
+      get(target, prop, receiver) {
+        if (prop === 'toJSON') {
+          return () => JSON.parse(JSON.stringify(target));
+        }
+        return target[String(prop)];
+      },
+      set(target, prop, value) {
+        target[prop as string] = value;
+        proxy.dispatch(updateEntity(result, entityName), false, proxy.instanceId);
+        // proxy.dispatch(entityName, entityId, { [prop as string]: value }); // Call the dispatch method of StateManager
+        return true;
+      }
+    });
   }
 
   return result;
