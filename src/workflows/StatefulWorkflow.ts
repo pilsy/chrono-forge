@@ -779,7 +779,12 @@ export abstract class StatefulWorkflow<
     this.log.info(`[StatefulWorkflow]: Saving state to memo: ${workflow.workflowInfo().workflowId}`);
 
     // Get the current memo state
-    const memo = (workflow.workflowInfo().memo || {}) as { state?: EntitiesState; iteration?: number; status?: string };
+    const memo = (workflow.workflowInfo().memo || {}) as {
+      state?: EntitiesState;
+      iteration?: number;
+      status?: string;
+      properties: Record<string, any>;
+    };
     const currentState = memo.state || {};
 
     // Flatten the new state and current memo state
@@ -801,8 +806,9 @@ export abstract class StatefulWorkflow<
     // Handle deletions: Check if any keys in the current memo state are missing in the new state
     for (const key of Object.keys(flattenedCurrentState)) {
       if (!(key in flattenedNewState)) {
-        updatedMemo[`state_${key}`] = undefined;
-        hasChanges = true;
+        unset(updatedMemo, `state_${key}`);
+        // updatedMemo[`state_${key}`] = undefined;
+        // hasChanges = true;
       }
     }
 
@@ -811,6 +817,7 @@ export abstract class StatefulWorkflow<
       workflow.upsertMemo({
         // ...memo, // Preserve iteration and status
         ...updatedMemo, // Apply only the updated keys
+        properties: this._memoProperties,
         iteration: this.iteration,
         status: this.status,
         lastUpdated: new Date().toISOString()

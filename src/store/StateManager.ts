@@ -142,7 +142,6 @@ export class StateManager extends EventEmitter {
 
     const cacheKey = `${entityName}.${id}`;
 
-    // Retrieve from cache if valid
     if (this.cache.has(cacheKey)) {
       const cachedEntry = this.cache.get(cacheKey)!;
       if (cachedEntry.lastState === this._state) {
@@ -160,8 +159,35 @@ export class StateManager extends EventEmitter {
 
     let result: any;
     if (denormalizeData) {
-      result = limitRecursion(id, entityName, this._state, this);
+      const denormalized = limitRecursion(id, entityName, this._state);
+      const handler = {
+        set: (target: any, prop: string | symbol, value: any) => {
+          if (target[prop] === value) {
+            return true;
+          }
+          target[prop] = value;
+          this.dispatch(updateEntity(denormalized, entityName), false, this.instanceId);
+          return true;
+        },
+        get: (target: any, prop: string | symbol) => {
+          if (prop === 'toJSON') {
+            return () => {
+              return JSON.parse(JSON.stringify(target)); // Deep copy to break proxy
+            };
+          }
+
+          const val = target[prop];
+          if (Array.isArray(val) || (typeof val === 'object' && val !== null)) {
+            return new Proxy(val, handler);
+          }
+          return val;
+        }
+      };
+      result = new Proxy(denormalized, handler);
       this.cache.set(cacheKey, { data: result, lastState: this._state });
+
+      // result = limitRecursion(id, entityName, this._state, this);
+      // this.cache.set(cacheKey, { data: result, lastState: this._state });
     } else {
       result = entity;
     }
