@@ -785,11 +785,10 @@ export abstract class StatefulWorkflow<
       status?: string;
       properties: Record<string, any>;
     };
-    const currentState = memo.state || {};
 
     // Flatten the new state and current memo state
-    const flattenedNewState = flatten(this.state);
-    const flattenedCurrentState = flatten(currentState);
+    const flattenedNewState = flatten({ state: this.state, properties: this._memoProperties });
+    const flattenedCurrentState: any = memo || {};
 
     const updatedMemo: Record<string, any> = {};
     let hasChanges = false;
@@ -798,7 +797,7 @@ export abstract class StatefulWorkflow<
     for (const [key, newValue] of Object.entries(flattenedNewState)) {
       const currentValue = flattenedCurrentState[key];
       if (!isEqual(newValue, currentValue)) {
-        updatedMemo[`state_${key}`] = newValue; // Only update the modified key
+        updatedMemo[key] = newValue; // Only update the modified key
         hasChanges = true;
       }
     }
@@ -806,7 +805,7 @@ export abstract class StatefulWorkflow<
     // Handle deletions: Check if any keys in the current memo state are missing in the new state
     for (const key of Object.keys(flattenedCurrentState)) {
       if (!(key in flattenedNewState)) {
-        unset(updatedMemo, `state_${key}`);
+        unset(updatedMemo, key);
         // updatedMemo[`state_${key}`] = undefined;
         // hasChanges = true;
       }
@@ -1250,6 +1249,9 @@ export abstract class StatefulWorkflow<
           }
         ],
         retry: {
+          initialInterval: 1000 * 1,
+          maximumInterval: 1000 * 20,
+          backoffCoefficient: 1.5,
           maximumAttempts: 30
         }
       };

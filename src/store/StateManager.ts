@@ -111,6 +111,32 @@ export class StateManager extends EventEmitter {
   ): void {
     const changedPaths = ['added', 'updated', 'deleted'] as const;
 
+    const emitMatchingEvents = (event: string, details: object) => {
+      // Emit the exact event if there are listeners
+      if (this.listenerCount(event) > 0) {
+        this.emit(event, details);
+      }
+
+      // Emit for wildcard listeners
+      const [entityName, eventIdAndType] = event.split('.');
+      const [eventId, eventType] = eventIdAndType.split(':');
+
+      // Create wildcard patterns
+      const wildcardPatterns = [
+        `${entityName}.*:${eventType}`, // EntityName.*:changeType
+        `*.*:${eventType}`, // *.*:changeType
+        `${entityName}.${eventId}:*`, // EntityName.entityId:*
+        '*.*:*' // *.*:*
+      ];
+
+      // Emit for any wildcard patterns that have listeners
+      wildcardPatterns.forEach((pattern) => {
+        if (this.listenerCount(pattern) > 0) {
+          this.emit(pattern, details);
+        }
+      });
+    };
+
     changedPaths.forEach((changeType) => {
       const entities = differences[changeType];
       if (!entities || typeof entities !== 'object') return;
@@ -121,17 +147,21 @@ export class StateManager extends EventEmitter {
         Object.keys(entityChanges).forEach((entityId) => {
           const eventName = `${entityName}.${entityId}:${changeType}`;
 
+          // Avoid emitting events for the originating instance
           if (origins.includes(this.instanceId)) {
             return;
           }
 
-          if (this.listenerCount(eventName) > 0) {
-            this.emit(eventName, { newState, previousState, changes: entityChanges[entityId], origins });
-          }
+          // Create the event details
+          const eventDetails = { newState, previousState, changeType, changes: entityChanges[entityId], origins };
+
+          // Emit all relevant events, including those for wildcard patterns
+          emitMatchingEvents(eventName, eventDetails);
         });
       });
     });
 
+    // Emit a general 'stateChange' event with the complete activity summary
     this.emit('stateChange', { newState, previousState, differences, changeOrigins: origins });
   }
 

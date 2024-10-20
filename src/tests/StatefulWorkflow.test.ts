@@ -128,8 +128,8 @@ describe('StatefulWorkflow', () => {
       // const { state: memoState } = await getMemo(client.workflow.getHandle(`User-${data.id}`));
       // expect(memoState).toEqual(expectedInitial);
 
-      const initalExpectedMemo = { foo: true };
-      const initialMemoValue = await getMemo(handle);
+      const initalExpectedMemo = state;
+      const { state: initialMemoValue } = await getMemo(handle);
       expect(initialMemoValue).toEqual(initalExpectedMemo);
 
       // Update state
@@ -141,6 +141,10 @@ describe('StatefulWorkflow', () => {
 
       const updatedState = await handle.query('state');
       expect(updatedState).toEqual(expectedUpdated);
+
+      const updatedExpectedMemo = expectedUpdated;
+      const { state: updatedMemoValue } = await getMemo(handle);
+      expect(updatedMemoValue).toEqual(updatedExpectedMemo);
 
       // Verify child workflow state
       const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
@@ -197,7 +201,7 @@ describe('StatefulWorkflow', () => {
         data,
         entityName: 'User'
       });
-      await sleep();
+      await sleep(5000);
 
       const updatedState = await handle.query('state');
       expect(updatedState).toEqual(expectedUpdatedState);

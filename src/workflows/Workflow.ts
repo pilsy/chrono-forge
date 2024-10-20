@@ -310,11 +310,14 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     const eventHandlers = this.collectMetadata(EVENTS_METADATA_KEY, this.constructor.prototype);
     eventHandlers.forEach((handler: { event: string; method: string }) => {
       // @ts-ignore
-      (/^state/.test(handler.event) ? this.stateManager : this).on(handler.event, async (...args: any[]) => {
-        if (typeof (this as any)[handler.method] === 'function') {
-          return await (this as any)[handler.method](...args);
+      (/^state/.test(handler.event) ? this.stateManager : this).on(
+        handler.event.replace(/^state\:/, ''),
+        async (...args: any[]) => {
+          if (typeof (this as any)[handler.method] === 'function') {
+            return await (this as any)[handler.method](...args);
+          }
         }
-      });
+      );
     });
 
     this._eventsBound = true;
