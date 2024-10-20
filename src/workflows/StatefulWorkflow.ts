@@ -7,7 +7,8 @@ import {
   updateNormalizedEntities,
   deleteNormalizedEntities,
   deleteEntities,
-  updateEntity
+  updateEntity,
+  EntityAction
 } from '../utils/entities';
 import { DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
@@ -102,6 +103,7 @@ export type PendingChange = {
   strategy?: '$set' | '$merge';
   changeOrigin?: string;
   sync?: boolean;
+  action?: EntityAction;
 };
 
 export interface ActionMetadata {
@@ -631,51 +633,152 @@ export abstract class StatefulWorkflow<
     });
   }
 
+  /**
+   * Updates the state of an entity within the system with the given data and updates. This function
+   * ensures that changes are dispatched appropriately, either as part of a specific `action` or
+   * through a direct update of normalized entities.
+   *
+   * @param {Object} parameters An object containing all parameters required to perform the update.
+   * @param {Record<string, any>} [parameters.data]
+   *   Optional. A record containing the raw data to be normalized and used for the update. The data structure
+   *   should match the expected schema for the entity being updated.
+   * @param {any} [parameters.updates]
+   *   Optional. Pre-normalized update data for directly updating the entity's state. If not provided,
+   *   and if `data` is specified, `data` will be normalized to create updates.
+   * @param {string} parameters.entityName
+   *   The name of the entity for which the state update is being applied. This is used to fetch and use the
+   *   correct schema for normalization if `data` is provided.
+   * @param {any} [parameters.action]
+   *   Optional. An action object that encapsulates specific state changes or commands to be dispatched directly.
+   *   If provided, the function prioritizes dispatching this action.
+   * @param {string} [parameters.strategy='$merge']
+   *   Optional. The strategy used when merging updates into the current state. Defaults to '$merge' which
+   *   merges new data into existing state.
+   * @param {any} [parameters.changeOrigin]
+   *   Optional. Indicates the origin of the changes, such as user input or automated system process. This
+   *   can be used for logging or conditional logic during dispatch.
+   * @param {boolean} [parameters.sync=true]
+   *   Optional. A boolean flag indicating whether the state change should be synchronous. Defaults to `true`,
+   *   meaning operations are synchronous by default.
+   *
+   * @returns {void}
+   *   This method does not return a value but will log errors or trace information to facilitate debugging.
+   *
+   * @throws Will log an error if both `data` and `updates` are invalid or cannot be processed.
+   *
+   * @example
+   * // Example usage:
+   * update({
+   *   data: { id: 1, name: 'John Doe' },
+   *   entityName: 'User',
+   *   strategy: '$replace',
+   *   changeOrigin: 'client',
+   *   sync: false
+   * });
+   *
+   * @remark
+   *   Ensure that either `data` or `updates` are provided. If neither can be normalised or used,
+   *   the method logs an error indicating the failure if no action is supplied.
+   */
   @Signal()
   public update({
     data,
     updates,
     entityName,
+    action,
     strategy = '$merge',
     changeOrigin,
     sync = true
   }: PendingChange & { data?: Record<string, any> }): void {
     this.log.trace(
-      `[${this.constructor.name}]:${this.entityName}:${this.id}.update(${JSON.stringify({ data, updates, entityName, changeOrigin }, null, 2)})`
+      `[${this.constructor.name}]:${this.entityName}:${this.id}.update(${JSON.stringify({ data, action, updates, entityName, changeOrigin }, null, 2)})`
     );
 
-    if (data !== null && !isEmpty(data)) {
-      updates = normalizeEntities(
-        data,
-        entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName)
-      );
-    }
-    if (updates) {
-      this.stateManager.dispatch(updateNormalizedEntities(updates, strategy), sync, changeOrigin);
+    if (action) {
+      this.stateManager.dispatch(action, sync, changeOrigin);
     } else {
-      this.log.error(`Invalid Update: ${JSON.stringify(data, null, 2)}, \n${JSON.stringify(updates, null, 2)}`);
+      if (data !== null && !isEmpty(data)) {
+        updates = normalizeEntities(
+          data,
+          entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName)
+        );
+      }
+      if (updates) {
+        this.stateManager.dispatch(updateNormalizedEntities(updates, strategy), sync, changeOrigin);
+      } else {
+        this.log.error(`Invalid Update: ${JSON.stringify(data, null, 2)}, \n${JSON.stringify(updates, null, 2)}`);
+      }
     }
   }
 
+  /**
+   * Deletes entries of a specified entity type from the state, based on given data or predefined deletions.
+   * This function facilitates the removal of entities by dispatching the appropriate delete action after
+   * optionally normalizing the input data.
+   *
+   * @param {Object} parameters An object containing all parameters required to perform the deletion.
+   * @param {Record<string, any>} [parameters.data]
+   *   Optional. A record containing the raw data that specifies the entities to be deleted. This data will
+   *   be normalized according to the entity's schema if provided.
+   * @param {any} [parameters.deletions]
+   *   Optional. Pre-normalized deletion data that directly specifies which entities should be removed.
+   *   If not provided, and if `data` is specified, `data` will be normalized to infer deletions.
+   * @param {any} [parameters.action]
+   *   Optional. An action object that encapsulates specific state changes or commands to be dispatched directly.
+   *   If provided, the function prioritizes dispatching this action.
+   * @param {string} parameters.entityName
+   *   The name of the entity type from which the specified entries should be deleted. This is crucial for
+   *   ensuring that the correct schema is used for normalization if `data` is supplied.
+   * @param {any} [parameters.changeOrigin]
+   *   Optional. An identifier for the origin of the delete request, such as user action or internal mechanic,
+   *   used for logging or conditional logic during dispatch.
+   * @param {boolean} [parameters.sync=true]
+   *   Optional. A boolean indicating whether the deletion operation should be synchronous. Defaults to `true`,
+   *   which implies synchronous operations.
+   *
+   * @returns {void}
+   *   This method does not return a value but logs errors or trace information to help diagnose issues.
+   *
+   * @throws Will log an error if both `data` and `deletions` are invalid or cannot be processed.
+   *
+   * @example
+   * // Example usage:
+   * delete({
+   *   data: { id: 2 },
+   *   entityName: 'User',
+   *   changeOrigin: 'admin',
+   *   sync: true
+   * });
+   *
+   * @remark
+   *   Ensure that either `data` or `deletions` are provided. If neither can be normalised or used,
+   *   the method logs an error indicating the failure if no action is supplied.
+   */
   @Signal()
   public delete({
     data,
+    action,
     deletions,
     entityName,
     changeOrigin,
     sync = true
   }: PendingChange & { data?: Record<string, any> }): void {
     this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.delete`);
-    if (!isEmpty(data)) {
-      deletions = normalizeEntities(
-        data,
-        entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName)
-      );
-    }
-    if (deletions) {
-      this.stateManager.dispatch(deleteNormalizedEntities(deletions), sync, changeOrigin);
+
+    if (action) {
+      this.stateManager.dispatch(action, sync, changeOrigin);
     } else {
-      this.log.error(`Invalid Delete: ${JSON.stringify(data, null, 2)}, \n${JSON.stringify(deletions, null, 2)}`);
+      if (!isEmpty(data)) {
+        deletions = normalizeEntities(
+          data,
+          entityName === this.entityName ? this.schema : SchemaManager.getInstance().getSchema(entityName)
+        );
+      }
+      if (deletions) {
+        this.stateManager.dispatch(deleteNormalizedEntities(deletions), sync, changeOrigin);
+      } else {
+        this.log.error(`Invalid Delete: ${JSON.stringify(data, null, 2)}, \n${JSON.stringify(deletions, null, 2)}`);
+      }
     }
   }
 
@@ -721,6 +824,7 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  @Mutex('processState')
   @Before('execute')
   protected async processState(): Promise<void> {
     if (this.actionRunning) {
