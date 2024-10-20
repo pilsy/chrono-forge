@@ -15,7 +15,7 @@ export function Debounce(ms: number): MethodDecorator {
       // If there's an existing scope, cancel it
       if (currentScope !== null) {
         cancelling = true;
-        currentScope.cancel();
+        await currentScope.cancel(); // Ensure cancellation happens before proceeding
       }
 
       // Update the last call time and arguments
@@ -29,12 +29,16 @@ export function Debounce(ms: number): MethodDecorator {
 
           // Recalculate the effective delay in a loop to accommodate multiple rapid calls
           let effectiveDelay;
-          while ((effectiveDelay = ms - (Date.now() - lastCallTime)) > 0) {
-            await sleep(Math.min(effectiveDelay, ms)); // Sleep for the remaining time or handle longer sleeps in chunks.
-          }
+          do {
+            effectiveDelay = ms - (Date.now() - lastCallTime);
+            if (effectiveDelay > 0) {
+              await sleep(Math.min(effectiveDelay, ms)); // Sleep for the remaining time or handle longer sleeps in chunks
+            }
+          } while (effectiveDelay > 0);
 
           // Once the sleep completes, clear the current scope
           currentScope = null;
+          cancelling = false; // Reset the cancelling flag
 
           // Execute the original method with the latest arguments
           return await originalMethod.apply(this, lastArgs);
@@ -42,8 +46,6 @@ export function Debounce(ms: number): MethodDecorator {
       } catch (e) {
         // Suppress cancellation error only if it's a Temporal cancellation
         if (isCancellation(e)) {
-          // Handle workflow-specific cancellation logic here if needed
-          // Reset cancelling flag
           if (currentScope && currentScope.consideredCancelled) {
             cancelling = false;
           }
