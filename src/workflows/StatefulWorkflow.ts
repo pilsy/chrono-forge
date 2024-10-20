@@ -778,7 +778,6 @@ export abstract class StatefulWorkflow<
   protected async upsertStateToMemo(): Promise<void> {
     this.log.info(`[StatefulWorkflow]: Saving state to memo: ${workflow.workflowInfo().workflowId}`);
 
-    // Get the current memo state
     const memo = (workflow.workflowInfo().memo || {}) as {
       state?: EntitiesState;
       iteration?: number;
@@ -786,37 +785,29 @@ export abstract class StatefulWorkflow<
       properties: Record<string, any>;
     };
 
-    // Flatten the new state and current memo state
     const flattenedNewState = flatten({ state: this.state, properties: this._memoProperties });
     const flattenedCurrentState: any = memo || {};
 
     const updatedMemo: Record<string, any> = {};
     let hasChanges = false;
 
-    // Upsert changes or additions
     for (const [key, newValue] of Object.entries(flattenedNewState)) {
       const currentValue = flattenedCurrentState[key];
       if (!isEqual(newValue, currentValue)) {
-        updatedMemo[key] = newValue; // Only update the modified key
+        updatedMemo[key] = newValue;
         hasChanges = true;
       }
     }
 
-    // Handle deletions: Check if any keys in the current memo state are missing in the new state
     for (const key of Object.keys(flattenedCurrentState)) {
       if (!(key in flattenedNewState)) {
-        unset(updatedMemo, key);
-        // updatedMemo[`state_${key}`] = undefined;
-        // hasChanges = true;
+        updatedMemo[key] = undefined;
       }
     }
 
-    // If there are changes, upsert the updated memo with only the modified keys
     if (hasChanges) {
       workflow.upsertMemo({
-        // ...memo, // Preserve iteration and status
-        ...updatedMemo, // Apply only the updated keys
-        properties: this._memoProperties,
+        ...updatedMemo,
         iteration: this.iteration,
         status: this.status,
         lastUpdated: new Date().toISOString()
