@@ -1,7 +1,7 @@
 import { isObject } from 'lodash';
 import { map, chain, toPairs, fromPairs } from 'ramda';
 
-export function flatten(nestedObject: Record<string, unknown>, maxDepth = 4): Record<string, any> {
+export function flatten(nestedObject: Record<string, unknown>, maxDepth = 3): Record<string, any> {
   // @ts-ignore
   const traverse = (obj_, depth = 1) =>
     chain(
