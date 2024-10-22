@@ -608,7 +608,8 @@ export abstract class StatefulWorkflow<
 
           if (
             ++this.iteration >= this.maxIterations ||
-            (workflow.workflowInfo().continueAsNewSuggested && workflow.workflowInfo().historySize >= 41943040) ||
+            workflow.workflowInfo().historyLength >= this.maxIterations ||
+            (workflow.workflowInfo().continueAsNewSuggested && workflow.workflowInfo().historySize >= 25000000) ||
             this.shouldContinueAsNew
           ) {
             await this.handleMaxIterations();

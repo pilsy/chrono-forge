@@ -114,6 +114,26 @@ describe('StatefulWorkflow', () => {
     });
   });
 
+  describe('@Debounce() decorator', () => {
+    it('Should debounce properly', async () => {
+      const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Awesome test listing' }] };
+      const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
+      const expectedInitial = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
+      await sleep();
+
+      const state = await handle.query('state');
+      expect(state).toEqual(expectedInitial);
+
+      const counter = await handle.query('counter');
+      expect(counter).toBe(0);
+
+      await handle.signal('incrementNumberTest');
+      await sleep(15000);
+
+      expect(await handle.query('counter')).toBe(1);
+    });
+  });
+
   describe('State Update Mechanisms', () => {
     it('Should update state and child workflow and maintain state in parent and child correctly', async () => {
       const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Awesome test listing' }] };

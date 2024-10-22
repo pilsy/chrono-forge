@@ -2,8 +2,8 @@ import { ChronoFlow } from '../../workflows';
 import { ManagedPaths, StatefulWorkflow } from '../../workflows/StatefulWorkflow';
 import { User, Listing } from '../testSchemas';
 import { trace } from '@opentelemetry/api';
-import { condition } from '@temporalio/workflow';
-import { Action, On, Property } from '../../decorators';
+import { condition, sleep } from '@temporalio/workflow';
+import { Action, Debounce, On, Property, Signal } from '../../decorators';
 
 export type TestAction = {
   actionId: string;
@@ -49,6 +49,23 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
       throw new Error(`There is no data available yet...`);
     }
     console.log(this.data);
+  }
+
+  @Property()
+  protected counter: number = 0;
+
+  @Signal()
+  public async incrementNumberTest() {
+    for (let i = 0; i < 10; i++) {
+      console.log('incrementNumberTest');
+      await sleep(10);
+      this.debounceTest();
+    }
+  }
+
+  @Debounce(1000)
+  private debounceTest() {
+    this.counter++;
   }
 
   async execute(params: any) {
