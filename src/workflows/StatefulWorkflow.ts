@@ -890,44 +890,24 @@ export abstract class StatefulWorkflow<
       properties: Record<string, any>;
     };
 
-    // Flatten the new state for comparison
     const flattenedNewState = flatten({ state: this.state, properties: this._memoProperties });
-    const flattenedCurrentState: any = flatten(memo) || {};
+    const flattenedCurrentState: any = memo || {};
 
     const updatedMemo: Record<string, any> = {};
     let hasChanges = false;
 
-    // Iterate through all keys in both new state and current state
     for (const [key, newValue] of Object.entries(flattenedNewState)) {
       const currentValue = flattenedCurrentState[key];
-
-      // If both values are objects, compare their keys individually
-      if (
-        typeof newValue === 'object' &&
-        newValue != null &&
-        typeof currentValue === 'object' &&
-        currentValue != null
-      ) {
-        for (const nestedKey of Object.keys({ ...newValue, ...currentValue })) {
-          if (!(nestedKey in newValue)) {
-            if (!updatedMemo[key]) updatedMemo[key] = {};
-            updatedMemo[key][nestedKey] = undefined;
-            hasChanges = true;
-          } else if (!(nestedKey in currentValue) || !isEqual(newValue[nestedKey], currentValue[nestedKey])) {
-            if (!updatedMemo[key]) updatedMemo[key] = {};
-            updatedMemo[key][nestedKey] = newValue[nestedKey];
-            hasChanges = true;
-          }
-        }
-      } else if (!isEqual(newValue, currentValue)) {
+      if (!isEqual(newValue, currentValue)) {
         updatedMemo[key] = newValue;
         hasChanges = true;
       }
     }
 
-    if (hasChanges) {
-      console.log('updatedMemo');
-      console.log(updatedMemo);
+    for (const key of Object.keys(flattenedCurrentState)) {
+      if (!(key in flattenedNewState)) {
+        updatedMemo[key] = undefined;
+      }
     }
 
     if (hasChanges) {
