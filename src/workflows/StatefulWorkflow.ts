@@ -6,7 +6,6 @@ import {
   EntitiesState,
   updateNormalizedEntities,
   deleteNormalizedEntities,
-  deleteEntities,
   updateEntity,
   EntityAction
 } from '../utils/entities';
@@ -24,15 +23,14 @@ import {
   ActionOptions,
   On,
   After,
-  Mutex,
-  Debounce
+  Mutex
 } from '../decorators';
 import { SchemaManager } from '../store/SchemaManager';
 import { StateManager } from '../store/StateManager';
 import { limitRecursion } from '../utils/limitRecursion';
 import { getCompositeKey } from '../utils/getCompositeKey';
 import { PROPERTY_METADATA_KEY } from '../decorators';
-import { UpdateHandlerOptions, Handler } from '@temporalio/workflow/lib/interfaces';
+import { UpdateHandlerOptions } from '@temporalio/workflow/lib/interfaces';
 import { HandlerUnfinishedPolicy } from '@temporalio/common';
 import { flatten } from '../utils/flatten';
 import { unflatten } from '../utils';
@@ -808,23 +806,6 @@ export abstract class StatefulWorkflow<
     }
   }
 
-  private async cancelChildWorkflow(handle: workflow.ChildWorkflowHandle<any>) {
-    this.log.trace(
-      `[${this.constructor.name}]:${this.entityName}:${this.id}: Successfully Unsubscribing from workflow handle: ${handle.workflowId}`
-    );
-    try {
-      if (handle) {
-        this.log.info(`[${this.constructor.name}]:${this.entityName}:${this.id}: Cancelling child workflow...`);
-        const extHandle = workflow.getExternalWorkflowHandle(handle.workflowId);
-        await extHandle.cancel();
-      }
-    } catch (error: any) {
-      this.log.error(
-        `[${this.constructor.name}]:${this.entityName}:${this.id}: Failed to cancel from workflow handle: ${(error as Error).message}`
-      );
-    }
-  }
-
   @Mutex('processState')
   @Before('execute')
   protected async processState(): Promise<void> {
@@ -1144,8 +1125,8 @@ export abstract class StatefulWorkflow<
     const oldData = limitRecursion(this.id, this.entityName, previousState);
 
     for (const [path, config] of Object.entries(this.managedPaths)) {
-      const currentValue = get(newData, config.path as string);
-      const previousValue = get(oldData, config.path as string);
+      const currentValue: any = get(newData, config.path as string);
+      const previousValue: any = get(oldData, config.path as string);
 
       if (Array.isArray(currentValue)) {
         await this.processArrayItems(newState, currentValue, config, differences, previousState, changeOrigins);
@@ -1153,7 +1134,24 @@ export abstract class StatefulWorkflow<
         await this.processItem(newState, currentValue, config, differences, previousState, changeOrigins, path);
       }
 
-      await this.processDeletions(previousValue, differences, config);
+      if (Array.isArray(previousValue)) {
+        for (const item of previousValue) {
+          const compositeId = Array.isArray(config.idAttribute)
+            ? getCompositeKey(item, config.idAttribute)
+            : item[config.idAttribute as string];
+
+          if (this.isItemDeleted(differences, String(config.entityName), compositeId)) {
+            this.log.debug(`Processing deleted item in ${config.entityName}`);
+            await this.handleDeletion(config, compositeId);
+          }
+        }
+      } else if (previousValue) {
+        const itemId = previousValue[config.idAttribute as string];
+        if (this.isItemDeleted(differences, String(config.entityName), itemId)) {
+          this.log.debug(`Processing deleted item in ${config.entityName}`);
+          await this.handleDeletion(config, itemId);
+        }
+      }
     }
   }
 
@@ -1173,27 +1171,6 @@ export abstract class StatefulWorkflow<
     await this.processSingleItem(newState, compositeId, config, differences, previousState, changeOrigins);
   }
 
-  private async processDeletions(previousValue: any, differences: DetailedDiff, config: ManagedPath): Promise<void> {
-    if (Array.isArray(previousValue)) {
-      for (const item of previousValue) {
-        const compositeId = Array.isArray(config.idAttribute)
-          ? getCompositeKey(item, config.idAttribute)
-          : item[config.idAttribute as string];
-
-        if (this.isItemDeleted(differences, String(config.entityName), compositeId)) {
-          this.log.debug(`Processing deleted item in ${config.entityName}`);
-          await this.handleDeletion(config, compositeId);
-        }
-      }
-    } else if (previousValue) {
-      const itemId = previousValue[config.idAttribute as string];
-      if (this.isItemDeleted(differences, String(config.entityName), itemId)) {
-        this.log.debug(`Processing deleted item in ${config.entityName}`);
-        await this.handleDeletion(config, itemId);
-      }
-    }
-  }
-
   private isItemDeleted(differences: DetailedDiff, entityName: string, itemId: string): boolean {
     const deletedEntitiesByName: any = get(differences, `deleted.${entityName}`, {});
     const keyExistsInDeletions = Object.keys(deletedEntitiesByName).includes(itemId);
@@ -1211,7 +1188,7 @@ export abstract class StatefulWorkflow<
       ? `${config.entityName}-${compositeId}-${this.id}`
       : `${config.entityName}-${compositeId}`;
 
-    const handle = this.handles[workflowId];
+    const handle = this.handles.get(workflowId);
     if (handle) {
       await this.cancelChildWorkflow(handle);
     }
@@ -1259,7 +1236,7 @@ export abstract class StatefulWorkflow<
       return;
     }
 
-    const existingHandle = this.handles[workflowId];
+    const existingHandle = this.handles.get(workflowId);
     const previousItem = get(previousState, `${config.entityName}.${compositeId}`, {});
     const newItem = get(newState, `${config.entityName}.${compositeId}`, {});
     const hasStateChanged = !isEqual(previousItem, newItem);
@@ -1355,9 +1332,10 @@ export abstract class StatefulWorkflow<
       this.log.trace(
         `[${this.constructor.name}]:${this.entityName}:${this.id}.startChildWorkflow( workflowType=${workflowType}, startPayload=${JSON.stringify(startPayload, null, 2)}\n)`
       );
-      this.handles[workflowId] = await workflow.startChild(String(workflowType), startPayload);
-      this.emit(`child:${entityName}:started`, { ...config, workflowId, data });
-      this.handles[workflowId]
+      const handle = await workflow.startChild(String(workflowType), startPayload);
+      this.handles.set(workflowId, handle);
+      this.emit(`child:${entityName}:started`, { ...config, workflowId, data, handle });
+      handle
         .result()
         .then((result) => this.emit(`child:${entityName}:completed`, { ...config, workflowId, result }))
         .catch(async (error) => {
@@ -1459,6 +1437,23 @@ export abstract class StatefulWorkflow<
           `[${this.constructor.name}]:${this.entityName}:${this.id} An unknown error occurred while signaling the child workflow`
         );
       }
+    }
+  }
+
+  protected async cancelChildWorkflow(handle: workflow.ChildWorkflowHandle<any>) {
+    this.log.trace(
+      `[${this.constructor.name}]:${this.entityName}:${this.id}: Successfully Unsubscribing from workflow handle: ${handle.workflowId}`
+    );
+    try {
+      if (handle) {
+        this.log.info(`[${this.constructor.name}]:${this.entityName}:${this.id}: Cancelling child workflow...`);
+        const extHandle = workflow.getExternalWorkflowHandle(handle.workflowId);
+        await extHandle.cancel();
+      }
+    } catch (error: any) {
+      this.log.error(
+        `[${this.constructor.name}]:${this.entityName}:${this.id}: Failed to cancel from workflow handle: ${(error as Error).message}`
+      );
     }
   }
 

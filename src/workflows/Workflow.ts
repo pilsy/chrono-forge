@@ -1,6 +1,5 @@
 import 'reflect-metadata';
 import * as workflow from '@temporalio/workflow';
-import { log, CancellationScope } from '@temporalio/workflow';
 import EventEmitter from 'eventemitter3';
 import {
   Property,
@@ -80,7 +79,8 @@ export function ChronoFlow(options?: ChronoFlowOptions) {
 }
 
 export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
-  protected handles: { [workflowId: string]: workflow.ChildWorkflowHandle<any> } = {};
+  // Change handles to a Map
+  protected handles: Map<string, workflow.ChildWorkflowHandle<any>> = new Map();
 
   private _hooksBound = false;
   private _eventsBound = false;
@@ -88,7 +88,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   private _queriesBound = false;
   private _propertiesBound = false;
 
-  protected log = log;
+  protected log = workflow.log;
   protected result: any;
   protected queryHandlers: { [key: string]: (...args: any[]) => any } = {};
   protected signalHandlers: { [key: string]: (args: any[]) => Promise<void> } = {};
@@ -244,7 +244,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       await workflow.CancellationScope.nonCancellable(async () => {
         await Promise.all([
           workflow.condition(() => workflow.allHandlersFinished()),
-          ...Object.values(this.handles).map(async (handle: workflow.ChildWorkflowHandle<any>) => {
+          ...Array.from(this.handles.values()).map(async (handle: workflow.ChildWorkflowHandle<any>) => {
             try {
               const extHandle = workflow.getExternalWorkflowHandle(handle.workflowId);
               await extHandle.cancel();
@@ -292,8 +292,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   }
 
   protected async forwardSignalToChildren(signalName: string, ...args: unknown[]): Promise<void> {
-    const childWorkflowHandles = Object.values(this.handles);
-    for (const handle of childWorkflowHandles) {
+    for (const handle of this.handles.values()) {
       try {
         await handle.signal(signalName, ...args);
       } catch (error: any) {

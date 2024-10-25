@@ -15,8 +15,10 @@ export function Debounce(ms: number): MethodDecorator {
         await CancellationScope.cancellable(async () => {
           currentScope = CancellationScope.current();
           await sleep(ms);
-
-          const result = await originalMethod.apply(this, args);
+          let result;
+          await CancellationScope.nonCancellable(async () => {
+            result = await originalMethod.apply(this, args);
+          });
           currentScope = null;
           return result;
         });
