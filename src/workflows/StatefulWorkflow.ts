@@ -31,7 +31,7 @@ import { limitRecursion } from '../utils/limitRecursion';
 import { getCompositeKey } from '../utils/getCompositeKey';
 import { PROPERTY_METADATA_KEY } from '../decorators';
 import { UpdateHandlerOptions } from '@temporalio/workflow/lib/interfaces';
-import { HandlerUnfinishedPolicy } from '@temporalio/common';
+import { Duration, HandlerUnfinishedPolicy } from '@temporalio/common';
 import { flatten } from '../utils/flatten';
 import { unflatten } from '../utils';
 
@@ -128,6 +128,8 @@ export abstract class StatefulWorkflow<
   protected schemaManager = SchemaManager.getInstance();
   protected iteration = 0;
   protected schema: Schema;
+
+  protected conditionTimeout?: Duration | undefined = undefined;
 
   /**
    * Determines whether data should be loaded in the workflow based on internal state.
@@ -579,7 +581,8 @@ export abstract class StatefulWorkflow<
               this.pendingUpdate ||
               !!this.pendingChanges.length ||
               this.status !== 'running',
-            this.conditionTimeout
+            // @ts-ignore
+            !this.conditionTimeout ? undefined : this.conditionTimeout
           );
 
           if (this.status === 'paused') {

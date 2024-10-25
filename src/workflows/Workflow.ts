@@ -157,7 +157,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   }
 
   @Property()
-  protected conditionTimeout: Duration = '1 day';
+  protected conditionTimeout?: Duration | undefined = undefined;
 
   protected isInTerminalState(): boolean {
     return ['complete', 'completed', 'cancel', 'cancelling', 'cancelled', 'error', 'erroring', 'errored'].includes(
@@ -177,7 +177,8 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
               this.pendingIteration ||
               this.pendingUpdate ||
               this.status !== 'running',
-            this.conditionTimeout
+            // @ts-ignore
+            !this.conditionTimeout ? undefined : this.conditionTimeout
           );
 
           if (this.status === 'paused') {
