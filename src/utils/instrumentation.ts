@@ -5,25 +5,16 @@ import { Span, Tracer, default as api } from '@opentelemetry/api';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import { W3CTraceContextPropagator, W3CBaggagePropagator, CompositePropagator } from '@opentelemetry/core';
-import { MeterProvider } from '@opentelemetry/sdk-metrics';
-import { PrometheusExporter } from '@opentelemetry/exporter-prometheus';
 import { registerInstrumentations } from '@opentelemetry/instrumentation';
 import { Resource } from '@opentelemetry/resources';
-import { NodeTracerProvider, TraceIdRatioBasedSampler } from '@opentelemetry/sdk-trace-node';
+import { AlwaysOnSampler, NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
-import { BatchSpanProcessor, SpanProcessor } from '@opentelemetry/tracing';
+import { BatchSpanProcessor } from '@opentelemetry/tracing';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
-import { ConsoleSpanExporter } from '@opentelemetry/sdk-trace-node';
-import { IORedisInstrumentation } from '@opentelemetry/instrumentation-ioredis';
-import { trace, context } from '@opentelemetry/api';
 import { ClientRequest, IncomingMessage, ServerResponse } from 'http';
-import { PerfHooksInstrumentation } from '@opentelemetry/instrumentation-perf-hooks';
-import { NodeSDK } from '@opentelemetry/sdk-node';
 
 import { logs } from '@opentelemetry/api-logs';
-import { LoggerProvider, BatchLogRecordProcessor, SimpleLogRecordProcessor, ConsoleLogRecordExporter } from '@opentelemetry/sdk-logs';
-import { OpenTelemetryTransportV3 } from '@opentelemetry/winston-transport';
-import { WinstonInstrumentation } from '@opentelemetry/instrumentation-winston';
+import { LoggerProvider, BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-grpc';
 import { logger } from './logger';
 
@@ -40,7 +31,7 @@ export type TracerDefinition = {
 
 export const tracers = new Map<string, TracerDefinition>();
 
-export function initTracer(serviceName: string, environmentName: string, url: string, prometheusPort?: number): TracerDefinition {
+export function initTracer(serviceName: string, environmentName: string, url: string): TracerDefinition {
   if (!contextManager) {
     contextManager = new AsyncHooksContextManager().enable();
     api.context.setGlobalContextManager(contextManager);
@@ -52,10 +43,8 @@ export function initTracer(serviceName: string, environmentName: string, url: st
     });
 
     const provider = new NodeTracerProvider({
-      resource
-      // sampler: environmentName !== "development"
-      //   ? new TraceIdRatioBasedSampler(0.1)
-      //   : undefined,
+      resource,
+      sampler: new AlwaysOnSampler()
     });
 
     const exporter = new OTLPTraceExporter({
@@ -67,19 +56,7 @@ export function initTracer(serviceName: string, environmentName: string, url: st
       new BatchSpanProcessor(exporter) // @ts-ignore
     );
 
-    // if (prometheusPort) {
-    //   const meterProvider = new MeterProvider({ resource }); // @ts-ignore
-    //   meterProvider.addMetricReader(
-    //     // @ts-ignore
-    //     new PrometheusExporter({
-    //       // @ts-ignore
-    //       port: prometheusPort
-    //     })
-    //   );
-    // }
-
     api.trace.setGlobalTracerProvider(provider);
-    // Set the global propagator to handle both trace context and baggage
     api.propagation.setGlobalPropagator(
       new CompositePropagator({
         propagators: [new W3CTraceContextPropagator(), new W3CBaggagePropagator()]
@@ -109,7 +86,7 @@ export function initTracer(serviceName: string, environmentName: string, url: st
             enabled: false
           },
           '@opentelemetry/instrumentation-dns': {
-            enabled: false
+            enabled: true
           },
           '@opentelemetry/instrumentation-http': {
             requestHook,
@@ -119,6 +96,9 @@ export function initTracer(serviceName: string, environmentName: string, url: st
             enabled: true
           },
           '@opentelemetry/instrumentation-winston': {
+            enabled: true
+          },
+          '@opentelemetry/instrumentation-ioredis': {
             enabled: true
           }
         })
