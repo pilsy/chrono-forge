@@ -6,7 +6,7 @@ import {
   deleteNormalizedEntity,
   updateNormalizedEntities,
   deleteNormalizedEntities
-} from '../utils/entities';
+} from '../store/entities';
 import { normalize } from 'normalizr';
 import { cloneDeep } from 'lodash';
 import StateManager from '../store/StateManager';

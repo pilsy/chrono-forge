@@ -8,7 +8,7 @@ import {
   deleteNormalizedEntities,
   updateEntity,
   EntityAction
-} from '../utils/entities';
+} from '../store/entities';
 import { DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
 import { isEmpty, isEqual, unset } from 'lodash';
@@ -1253,6 +1253,28 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  protected configureManagedPaths(
+    parentSchema: Schema & { schema?: { [key: string]: Schema & [{ _idAttribute: string; _key: string }] } }
+  ): void {
+    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.configureManagedPaths`);
+    if (!parentSchema.schema) {
+      throw new Error("The provided schema does not have 'schema' defined.");
+    }
+    const childSchemas = parentSchema.schema;
+    for (const [path, _schema] of Object.entries(childSchemas)) {
+      const schema = _schema instanceof Array ? _schema[0] : _schema;
+      this.managedPaths[path] = {
+        path,
+        idAttribute: schema._idAttribute,
+        workflowType: `${schema._key}Workflow`,
+        autoStart: typeof this.options?.autoStart === 'boolean' ? this.options?.autoStart : true,
+        entityName: schema._key,
+        isMany: _schema instanceof Array,
+        ...(this.managedPaths[path] || {})
+      };
+    }
+  }
+
   protected async startChildWorkflow(config: ManagedPath, state: any, newState: any): Promise<void> {
     try {
       const {
@@ -1506,28 +1528,6 @@ export abstract class StatefulWorkflow<
     }
   }
 
-  protected configureManagedPaths(
-    parentSchema: Schema & { schema?: { [key: string]: Schema & [{ _idAttribute: string; _key: string }] } }
-  ): void {
-    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.configureManagedPaths`);
-    if (!parentSchema.schema) {
-      throw new Error("The provided schema does not have 'schema' defined.");
-    }
-    const childSchemas = parentSchema.schema;
-    for (const [path, _schema] of Object.entries(childSchemas)) {
-      const schema = _schema instanceof Array ? _schema[0] : _schema;
-      this.managedPaths[path] = {
-        path,
-        idAttribute: schema._idAttribute,
-        workflowType: `${schema._key}Workflow`,
-        autoStart: typeof this.options?.autoStart === 'boolean' ? this.options?.autoStart : true,
-        entityName: schema._key,
-        isMany: _schema instanceof Array,
-        ...(this.managedPaths[path] || {})
-      };
-    }
-  }
-
   protected async bindProperties() {
     await super.bindProperties();
 
@@ -1589,7 +1589,7 @@ export abstract class StatefulWorkflow<
 
       workflow.setHandler(
         workflow.defineUpdate<any, any>(method),
-        (input: any) => this.runAction(methodName, input), // Adjust runAction call to pass methodName
+        (input: any) => this.runAction(methodName, input),
         updateOptions
       );
     }
@@ -1604,7 +1604,7 @@ export abstract class StatefulWorkflow<
     let error: any;
 
     try {
-      result = await (this[methodName] as (input: any) => any).call(this, input); // Use .call to ensure correct context
+      result = await (this[methodName] as (input: any) => any).call(this, input);
     } catch (err: any) {
       error = err;
       this.log.error(error);

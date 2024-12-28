@@ -22,9 +22,9 @@ import reducer, {
   updateEntity,
   handleUpdateEntities,
   handleDeleteEntities
-} from '../utils/entities';
+} from '../store/entities';
 
-import type { EntitiesState } from '../utils/entities';
+import type { EntitiesState } from '../store/entities';
 import schemas from './testSchemas';
 
 describe('Entities', () => {

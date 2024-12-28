@@ -1,5 +1,8 @@
 import { WorkflowInterceptorsFactory } from '@temporalio/workflow';
-import { OpenTelemetryInboundInterceptor, OpenTelemetryOutboundInterceptor } from '@temporalio/interceptors-opentelemetry/lib/workflow';
+import {
+  OpenTelemetryInboundInterceptor,
+  OpenTelemetryOutboundInterceptor
+} from '@temporalio/interceptors-opentelemetry/lib/workflow';
 
 export const interceptors: WorkflowInterceptorsFactory = () => ({
   inbound: [new OpenTelemetryInboundInterceptor()],
@@ -8,5 +11,4 @@ export const interceptors: WorkflowInterceptorsFactory = () => ({
 
 export * from './Workflow';
 export * from './StatefulWorkflow';
-export * from './ChatTagProcessorWorkflow';
-// export * from './StreamingChatWorkflow';
+// export * from './DSLInterpreter';

@@ -1,5 +1,5 @@
 import { ExternalWorkflowHandle } from '@temporalio/workflow';
-import { EntitiesState } from './entities';
+import { EntitiesState } from '../store/entities';
 import { limitRecursion } from './limitRecursion';
 import { unflatten } from './unflatten';
 import { WorkflowHandle } from '@temporalio/client';

@@ -9,7 +9,7 @@ import {
   PARTIAL_UPDATE,
   updateNormalizedEntity,
   deleteEntity
-} from '../utils/entities';
+} from '../store/entities';
 import { DetailedDiff, detailedDiff } from 'deep-object-diff';
 import { isEmpty, isObject } from 'lodash';
 import { getEntityName, limitRecursion } from '../utils/limitRecursion';

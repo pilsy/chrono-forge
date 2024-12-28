@@ -17,7 +17,7 @@ import {
   OpenTelemetryActivityInboundInterceptor,
   makeWorkflowExporter
 } from '@temporalio/interceptors-opentelemetry/lib/worker';
-import { normalizeEntities } from '../utils/entities';
+import { normalizeEntities } from '../store/entities';
 import { getExternalWorkflowHandle } from '@temporalio/workflow';
 import { cloneDeep } from 'lodash';
 import dottie, { get, set } from 'dottie';
@@ -659,18 +659,19 @@ describe('StatefulWorkflow', () => {
       expect(childState.Listing).toHaveProperty(data.listings[0].id);
     });
 
-    it.skip('Should cancel children upon parent cancellation', async () => {
+    it('Should cancel children upon parent cancellation', async () => {
       const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Test Listing' }] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
       await sleep();
 
       expect(await handle.query('data')).toEqual(data);
       await handle.cancel();
+      await sleep();
 
       const client = getClient();
       const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
-      await handle.cancel();
-      await childHandle.result();
+      const { status: childStatus } = await childHandle.describe();
+      expect(childStatus.name).toBe('CANCELLED');
     });
 
     it.skip('Should handle completed child workflow and maintain state in the parent', async () => {

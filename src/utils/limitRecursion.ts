@@ -1,7 +1,7 @@
 import { schema as normalizrSchema } from 'normalizr';
 import { SchemaManager } from '../store/SchemaManager';
 import { StateManager } from '../store/StateManager'; // Assuming the StateManager class is imported from here
-import { updateEntity } from './entities';
+import { updateEntity } from '../store/entities';
 
 export const limitRecursion: Function = (
   entityId: string,
