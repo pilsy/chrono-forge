@@ -119,6 +119,10 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     if (this.status !== 'paused') {
       this.log.info(`Pausing...`);
       this.status = 'paused';
+      workflow.upsertMemo({
+        status: this.status,
+        lastUpdated: new Date().toISOString()
+      });
       this.forwardSignalToChildren('pause');
     } else {
       this.log.info(`Already paused!`);
@@ -130,6 +134,10 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     if (this.status !== 'running') {
       this.log.info(`Resuming...`);
       this.status = 'running';
+      workflow.upsertMemo({
+        status: this.status,
+        lastUpdated: new Date().toISOString()
+      });
       this.forwardSignalToChildren('resume');
     } else {
       this.log.info(`Already running...`);
@@ -141,6 +149,10 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     if (this.status !== 'cancelling') {
       this.log.info(`Cancelling...`);
       this.status = 'cancelling';
+      workflow.upsertMemo({
+        status: this.status,
+        lastUpdated: new Date().toISOString()
+      });
       this.forwardSignalToChildren('cancel');
     } else {
       this.log.info(`Already cancelling...`);

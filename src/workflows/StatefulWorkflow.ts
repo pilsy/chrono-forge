@@ -618,11 +618,10 @@ export abstract class StatefulWorkflow<
           }
 
           if (!this.actionRunning) {
+            // Here we specifically want to always do another iteration loop if we are pendingUpdate
             if (this.pendingUpdate) {
               this.pendingUpdate = false;
-            }
-
-            if (this.pendingIteration) {
+            } else if (this.pendingIteration) {
               this.pendingIteration = false;
             }
           }
@@ -825,6 +824,7 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  @Mutex('stateChanged')
   protected async stateChanged({
     newState,
     previousState,
@@ -1244,7 +1244,7 @@ export abstract class StatefulWorkflow<
     const newItem = get(newState, `${config.entityName}.${compositeId}`, {});
     const hasStateChanged = !isEqual(previousItem, newItem);
 
-    if (hasStateChanged) {
+    if (hasStateChanged || !existingHandle) {
       if (existingHandle && 'result' in existingHandle) {
         await this.updateChildWorkflow(existingHandle as workflow.ChildWorkflowHandle<any>, newItem, newState, config);
       } else if (!existingHandle && !isEmpty(differences)) {
@@ -1524,7 +1524,7 @@ export abstract class StatefulWorkflow<
         updates = normalizeEntities(data, this.entityName);
       }
 
-      this.stateManager.dispatch(updateNormalizedEntities(updates, strategy), false);
+      await this.stateManager.dispatch(updateNormalizedEntities(updates, strategy), false);
     }
   }
 
