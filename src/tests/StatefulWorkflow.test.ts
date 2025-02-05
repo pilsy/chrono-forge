@@ -22,7 +22,7 @@ import { getExternalWorkflowHandle } from '@temporalio/workflow';
 import { cloneDeep } from 'lodash';
 import dottie, { get, set } from 'dottie';
 import { getExporter, getResource, getTracer } from '../utils/instrumentation';
-import { Photo } from './testSchemas';
+import { Photo } from './testAutoSchemas';
 import { getCompositeKey, getMemo, limitRecursion, unflatten } from '../utils';
 import { denormalize } from 'normalizr';
 import { TestAction } from './testWorkflows/ShouldExecuteStateful';

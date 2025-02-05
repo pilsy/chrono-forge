@@ -1,7 +1,7 @@
 import { v4 } from 'uuid';
 import { StateManager } from '../store/StateManager';
 import { EntityAction, normalizeEntities, PARTIAL_UPDATE, reducer } from '../store/entities';
-import schemas from './testSchemas';
+import schemas from './testAutoSchemas';
 
 const sleep = async (duration = 1000) =>
   new Promise((resolve) => {

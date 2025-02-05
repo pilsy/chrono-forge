@@ -1,6 +1,6 @@
 import { ChronoFlow } from '../../workflows';
 import { ManagedPaths, StatefulWorkflow } from '../../workflows/StatefulWorkflow';
-import { User, Listing } from '../testSchemas';
+import { User, Listing } from '../testAutoSchemas';
 import { trace } from '@opentelemetry/api';
 import { condition, sleep } from '@temporalio/workflow';
 import { Action, Debounce, On, Property, Signal } from '../../decorators';

@@ -25,7 +25,7 @@ import reducer, {
 } from '../store/entities';
 
 import type { EntitiesState } from '../store/entities';
-import schemas from './testSchemas';
+import schemas from './testAutoSchemas';
 
 describe('Entities', () => {
   describe('Action Creators', () => {

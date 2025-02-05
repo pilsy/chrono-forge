@@ -4,14 +4,17 @@ import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { Worker, Runtime, DefaultLogger, LogEntry } from '@temporalio/worker';
 import { Client, WorkflowClient } from '@temporalio/client';
 import { v4 as uuid4 } from 'uuid';
-import { makeWorkflowExporter, OpenTelemetryActivityInboundInterceptor } from '@temporalio/interceptors-opentelemetry/lib/worker';
+import {
+  makeWorkflowExporter,
+  OpenTelemetryActivityInboundInterceptor
+} from '@temporalio/interceptors-opentelemetry/lib/worker';
 import { getExporter, getResource, getTracer } from '../utils/instrumentation';
 import { Tracer } from '@opentelemetry/api';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { Resource } from '@opentelemetry/resources';
 import { initTracer } from '../utils/instrumentation';
 import { logger } from '../utils/logger';
-import schemas from './testSchemas';
+import schemas from './testAutoSchemas';
 
 jest.setTimeout(60000);
 
