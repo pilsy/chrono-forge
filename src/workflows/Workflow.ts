@@ -109,7 +109,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    */
   protected handles: Map<string, workflow.ChildWorkflowHandle<any>> = new Map();
 
-  // Internal state binding flags
+  /**
+   * Internal flags used to determine if certain decorators have been bound to this workflow instance.
+   */
   private _hooksBound = false;
   private _eventsBound = false;
   private _signalsBound = false;

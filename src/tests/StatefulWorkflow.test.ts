@@ -608,57 +608,6 @@ describe('StatefulWorkflow', () => {
       );
     });
 
-    it.skip('Shound have a working data proxy', async () => {
-      const userId = uuid4();
-      const listingId = uuid4();
-      const listing2Id = uuid4();
-      const photoId = uuid4();
-      const photo2Id = uuid4();
-      const likeId = uuid4();
-
-      // Initial data for User with Listings, Photos, and Likes, forming a recursive structure
-      const data = {
-        id: userId,
-        listings: [
-          {
-            id: listingId,
-            user: userId,
-            photos: [
-              {
-                id: photoId,
-                user: userId,
-                listing: listingId,
-                likes: [{ id: likeId, user: userId, photo: photoId }]
-              }
-            ]
-          },
-          {
-            id: listing2Id,
-            user: userId
-          }
-        ]
-      };
-      // const expectedState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
-
-      // console.dir(expectedState, { depth: 12 });
-      // process.exit(1);
-
-      // Start the User workflow
-      const handle = await execute(workflows.ShouldExecuteStateful, {
-        id: data.id,
-        entityName: 'User',
-        data
-      });
-      await sleep(30000); // Wait for workflows to initialize
-
-      // Ensure the User workflow is initialized with the correct normalized state
-      const expectedState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
-      const state = await handle.query('state');
-      expect(state).toEqual(expectedState);
-
-      await sleep(1000 * 30); // Wait for workflows to initialize
-    });
-
     it('Should handle restarting child workflow after cancellation', async () => {
       const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Test Listing' }] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });

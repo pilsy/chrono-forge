@@ -35,6 +35,52 @@ import { Duration, HandlerUnfinishedPolicy } from '@temporalio/common';
 import { flatten } from '../utils/flatten';
 import { unflatten } from '../utils';
 
+/**
+ * Defines the configuration structure for managing entity paths and associated workflows.
+ *
+ * This type specifies the layout and options available for configuring how entities are managed
+ * within workflows, capturing details such as entity identifiers, workflow types, and start conditions.
+ *
+ * ## Properties
+ * - `entityName` (optional): A string representing the name of the entity, used for identification.
+ * - `path` (optional): A string indicating the path within the state where the entity data is located.
+ * - `workflowType` (optional): A string specifying the type of workflow associated with this entity.
+ * - `idAttribute` (optional): Specifies the identifying attribute or attributes of the entity,
+ *   which can be a single string or an array for composite keys.
+ * - `isMany` (optional): A boolean flag indicating if the path refers to multiple entities.
+ * - `includeParentId` (optional): A boolean that, if true, includes the parent identifier in workflow
+ *   IDs to ensure unique identification.
+ * - `autoStart` (optional): A boolean flag determining whether the workflow should start automatically
+ *   when conditions are met.
+ * - `subscriptions` (optional): An object defining subscription options for entity updates and deletions:
+ *   - `update` (optional): A boolean indicating subscription to update events.
+ *   - `deletion` (optional): A boolean indicating subscription to deletion events.
+ * - `cancellationType` (optional): Specifies the type of cancellation policy applied to child workflows,
+ *   using values from `workflow.ChildWorkflowCancellationType`.
+ * - `parentClosePolicy` (optional): Specifies the policy on how the closing of a parent workflow affects
+ *   the child, using values from `workflow.ParentClosePolicy`.
+ * - `workflowIdConflictPolicy` (optional): Specifies the policy for handling conflicts with workflow
+ *   IDs, using values from `workflow.WorkflowIdConflictPolicy`.
+ * - `condition` (optional): A function that takes an entity and its associated data, returning a boolean
+ *   to determine if the workflow should start based on custom logic.
+ * - `processData` (optional): A function to process entity data, taking the entity and its associated
+ *   workflow data as parameters, returning processed data for the workflow context.
+ *
+ * ## Usage Example
+ * ```typescript
+ * const configPath: ManagedPath = {
+ *   entityName: "User",
+ *   path: "users",
+ *   idAttribute: "userId",
+ *   autoStart: true,
+ *   processData: (entity, data) => ({ ...entity, modified: true }),
+ * };
+ * ```
+ *
+ * ## Notes
+ * - The type encapsulates various configuration aspects to manage both single and composite entity scenarios.
+ * - Proper configuration ensures effective management and automation of workflow operations, facilitating robust entity lifecycle handling.
+ */
 export type ManagedPath = {
   entityName?: string;
   path?: string;
@@ -54,10 +100,56 @@ export type ManagedPath = {
   processData?: (entity: Record<string, any>, data: StatefulWorkflow['data']) => Record<string, any>;
 };
 
+/**
+ * Defines the configuration structure for managing entity paths and associated workflows.
+ *
+ * This type specifies the layout and options available for configuring how entities are managed
+ * within workflows, capturing details such as entity identifiers, workflow types, and start conditions.
+ * @see ManagedPath
+ */
 export type ManagedPaths = {
   [path: string]: ManagedPath;
 };
 
+/**
+ * Represents the configuration of a subscription within a workflow system.
+ *
+ * This type outlines the structure and options for defining subscriptions, enabling workflows
+ * to react to specific signals and conditions based on entity and state parameters.
+ *
+ * ## Properties
+ * - `workflowId`: A string uniquely identifying the workflow to which this subscription applies.
+ * - `signalName`: The name of the signal to subscribe to, determining the type of event to react to.
+ * - `selector`: A string used to filter or select events, often used for targeting specific data
+ *   or conditions within a workflow.
+ * - `parent` (optional): A string identifying the parent entity or workflow in a hierarchical structure.
+ * - `child` (optional): A string identifying the child entity or workflow related to the subscription.
+ * - `ancestorWorkflowIds` (optional): An array of strings capturing workflow IDs of ancestor workflows,
+ *   useful for tracking lineage in nested workflow systems.
+ * - `condition` (optional): A function that receives the current state and returns a boolean, determining
+ *   if the subscription should react based on custom logic.
+ * - `entityName` (optional): The name of the entity involved in the subscription, aiding in contextual
+ *   identification and processing.
+ * - `subscriptionId` (optional): A unique identifier for the subscription itself, used to manage or
+ *   reference the subscription within systems.
+ *
+ * ## Usage Example
+ * ```typescript
+ * const workflowSubscription: Subscription = {
+ *   workflowId: "order-processing-workflow",
+ *   signalName: "orderUpdated",
+ *   selector: "*",
+ *   entityName: "Order",
+ *   condition: (state) => state.status === "Pending",
+ * };
+ * ```
+ *
+ * ## Notes
+ * - Subscriptions facilitate complex, event-driven interactions within workflow systems, leveraging properties
+ *   such as `signalName` and `selector` to fine-tune reactions.
+ * - Optional fields provide flexibility for hierarchical and condition-based designs, enhancing adaptability in various workflows.
+ * - Proper subscription management ensures responsive and efficient workflows, enabling precise event handling and state transitions.
+ */
 export type Subscription = {
   workflowId: string;
   signalName: string;
@@ -70,10 +162,35 @@ export type Subscription = {
   subscriptionId?: string;
 };
 
-export type Entities = {
-  [entityName: string]: Schema;
-};
-
+/**
+ * Parameters for initializing a stateful workflow, providing configuration and data context.
+ *
+ * This type captures the essential details and optional settings needed to instantiate and
+ * manage a stateful workflow, including entity, API, and subscription configurations.
+ *
+ * ## Properties
+ * - `id`: A string serving as the unique identifier for the workflow instance.
+ * - `entityName`: The name of the entity associated with this workflow, used for context and identification.
+ * - `data` (optional): A generic parameter `D` representing the data specific to the entity within the workflow.
+ * - `state` (optional): The state of entities at the moment of workflow initialization, used for context and processing.
+ * - `status`: The current status of the workflow, indicating its operational state.
+ * - `apiUrl` (optional): The URL for API interactions related to the workflow, facilitating external communication if needed.
+ * - `apiToken` (optional): A token for authenticating API requests, providing secure access to external systems.
+ * - `subscriptions` (optional): An array of `Subscription` objects, defining event-driven connections for the workflow.
+ * - `autoStart` (optional): A boolean indicating if the workflow should start automatically upon initialization.
+ * - `ancestorWorkflowIds` (optional): An array of strings denoting the IDs of ancestor workflows, useful for lineage tracking.
+ *
+ * ## Usage Example
+ * ```typescript
+ * const workflowParams: StatefulWorkflowParams = {
+ *   id: "workflow-123",
+ *   entityName: "Order",
+ *   status: "active",
+ *   autoStart: true,
+ *   subscriptions: [orderSubscription],
+ * };
+ * ```
+ */
 export type StatefulWorkflowParams<D = {}> = {
   id: string;
   entityName: string;
@@ -87,6 +204,30 @@ export type StatefulWorkflowParams<D = {}> = {
   ancestorWorkflowIds?: string[];
 };
 
+/**
+ * Options for configuring a stateful workflow, focusing on schema and execution settings.
+ *
+ * This type provides configuration options for setting up workflows, emphasizing schema integration
+ * and auto-start capabilities for seamless workflow operations.
+ *
+ * ## Properties
+ * - `schema` (optional): A `schema.Entity` object representing the data schema for the workflow,
+ *   crucial for data validation and normalization.
+ * - `schemaName` (optional): The name of the schema, assisting in referencing and managing various schemas.
+ * - `autoStart` (optional): A boolean indicating whether the workflow should initiate automatically.
+ * - `apiUrl` (optional): The API endpoint used for workflow-related communications.
+ * - `workflowType` (optional): The type of the workflow, identifying the workflow’s structure and purpose.
+ *
+ * ## Usage Example
+ * ```typescript
+ * const workflowOptions: StatefulWorkflowOptions = {
+ *   schemaName: "OrderSchema",
+ *   autoStart: true,
+ *   workflowType: "order-processing",
+ *   apiUrl: "https://api.example.com",
+ * };
+ * ```
+ */
 export type StatefulWorkflowOptions = {
   schema?: schema.Entity;
   schemaName?: string;
@@ -95,6 +236,32 @@ export type StatefulWorkflowOptions = {
   workflowType?: string;
 };
 
+/**
+ * Represents a pending change awaiting application within a workflow, detailing the modifications and approach.
+ *
+ * This type specifies pending updates or deletions along with the strategy to apply changes,
+ * assisting workflows in maintaining accurate state adjustments.
+ *
+ * ## Properties
+ * - `updates` (optional): A record of fields and values marked for updating, keyed by entity attributes.
+ * - `deletions` (optional): A record of fields designated for deletion, identifying which data should be removed.
+ * - `entityName`: The name of the entity to which changes are applied, offering context for the modifications.
+ * - `strategy` (optional): Specifies the change application strategy, either '$set' or '$merge',
+ *   determining overwrite or merge behavior.
+ * - `changeOrigin` (optional): A string identifying the source of change, useful for auditing and reverse-tracing.
+ * - `sync` (optional): A boolean indicating if the change should be synchronized immediately, emphasizing real-time application.
+ * - `action` (optional): An `EntityAction` instance representing any associated actions that arise from the change.
+ *
+ * ## Usage Example
+ * ```typescript
+ * const pendingChange: PendingChange = {
+ *   updates: { status: "shipped" },
+ *   entityName: "Order",
+ *   strategy: '$merge',
+ *   changeOrigin: "user-update",
+ * };
+ * ```
+ */
 export type PendingChange = {
   updates?: Record<string, any>;
   deletions?: Record<string, any>;
@@ -105,11 +272,51 @@ export type PendingChange = {
   action?: EntityAction;
 };
 
+/**
+ * Metadata related to an action method within a stateful workflow, including options for execution.
+ *
+ * This interface defines metadata for action methods, encapsulating execution options
+ * accessible via the workflow framework.
+ *
+ * ## Properties
+ * - `method`: A key representing the action method within the `StatefulWorkflow`, indicating what function is being described.
+ * - `options` (optional): An `ActionOptions<any, any>` object specifying configuration details or execution modifiers for the method.
+ *
+ * ## Usage Example
+ * ```typescript
+ * const actionMetadata: ActionMetadata = {
+ *   method: "updateOrderStatus",
+ *   options: { retries: 3 },
+ * };
+ * ```
+ */
 export interface ActionMetadata {
   method: keyof StatefulWorkflow<any, any>;
   options?: ActionOptions<any, any>;
 }
 
+/**
+ * Entry detailing a connection to an ancestor workflow, maintaining identification and relationship data.
+ *
+ * This type manages the association with ancestor workflows, storing identification details
+ * and the external workflow handle for effective cross-workflow communication.
+ *
+ * ## Properties
+ * - `entityId`: The ID of the related entity, serving as a primary identifier for association.
+ * - `entityName`: The name of the entity, facilitating context and clarity within multiple workflows.
+ * - `isParent`: A boolean indicating if the ancestor workflow is directly a parent, clarifying lineage roles.
+ * - `handle`: An `ExternalWorkflowHandle` object, affording access to the ancestor workflow’s external interface.
+ *
+ * ## Usage Example
+ * ```typescript
+ * const ancestorEntry: AncestorHandleEntry = {
+ *   entityId: "order-789",
+ *   entityName: "Order",
+ *   isParent: true,
+ *   handle: orderWorkflowHandle,
+ * };
+ * ```
+ */
 export type AncestorHandleEntry = {
   entityId: string;
   entityName: string;
@@ -121,13 +328,45 @@ export abstract class StatefulWorkflow<
   P extends StatefulWorkflowParams = StatefulWorkflowParams,
   O extends StatefulWorkflowOptions = StatefulWorkflowOptions
 > extends Workflow<P, O> {
+  /**
+   * Internal state binding flags
+   */
   private _actionsBound: boolean = false;
+
+  /**
+   * Internal reference object to hold the values for memo properties.
+   */
   private _memoProperties: Record<string, any> = {};
+
+  /**
+   * Internal flag used to determine if there is currently an @Action() running (executeUpdate).
+   */
   protected actionRunning: boolean = false;
+
+  /**
+   * Determines whether the workflow is a long running continueAsNew type workflow or a short lived one.
+   * In the case of workflows extending from StatefulWorkflow, they are considered long running entity workflows.
+   */
   protected continueAsNew: boolean = true;
+
+  /**
+   * Internal reference to the StateManager instance for this workflow.
+   */
   protected stateManager!: StateManager;
+
+  /**
+   * Internal reference to the StateManager instance for this workflow.
+   */
   protected schemaManager = SchemaManager.getInstance();
+
+  /**
+   * Current workflow iteration count.
+   */
   protected iteration = 0;
+
+  /**
+   * Internal reference to the Schema instance for this workflow.
+   */
   protected schema: Schema;
 
   /**
@@ -362,18 +601,30 @@ export abstract class StatefulWorkflow<
     this.update({ data, entityName: this.entityName, changeOrigin: workflow.workflowInfo().workflowId });
   }
 
+  /**
+   * Boolean flag indicating a pending update, setting this to true will result in loadData() being called if it is defined.
+   */
   @Property()
   protected pendingUpdate: boolean = true;
 
+  /**
+   * An array of pending changes that are in the StateManager queue waiting to be processed.
+   */
   @Query('pendingChanges')
   get pendingChanges() {
     return this.stateManager.queue;
   }
 
+  /**
+   * An array of workflows that have open subscriptions to this workflows state.
+   */
   @Property({ set: false })
   protected subscriptions: Subscription[] = [];
 
-  protected subscriptionHandles: { [workflowId: string]: workflow.ExternalWorkflowHandle } = {};
+  /**
+   * A map to keep track of workflows that have open subscriptions to this workflows state.
+   */
+  protected subscriptionHandles: Map<string, workflow.ExternalWorkflowHandle> = new Map();
 
   /**
    * Defines paths within the workflow's state that are automatically managed, often
@@ -529,20 +780,62 @@ export abstract class StatefulWorkflow<
   @Property({ set: false })
   protected managedPaths: ManagedPaths = {};
 
+  /**
+   * The apiUrl for this workflows entity.
+   */
   @Property()
   protected apiUrl?: string;
 
+  /**
+   * An array to keep track of ancestor workflow's ids.
+   */
   @Property()
   protected ancestorWorkflowIds: string[] = [];
 
+  /**
+   * The initial parameters as provided to this workflow when started.
+   */
   @Property({ set: false })
   protected params: P;
 
+  /**
+   * The initial options as provided to this workflow when started.
+   */
   @Property({ set: false })
   protected options: O;
 
-  protected ancestorHandles: { [key: string]: AncestorHandleEntry } = {};
+  /**
+   * A map to keep track of handles to ancestor workflows.
+   */
+  protected ancestorHandles: Map<string, AncestorHandleEntry> = new Map();
 
+  /**
+   * Constructs an instance of the class with the specified parameters and options.
+   *
+   * @constructor
+   * @param {P} params - The parameters for initializing the instance. It may include:
+   *   - `ancestorWorkflowIds`: Optional list of ancestor workflow identifiers.
+   *   - `id`: Optional identifier for the instance.
+   *   - `entityName`: Optional name of the entity associated with this instance.
+   *   - `subscriptions`: Optional array of subscriptions to be registered.
+   *   - `state`: Optional initial state for the entity.
+   *   - `data`: Optional data to update the entity.
+   *   - `status`: Optional status of the workflow; defaults to 'running'.
+   *   - `apiUrl`: Optional URL for API interactions.
+   *   - `apiToken`: Optional token for API authentication.
+   * @param {O} options - Configuration options which might include:
+   *   - `schemaName`: Optional schema name for the entity.
+   *   - `schema`: Schema object for the entity.
+   *   - `apiUrl`: Default API URL if not provided in params.
+   *
+   * Initializes:
+   * - The `stateManager` by retrieving it from `StateManager` using the workflow's info.
+   * - The `ancestorHandles` map if `ancestorWorkflowIds` are present.
+   * - The schema using either the parameters or options.
+   * - Subscriptions using the provided parameter subscriptions.
+   *
+   * Sets up state management by listening for state changes and initializes any pending operations.
+   */
   constructor(params: P, options: O) {
     super(params, options);
 
@@ -558,12 +851,12 @@ export abstract class StatefulWorkflow<
     if (this.ancestorWorkflowIds) {
       for (const workflowId of this.ancestorWorkflowIds) {
         const [entityName, entityId] = workflowId.split('-');
-        this.ancestorHandles[workflowId] = {
+        this.ancestorHandles.set(workflowId, {
           entityId,
           entityName,
           handle: workflow.getExternalWorkflowHandle(workflowId),
           isParent: workflow.workflowInfo().parent?.workflowId === workflowId
-        };
+        });
       }
     }
 
@@ -616,6 +909,32 @@ export abstract class StatefulWorkflow<
     this.apiToken = this.params?.apiToken;
   }
 
+  /**
+   * Executes the workflow in a controlled and synchronized manner, ensuring thread safety
+   * by using a mutex on the 'executeWorkflow' function.
+   *
+   * @mutex 'executeWorkflow'
+   * @protected
+   * @async
+   * @returns {Promise<any>} Resolves with the result of the workflow execution, or with any
+   *   data processed if terminal state is reached without error. Rejects if an error state is
+   *   encountered.
+   *
+   * Actions:
+   * - Configures managed paths based on the schema, if available.
+   * - Continuously executes the workflow logic while the current iteration is within the
+   *   allowed maximum iterations (`maxIterations`).
+   * - Waits for certain conditions to be met using the workflow's condition, pausing and
+   *   resuming execution based on the workflow status.
+   * - Loads data, executes the primary task, and checks for terminal states, resolving
+   *   or rejecting the promise based on the success or failure of the workflow.
+   * - Manages iterations, respecting maximum iterations and handling scenarios where
+   *   the new state of execution may need to continue based on workflow constraints.
+   * - Handles any execution errors appropriately by delegating to a specified error handler.
+   *
+   * This function logs relevant debug information, including entity details and current
+   * execution states, making it suitable for tracing workflow progress through complex stages.
+   */
   @Mutex('executeWorkflow')
   protected async executeWorkflow(): Promise<any> {
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.executeWorkflow`);
@@ -835,6 +1154,24 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  /**
+   * Adds a subscription to the current instance, ensuring that it is unique.
+   *
+   * @signal
+   * @public
+   * @async
+   * @param {Subscription} subscription - The subscription object that contains details
+   *   about the workflow and subscription IDs. It has the following properties:
+   *   - `workflowId`: The unique identifier of the workflow.
+   *   - `subscriptionId`: The unique identifier of the subscription within the workflow.
+   * @returns {Promise<void>} A promise that resolves when the subscription handling is complete.
+   *
+   * Operations:
+   * - Logs a trace of the subscription process for debugging, indicating the class, entity, and ID.
+   * - Checks if the subscription already exists by comparing both `workflowId` and `subscriptionId`.
+   * - If the subscription is unique, it adds the subscription to the `subscriptions` list.
+   * - Sets up a handle for interacting with the specified workflow via `subscriptionHandles`.
+   */
   @Signal()
   public async subscribe(subscription: Subscription): Promise<void> {
     this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.subscribe`);
@@ -842,10 +1179,28 @@ export abstract class StatefulWorkflow<
     const { workflowId, subscriptionId } = subscription;
     if (!this.subscriptions.find((sub) => sub.workflowId === workflowId && sub.subscriptionId === subscriptionId)) {
       this.subscriptions.push(subscription);
-      this.subscriptionHandles[workflowId] = await workflow.getExternalWorkflowHandle(workflowId);
+      this.subscriptionHandles.set(workflowId, await workflow.getExternalWorkflowHandle(workflowId));
     }
   }
 
+  /**
+   * Removes a subscription from the current instance based on the given subscription details.
+   *
+   * @signal
+   * @public
+   * @async
+   * @param {Subscription} subscription - The subscription object that contains details
+   *   about the workflow and subscription IDs. It has the following properties:
+   *   - `workflowId`: The unique identifier of the workflow.
+   *   - `subscriptionId`: The unique identifier of the subscription within the workflow.
+   * @returns {Promise<void>} A promise that resolves when the unsubscription process is complete.
+   *
+   * Operations:
+   * - Logs a trace of the unsubscription process for debugging purposes, indicating the class, entity, and ID.
+   * - Searches for the subscription in the `subscriptions` list using the `workflowId` and `subscriptionId`.
+   * - If a matching subscription is found, it deletes the corresponding workflow handle from `subscriptionHandles`.
+   * - Removes the identified subscription from the `subscriptions` list.
+   */
   @Signal()
   public async unsubscribe(subscription: Subscription): Promise<void> {
     this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.unsubscribe`);
@@ -855,11 +1210,27 @@ export abstract class StatefulWorkflow<
       (sub) => sub.workflowId === workflowId && sub.subscriptionId === subscriptionId
     );
     if (index !== -1) {
-      delete this.subscriptionHandles[workflowId];
+      this.subscriptionHandles.delete(workflowId);
       this.subscriptions.splice(index, 1);
     }
   }
 
+  /**
+   * Processes the current state of the entity, ensuring all pending changes are applied
+   * when no actions are currently running.
+   *
+   * @mutex 'processState'
+   * @before 'execute'
+   * @protected
+   * @async
+   * @returns {Promise<void>} A promise that resolves once the state processing is complete and any pending changes are applied.
+   *
+   * Operations:
+   * - Checks if an action is currently running (`actionRunning`). If so, logs an informational message
+   *   and waits for the action to complete using the workflow condition.
+   * - Logs a debug message indicating the start of the state processing.
+   * - If there are any pending changes, it triggers the `stateManager` to process these changes.
+   */
   @Mutex('processState')
   @Before('execute')
   protected async processState(): Promise<void> {
@@ -876,6 +1247,31 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  /**
+   * Handles changes in the entity's state by processing state differences and
+   * triggering appropriate events based on the nature of these changes.
+   *
+   * @mutex 'stateChanged'
+   * @protected
+   * @async
+   * @param {Object} param0 - The object containing state change details, including:
+   *   - `newState`: The state of the entities after changes have been applied.
+   *   - `previousState`: The state of the entities before changes were applied.
+   *   - `differences`: An object detailing the differences between the new and previous states.
+   *     Includes `added`, `updated`, and `deleted` properties.
+   *   - `changeOrigins`: An array of strings indicating the origins of the changes.
+   * @returns {Promise<void>} A promise that resolves when all state change handling is complete.
+   *
+   * Operations:
+   * - Logs a debug message indicating the transition and processing of state changes.
+   * - Checks if there are any differences in the state (`added`, `updated`, `deleted`).
+   * - Based on the differences:
+   *   - Emits a 'created' event if the entity was newly added.
+   *   - Emits an 'updated' event if the entity was modified.
+   *   - Emits a 'deleted' event if the entity was removed, potentially setting the status to 'cancelled' if the deletion event fails.
+   * - Processes the states of child entities and related subscriptions if applicable, triggering further handling mechanisms.
+   * - Sets the `pendingIteration` flag to true, signaling readiness for further processing.
+   */
   @Mutex('stateChanged')
   protected async stateChanged({
     newState,
@@ -914,6 +1310,27 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  /**
+   * Updates the workflow's memo with the current state, ensuring that any changes are persisted.
+   *
+   * @mutex 'memo'
+   * @after 'processState'
+   * @protected
+   * @async
+   * @returns {Promise<void>} A promise that resolves once the current state has been conditionally saved to memo.
+   *
+   * Operations:
+   * - Logs information about the memo update process, including the current workflow ID.
+   * - Retrieves the existing memo and flattens the current state and memo properties for comparison.
+   * - Compares the existing memo state with the new state:
+   *   - Updates the `updatedMemo` object with changes detected between the current and new states.
+   *   - Marks the `hasChanges` flag if any changes exist.
+   *   - Deletes keys from `updatedMemo` if they exist in the current memo but not in the new state.
+   * - If changes are detected (`hasChanges` is true), the method updates the workflow memo with:
+   *   - The new state details.
+   *   - The current iteration count and workflow status.
+   *   - A timestamp representing the last update.
+   */
   @Mutex('memo')
   @After('processState')
   protected async upsertStateToMemo(): Promise<void> {
@@ -956,6 +1373,30 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  /**
+   * Handles the propagation of changes to subscribed workflows by processing updates and deletions
+   * based on the current and previous states and their differences.
+   *
+   * @protected
+   * @async
+   * @param {EntitiesState} newState - The current state of the entities after changes have been applied.
+   * @param {DetailedDiff} differences - An object detailing the changes between the new and previous states,
+   *   including `added`, `updated`, and `deleted` differences.
+   * @param {EntitiesState} previousState - The state of the entities prior to changes being applied.
+   * @param {string[]} changeOrigins - A list of change origin identifiers.
+   * @returns {Promise<void>} A promise that resolves when the subscription processing is complete.
+   *
+   * Operations:
+   * - Logs a trace message to indicate the start of subscription processing.
+   * - Iterates over the list of subscriptions, checking each for conditions to propagate changes:
+   *   - Extracts relevant changes for each subscription using selectors and conditions.
+   *   - If changes should be propagated:
+   *     - Retrieves the workflow handle associated with the subscription.
+   *     - Sends `update` signals to the workflow with details of the changes if any updates exist.
+   *     - Sends `delete` signals if there are deletions.
+   *     - Logs traces for each propagated signal to facilitate debugging.
+   * - Catches and logs errors encountered during the signaling process to ensure robust error handling.
+   */
   protected async processSubscriptions(
     newState: EntitiesState,
     differences: DetailedDiff,
@@ -981,7 +1422,7 @@ export abstract class StatefulWorkflow<
 
       const { updates, deletions } = this.extractChangesForSelector(differences, selector, newState, previousState);
 
-      const handle = this.subscriptionHandles[workflowId];
+      const handle = this.subscriptionHandles.get(workflowId);
       if (handle) {
         try {
           if (!isEmpty(updates)) {
@@ -1168,6 +1609,40 @@ export abstract class StatefulWorkflow<
     return { updates, deletions };
   }
 
+  /**
+   * Processes the child state to handle differences between the new and previous states.
+   *
+   * This method traces the processing of child states for a given entity by recursively
+   * handling managed paths defined in the `managedPaths` object. It processes both array
+   * and non-array entities, checking for deletions and triggering appropriate actions.
+   *
+   * ## Parameters
+   * - `newState`: The new state of the entities to be processed.
+   * - `differences`: A detailed representation of differences between states that guides processing.
+   * - `previousState`: The previous state of the entities before the change.
+   * - `changeOrigins`: An array of strings representing the origins of changes triggering the update.
+   *
+   * ## Return
+   * - A `Promise<void>` that resolves when all processing of child states is complete.
+   *
+   * ## Method Details
+   * - Utilizes `limitRecursion` to work with a restricted view of entity states for comparison.
+   - Iterates over `managedPaths` to process entities based on their paths configuration.
+   * - Handles array and non-array entities through `processArrayItems` and `processItem` methods.
+   * - Detects deleted items by checking their presence in differences and invokes `handleDeletion`.
+   *
+   * ## Usage Example
+   * ```typescript
+   * await processChildState(newEntityState, detailedDiff, oldEntityState, origins);
+   * ```
+   *
+   * ## Notes
+   * - The processing handles complex nested entities and their lifecycle changes.
+   * - Ensure `managedPaths` is configured correctly to enable precise state management.
+   *
+   * ## Logging
+   * - Logs trace and debug messages for monitoring the processing flow.
+   */
   protected async processChildState(
     newState: EntitiesState,
     differences: DetailedDiff,
@@ -1210,6 +1685,40 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  /**
+   * Processes a single, non-array item within the entity state.
+   *
+   * This method is responsible for handling an individual item specified by the managed
+   * path configuration, applying necessary processing based on the detected differences
+   * between the new and previous states.
+   *
+   * ## Parameters
+   * - `newState`: The current state of all entities, from which the item's new value is derived.
+   * - `itemValue`: The item's current value extracted using the managed path.
+   * - `config`: An object containing configuration details about the path under management.
+   * - `differences`: Details of changes between the new and previous states to direct processing steps.
+   * - `previousState`: The state of all entities prior to applying changes.
+   * - `changeOrigins`: An array that specifies the origins related to the modifications in state.
+   * - `path`: The managed path's string representation, indicating the item's location within the state.
+   *
+   * ## Return
+   * - A `Promise<void>` that resolves once the processing of the individual item is complete.
+   *
+   * ## Method Details
+   * - Determines the composite identifier for the item using `getCompositeKey` if necessary.
+   * - Delegates the processing to `processSingleItem`, ensuring that the item is handled
+   *   according to the differences and configuration.
+   *
+   * ## Usage Example
+   * ```typescript
+   * await processItem(currentEntityState, entityValue, pathConfig, stateDiff, oldEntityState, origins, pathStr);
+   * ```
+   *
+   * ## Notes
+   * - Requires proper configuration of the `idAttribute` within `ManagedPath` to uniquely
+   *   identify items.
+   * - Intended for internal usage in managing state changes specific to one item.
+   */
   private async processItem(
     newState: EntitiesState,
     itemValue: any,
@@ -1226,6 +1735,38 @@ export abstract class StatefulWorkflow<
     await this.processSingleItem(newState, compositeId, config, differences, previousState, changeOrigins);
   }
 
+  /**
+   * Determines if a specific item has been deleted based on the differences between states.
+   *
+   * This method checks the `differences` object to see if an item, identified by the
+   * `entityName` and `itemId`, is marked as deleted. It looks for the item's presence
+   * in the deleted entities section of the detailed differences.
+   *
+   * ## Parameters
+   * - `differences`: A `DetailedDiff` object containing changes between the new and previous entity states.
+   * - `entityName`: The name of the entity type to which the item belongs, used to locate the item in the differences.
+   * - `itemId`: The unique identifier of the item being checked for deletion.
+   *
+   * ## Return
+   * - Returns a `boolean`:
+   *   - `true` if the item is detected as deleted.
+   *   - `false` if the item is not marked as deleted.
+   *
+   * ## Method Details
+   * - Retrieves the deleted entities for the specified `entityName` from the differences object.
+   * - Checks if the `itemId` exists among these deleted entities.
+   * - Considers an item deleted if it exists but its corresponding value is `undefined` in the `deleted` records.
+   *
+   * ## Usage Example
+   * ```typescript
+   * const isDeleted = isItemDeleted(stateDiff, 'entityName', 'uniqueItemId');
+   * ```
+   *
+   * ## Notes
+   * - Relies on correctly structured `DetailedDiff` where deleted entity records are nested
+   *   under a `deleted` key with proper entity name subkeys.
+   * - Designed for use in processing state changes that involve detecting and handling deletions.
+   */
   private isItemDeleted(differences: DetailedDiff, entityName: string, itemId: string): boolean {
     const deletedEntitiesByName: any = get(differences, `deleted.${entityName}`, {});
     const keyExistsInDeletions = Object.keys(deletedEntitiesByName).includes(itemId);
@@ -1238,6 +1779,37 @@ export abstract class StatefulWorkflow<
     return false;
   }
 
+  /**
+   * Handles the deletion of an item by canceling associated workflows.
+   *
+   * This method constructs a unique workflow identifier from the given configuration and
+   * composite ID, using it to locate any active workflow handles. If a handle is found,
+   * it proceeds to cancel the associated child workflow.
+   *
+   * ## Parameters
+   * - `config`: The `ManagedPath` configuration object containing path and workflow-specific settings.
+   * - `compositeId`: A string representing the unique composite identifier for the entity item.
+   *
+   * ## Return
+   * - A `Promise<void>` indicating the completion of the deletion handling process.
+   *
+   * ## Method Details
+   * - Constructs the `workflowId` by potentially incorporating the parent ID based on the
+   *   `includeParentId` flag within `config`.
+   * - Retrieves the workflow handle from the internal `handles` map using the constructed `workflowId`.
+   * - If a valid handle exists, invokes `cancelChildWorkflow` to terminate the workflow associated
+   *   with the deleted item.
+   *
+   * ## Usage Example
+   * ```typescript
+   * await handleDeletion(pathConfig, 'entityCompositeId');
+   * ```
+   *
+   * ## Notes
+   * - Assumes the existence of a `handles` map that associates workflow IDs with their handles.
+   * - The cancellation logic and additional side effects, if any, are encapsulated within `cancelChildWorkflow`.
+   * - Designed to provide clean-up operations upon detecting entity state deletions.
+   */
   private async handleDeletion(config: ManagedPath, compositeId: string): Promise<void> {
     const workflowId = config.includeParentId
       ? `${config.entityName}-${compositeId}-${this.id}`
@@ -1249,6 +1821,42 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  /**
+   * Processes an array of items within the entity state.
+   *
+   * This method iterates over each item in the provided array, applying necessary processing
+   * of individual elements based on differences and configuration specifications, supporting
+   * effective state management of array entities.
+   *
+   * ## Parameters
+   * - `newState`: The updated state containing the latest set of entity data.
+   * - `items`: An array of items to be processed individually.
+   * - `config`: Configuration details from the `ManagedPath` specifying how to manage array items.
+   * - `differences`: The detailed differences object used to guide processing actions appropriate to state changes.
+   * - `previousState`: The state of entities prior to applying the current updates.
+   * - `changeOrigins`: A collection of strings identifying where changes in the state originated.
+   *
+   * ## Return
+   * - A `Promise<void>` indicating that the processing of all items in the array is complete.
+   *
+   * ## Method Details
+   * - Logs the entry into the processing routine for monitoring and traceability.
+   * - For each item, determines its unique identifier using either a composite key or a direct attribute value,
+   *   as denoted in `config.idAttribute`.
+   * - Delegates the processing of each identified item to the `processSingleItem` method, handling the specific
+   *   transformation or validation based on detected differences and changes.
+   *
+   * ## Usage Example
+   * ```typescript
+   * await processArrayItems(updatedState, entityItems, pathConfig, stateDiffs, priorState, origins);
+   * ```
+   *
+   * ## Notes
+   * - It is crucial that `ManagedPath` is set up correctly for accurate identifier extraction, especially when
+   *   dealing with composite keys.
+   * - Effective for cases where entities and their updates are represented in array form.
+   * - The process ensures individual scrutiny and management of each element in the array.
+   */
   protected async processArrayItems(
     newState: EntitiesState,
     items: any[],
@@ -1268,6 +1876,41 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  /**
+   * Processes a single entity item, managing workflows based on its state changes.
+   *
+   * This function oversees the handling of a specific item within the entity state,
+   * determining if workflow actions are required due to state changes or workflow presence.
+   *
+   * ## Parameters
+   * - `newState`: The state object reflecting current entity data after applying updates.
+   * - `itemId`: The identifier for the item being processed, which may be part of a composite key.
+   * - `config`: Configuration details specific to this entity's path, guiding processing actions.
+   * - `differences`: Object encapsulating differences between the new and previous states to aid decision-making.
+   * - `previousState`: The state of the entity before recent changes were applied.
+   * - `changeOrigins`: A list of identifiers representing the origin of changes to avoid recursive updates.
+   *
+   * ## Return
+   * - A `Promise<void>` indicating when the processing of the single item is complete.
+   *
+   * ## Method Details
+   * - Constructs a `workflowId` to uniquely identify and manage associated workflows, using flags from `config` to
+   *   include parent entity identifiers if necessary.
+   * - Logs tracing information for monitoring the process and debugging purposes, especially focusing on recursive skips.
+   * - Checks if the same workflow process has already been initiated to avoid duplicated processes using `workflowId`.
+   * - Determines if the item has changed by comparing its previous and current states.
+   * - If changes are detected, or if the workflow does not exist, it updates an existing workflow using
+   *   `updateChildWorkflow` or starts a new one with `startChildWorkflow`.
+   *
+   * ## Usage Example
+   * ```typescript
+   * await processSingleItem(updatedState, 'uniqueItemId', pathConfig, stateDiffs, priorState, origins);
+   * ```
+   *
+   * ## Notes
+   * - This method is critical for managing lifecycle and workflow of individual items when entity states are modified.
+   * - Requires an understanding of the configuration setup in `ManagedPath` for accurately processing items.
+   */
   protected async processSingleItem(
     newState: EntitiesState,
     itemId: string,
@@ -1305,6 +1948,38 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  /**
+   * Configures the managed paths for entity processing based on a given parent schema.
+   *
+   * This function initializes the `managedPaths` with details extracted from a defined
+   * parent schema, setting up configuration for handling nested entity paths and their
+   * associated workflows.
+   *
+   * ## Parameters
+   * - `parentSchema`: The schema object that includes a nested `schema` property specifying child schemas.
+   *   Each child schema must define `_idAttribute` and `_key` for configuration.
+   *
+   * ## Return
+   * - This function does not return a value but populates the `managedPaths` property.
+   *
+   * ## Method Details
+   * - Logs a debug message to record the initiation of managed path configuration, providing context on the entity.
+   * - Validates the existence of a `schema` property within the `parentSchema`, throwing an error if absent.
+   * - Iterates over the child schemas described within `parentSchema.schema`, processing each to populate `managedPaths`:
+   *   - Determines if the schema represents an array to set the `isMany` property.
+   *   - Configures individual path settings, including the path, identifier attribute, workflow type, auto-start settings,
+   *     and entity name, combining these with any pre-existing configurations from `managedPaths`.
+   *
+   * ## Usage Example
+   * ```typescript
+   * configureManagedPaths(entityParentSchema);
+   * ```
+   *
+   * ## Notes
+   * - Assumes that each child schema provides essential attributes (`_idAttribute` and `_key`) for managing workflows.
+   * - The method relies on the structure provided by `parentSchema` to accurately configure management paths
+   *   necessary for processing entity states.
+   */
   protected configureManagedPaths(
     parentSchema: Schema & { schema?: { [key: string]: Schema & [{ _idAttribute: string; _key: string }] } }
   ): void {
@@ -1327,6 +2002,42 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  /**
+   * Initiates a child workflow for a given entity item based on its configuration and current state.
+   *
+   * This method manages the start of a child workflow, configuring it with options extracted from
+   * the given `ManagedPath` configuration. It handles setup, conditions, and recursive dependency
+   * checks to ensure appropriate initialization.
+   *
+   * ## Parameters
+   * - `config`: An object of type `ManagedPath` which includes all necessary settings for starting the workflow.
+   * - `state`: The current state data of the entity item to be processed.
+   * - `newState`: The updated state reflecting new changes and additional context for the workflow.
+   *
+   * ## Return
+   * - A `Promise<void>` confirming the initialization of the child workflow, or handling errors if encountered.
+   *
+   * ## Method Details
+   * - Extracts configurations such as workflow type, entity name, and other options needed for initializing the workflow.
+   * - Checks if the `autoStart` property permits automatic workflow initiation. Logs and skips starting if not allowed.
+   * - Retrieves a composite identifier for the entity to ensure unique workflow instances, constructing `workflowId`.
+   * - Identifies circular dependencies via `workflowId` checks, logging and preventing recursive workflow starts.
+   * - Employs conditional logic from `config.condition`, if provided, to validate whether workflow initiation criteria are met.
+   * - Assembles a `startPayload` with workflow configurations, including arguments, timeout settings, and retry policies.
+   * - Starts the child workflow using `workflow.startChild`, setting up handles and event emissions for workflow lifecycle events.
+   * - Manages the responses from the workflow results, emitting relevant events on completion or error, and attempting restarts
+   *   on cancellations, subject to internal workflow conditions.
+   *
+   * ## Usage Example
+   * ```typescript
+   * await startChildWorkflow(managedConfig, itemState, completeState);
+   * ```
+   *
+   * ## Notes
+   * - Assumes the presence of entity and workflow management support within the system.
+   * - This function encounters asynchronous operations that utilize error handling to manage faults and retries effectively.
+   * - Enhances logging to provide insights into workflow initialization and lifecycle, aiding in debugging and monitoring.
+   */
   protected async startChildWorkflow(config: ManagedPath, state: any, newState: any): Promise<void> {
     try {
       const {
@@ -1450,6 +2161,42 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  /**
+   * Updates a child workflow with new state data, managing lifecycle signals effectively.
+   *
+   * This method is responsible for sending an update signal to an existing child workflow
+   * handle. It configures the update with new state data and applies conditions to manage
+   * when and how updates are executed.
+   *
+   * ## Parameters
+   * - `handle`: An instance of `workflow.ChildWorkflowHandle`, representing the active child workflow to be updated.
+   * - `state`: The current state data of the entity, providing context for the update.
+   * - `newState`: A broader object representing the updated overall state, used to derive further data if necessary.
+   * - `config`: The `ManagedPath` configuration object encompassing setup requirements for the workflow update.
+   *
+   * ## Return
+   * - A `Promise<void>` which resolves after attempting the update signal, or managing errors as needed.
+   *
+   * ## Method Details
+   * - Logs the initiation of a workflow update for traceability.
+   * - Extracts key configuration details, including the workflow type, entity naming, ID attributes, and auto-start settings.
+   * - Warns and exits early if the workflow is not configured to autoStart.
+   * - Constructs a `workflowId` using entity identifiers and configuration to ensure unique workflow management.
+   * - Checks for circular dependencies to prevent recursive updates, logging information if detected.
+   * - Applies any conditional checks defined in configuration before proceeding with updates, skipping if conditions are not met.
+   * - Signals the workflow for an update using specific payload data, emitting an event on a successful update.
+   * - Handles errors during signaling, logging messages for debugging and further analysis.
+   *
+   * ## Usage Example
+   * ```typescript
+   * await updateChildWorkflow(existingHandle, itemState, completeState, managedConfig);
+   * ```
+   *
+   * ## Notes
+   * - This function assumes that lifecycle strategies, such as `$merge` for merging state data, are compatible with intended updates.
+   * - Extensively logs actions and decision points, providing detail for events throughout the update process.
+   * - Designed for controlled child workflow management in complex state-driven architectures.
+   */
   protected async updateChildWorkflow(
     handle: workflow.ChildWorkflowHandle<any>,
     state: any,
@@ -1519,6 +2266,35 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  /**
+   * Cancels an active child workflow by interacting with its workflow handle.
+   *
+   * This method attempts to cancel an existing child workflow via its handle, logging actions
+   * and handling errors throughout the process.
+   *
+   * ## Parameters
+   * - `handle`: The `workflow.ChildWorkflowHandle<any>` that provides access to the child workflow to be cancelled.
+   *
+   * ## Return
+   * - A `Promise<void>` that resolves after the cancellation attempt, error handling, and logging are complete.
+   *
+   * ## Method Details
+   * - Logs a trace message indicating the start of the unsubscription process from the workflow handle.
+   * - Checks for the existence of the `handle` before proceeding with the cancellation process.
+   * - Logs the initiation of the cancellation attempt for monitoring purposes.
+   * - Retrieves an external workflow handle, `extHandle`, using the workflow ID from `handle`, and requests a cancellation.
+   * - Catches and logs errors that may occur during the cancellation attempt, ensuring traceability and error management.
+   *
+   * ## Usage Example
+   * ```typescript
+   * await cancelChildWorkflow(activeHandle);
+   * ```
+   *
+   * ## Notes
+   * - Assumes an existing mechanism (e.g., `workflow.getExternalWorkflowHandle`) is available for retrieving external workflow handles.
+   * - Aims to provide robust error logging to aid in debugging and system behavior tracking during workflow management.
+   * - Ensure that the `handle` is correctly instantiated and corresponds to a valid, active child workflow to avoid unnecessary error logs.
+   */
   protected async cancelChildWorkflow(handle: workflow.ChildWorkflowHandle<any>) {
     this.log.trace(
       `[${this.constructor.name}]:${this.entityName}:${this.id}: Successfully Unsubscribing from workflow handle: ${handle.workflowId}`
@@ -1536,6 +2312,38 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  /**
+   * Handles transitioning to a new workflow iteration when the maximum iterations are reached.
+   *
+   * This method prepares the workflow to continue as a new instance, either by invoking
+   * a custom method if defined, or by using the default continuation function. It ensures
+   * that all workflow handlers have finished before proceeding.
+   *
+   * ## Parameters
+   * - None
+   *
+   * ## Return
+   * - A `Promise<void>` that resolves when the workflow continuation process is completed.
+   *
+   * ## Method Details
+   * - Attempts to fetch a custom continuation method defined as `_continueAsNewMethod` on the object,
+   *   defaulting to `continueAsNewHandler` if not available.
+   * - Waits for a condition indicating that all handlers have finished executing, with a timeout of `30 seconds`.
+   * - If a valid continuation method is available, executes it to continue the workflow anew.
+   * - If no method is set, constructs a continuation function (`continueFn`) via `workflow.makeContinueAsNewFunc`,
+   *   utilizing current workflow configuration such as type, memo, and search attributes.
+   * - Executes the continuation by calling `continueFn` with the current state, status, subscriptions, and parameters.
+   *
+   * ## Usage Example
+   * ```typescript
+   * await handleMaxIterations();
+   * ```
+   *
+   * ## Notes
+   * - The function presupposes existing workflow infrastructure that supports continuation through `workflow.makeContinueAsNewFunc`.
+   * - A type-safe approach is compromised by using type assertions and ignores (via `@ts-ignore`) to access internal properties.
+   * - The successful operation of this method depends on the accurate configuration of workflow info and options.
+   */
   protected async handleMaxIterations(): Promise<void> {
     // @ts-ignore
     const continueAsNewMethod = (this as any)._continueAsNewMethod || this.continueAsNewHandler;
@@ -1565,6 +2373,37 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  /**
+   * Loads data and enqueues it for updating the current state.
+   *
+   * This function attempts to retrieve data via a defined `loadData` method and then
+   * processes it for state updates. It manages normalization and dispatching of entities
+   * within the state framework.
+   *
+   * ## Parameters
+   * - None
+   *
+   * ## Return
+   * - A `Promise<void>` that resolves after the data is processed and state updates are dispatched.
+   *
+   * ## Method Details
+   * - Checks if a `loadData` function is defined on the instance and calls it if available.
+   * - Destructures the returned object from `loadData` into `data`, `updates`, and `strategy`, with `$merge` as a default strategy.
+   * - Logs a message if neither `data` nor `updates` are provided, opting to skip the state change process.
+   * - Normalizes the data into updates if only `data` is returned by utilizing `normalizeEntities`.
+   * - Dispatches the updates using `stateManager.dispatch`, applying the specified strategy for entity updates.
+   *
+   * ## Usage Example
+   * ```typescript
+   * await loadDataAndEnqueue();
+   * ```
+   *
+   * ## Notes
+   * - The function assumes the presence of a `loadData` method that fetches necessary update data for the workflow or process.
+   * - It uses type assertions and ignores (via `@ts-ignore`) to circumvent TypeScript checks when accessing instance properties and methods.
+   * - Suitable error handling and verification should be implemented within `loadData` to ensure data integrity and consistency.
+   * - This method aims to integrate with a state management system that can handle normalized entity updates.
+   */
   protected async loadDataAndEnqueue(): Promise<void> {
     // @ts-ignore
     if (typeof this?.loadData === 'function') {
@@ -1582,6 +2421,38 @@ export abstract class StatefulWorkflow<
     }
   }
 
+  /**
+   * Binds properties to the instance, enabling custom getter and setter logic based on metadata.
+   *
+   * This function overrides property accessors on the instance to facilitate dynamic data
+   * binding and memoization, using metadata specifications defined on the class prototype.
+   *
+   * ## Parameters
+   * - None
+   *
+   * ## Return
+   * - A `Promise<void>` that resolves after the properties are successfully bound.
+   *
+   * ## Method Details
+   * - Calls `super.bindProperties()` to ensure any superclass binding logic is executed.
+   * - Collects metadata associated with `PROPERTY_METADATA_KEY` to determine properties that require custom binding.
+   * - Iterates over each property metadata, analyzing configuration for memoization and path-based access.
+   * - Defines custom getters and setters:
+   *   - For `memo` or `memoKeyString` configurations, properties are cached in `_memoProperties` and accessed via resolved keys.
+   *   - For `isStringPath`, uses `dottie.get` and `dottie.set` to manipulate data paths on `this.data`.
+   *   - Ensures properties are configurable and enumerable for flexibility and iteration.
+   *
+   * ## Usage Example
+   * ```typescript
+   * await bindProperties();
+   * ```
+   *
+   * ## Notes
+   * - Assumes `collectMetadata` and `dottie` utilities are available to access metadata and manipulate nested object properties.
+   * - The logic supports complex property configurations for dynamic data models involving paths and memoization.
+   * - Suitable for use cases where data interoperability and adaptability via metadata-driven design is essential.
+   * - The implementation is designed for environments where reflective and dynamic property handling is justified and necessary.
+   */
   protected async bindProperties() {
     await super.bindProperties();
 
@@ -1623,6 +2494,39 @@ export abstract class StatefulWorkflow<
     });
   }
 
+  /**
+   * Binds actions to the workflow instance by setting up handlers with validation and execution logic.
+   *
+   * This function initializes action handlers for the workflow, utilizing metadata annotations
+   * to find methods, apply validations, and define how actions should be executed.
+   *
+   * ## Parameters
+   * - None
+   *
+   * ## Return
+   * - A `Promise<void>` that resolves when the actions have been successfully bound to the instance.
+   *
+   * ## Method Details
+   * - Checks if actions have already been bound (`_actionsBound`) to prevent redundant binding.
+   * - Retrieves action metadata and potential validators using Reflect metadata on the class prototype.
+   * - Iterates over each action, setting up a handler:
+   *   - Maps the `method` from the action metadata to its equivalent on the workflow instance.
+   *   - Associates any found validator methods to validate inputs before action execution.
+   *   - Sets `updateOptions.unfinishedPolicy` to `HandlerUnfinishedPolicy.ABANDON` as default behavior.
+   *   - Registers the action handler using `workflow.setHandler`, linking the method to its runner function.
+   * - Marks `_actionsBound` as `true` after successful binding to prevent future reinitialization.
+   *
+   * ## Usage Example
+   * ```typescript
+   * await bindActions();
+   * ```
+   *
+   * ## Notes
+   * - The method assumes the use of Reflect metadata for action and validator retrieval, available via predefined keys.
+   * - Depends on a `workflow` library or framework that provides `setHandler` and `defineUpdate` utilities for actions.
+   * - Relies upon proper configuration of metadata annotations to drive binding behavior and validation logic.
+   * - This function is intended as part of an event-driven initialization process, triggered with an `@On('init')` decorator.
+   */
   @On('init')
   protected async bindActions() {
     if (this._actionsBound) {
@@ -1651,6 +2555,37 @@ export abstract class StatefulWorkflow<
     this._actionsBound = true;
   }
 
+  /**
+   * Executes an action method within a workflow, handling concurrency and error management.
+   *
+   * This function is responsible for invoking a specified action defined on the workflow instance,
+   * managing state flags to ensure no overlapping executions and awaiting any pending processing.
+   *
+   * ## Parameters
+   * - `methodName`: The name of the method to be executed, which should be a key on the `StatefulWorkflow` interface.
+   * - `input`: The input data that will be passed to the action method during execution.
+   *
+   * ## Return
+   * - A `Promise<any>` that resolves with the result of the action or rejects with any error encountered during execution.
+   *
+   * ## Method Details
+   * - Sets `actionRunning` to `true` to indicate the action is in progress.
+   * - Attempts to execute the method denoted by `methodName` using the provided `input`, capturing any result or error.
+   * - Logs any error that occurs during the method execution.
+   * - Sets `pendingIteration` to `true` in the `finally` block, ensuring completion flags are reset after execution.
+   * - Awaits a workflow condition that checks for no ongoing state processing and ensures the iteration can proceed.
+   * - Returns the action result or rejects with the logged error if one was caught during execution.
+   *
+   * ## Usage Example
+   * ```typescript
+   * const result = await runAction('processDataMethod', dataInput);
+   * ```
+   *
+   * ## Notes
+   * - The `@Mutex('Action')` decorator is used to ensure that actions are not executed concurrently.
+   * - The function is designed for environments where actions are stateful processes synchronized with workflow lifecycles.
+   * - Proper error management is critical for ensuring workflow stability, hence meticulous error logging and control flows.
+   */
   @Mutex('Action')
   protected async runAction(methodName: keyof StatefulWorkflow<any, any>, input: any): Promise<any> {
     this.actionRunning = true;
