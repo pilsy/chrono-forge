@@ -9,7 +9,10 @@ import { Worker, Runtime, DefaultLogger, LogEntry } from '@temporalio/worker';
 import { WorkflowClient } from '@temporalio/client';
 import { v4 as uuid4 } from 'uuid';
 import * as workflows from './testWorkflows';
-import { makeWorkflowExporter, OpenTelemetryActivityInboundInterceptor } from '@temporalio/interceptors-opentelemetry/lib/worker';
+import {
+  makeWorkflowExporter,
+  OpenTelemetryActivityInboundInterceptor
+} from '@temporalio/interceptors-opentelemetry/lib/worker';
 import { getExporter, getResource, getTracer } from '../utils/instrumentation';
 
 describe('Workflow', () => {
@@ -86,7 +89,7 @@ describe('Workflow', () => {
       expect(await handle.result()).toBe('updated status');
     });
 
-    it.skip('Should create signals and queries with custom names', async () => {
+    it('Should create signals and queries with custom names', async () => {
       const handle = await execute(workflows.ShouldCreateCustomPropertyAccessors);
       await sleep();
 
@@ -101,32 +104,19 @@ describe('Workflow', () => {
       expect(await handle.result()).toBe('custom value');
     });
 
-    it.skip('Should disable setting a value when set is false', async () => {
+    it('Should disable setting a value when set is false', async () => {
       const handle = await execute(workflows.ShouldDisableSetForProperty);
+      await sleep();
 
-      // Attempting to set a value should throw an error
-      await expect(handle.signal('signalReadonlyProperty', 'new value')).rejects.toThrowError();
-    });
+      // Test setting a value via custom signal
+      await handle.signal('readonlyProperty', 'new value');
+      await sleep();
 
-    it.skip('Should invoke @Set decorated method when setting a value', async () => {
-      const handle = await execute(workflows.ShouldInvokeSetMethodOnPropertySet);
+      // Test getting the value via custom query
+      const queryResult = await handle.query('readonlyProperty');
 
-      // Set a value using the signal
-      await handle.signal('signalValue', 'setting via @Set decorator');
-
-      // Ensure the method decorated with @Set was called
-      expect(await handle.result()).toBe('Processed by @Set decorator');
-    });
-
-    it.skip('Should invoke @Get decorated method when getting a value', async () => {
-      const handle = await execute(workflows.ShouldInvokeGetMethodOnPropertyGet);
-
-      // Get a value using the query
-      const queryResult = await handle.query('queryValue');
-
-      // Ensure the method decorated with @Get was called
-      expect(queryResult).toBe('Processed by @Get decorator');
-      expect(await handle.result()).toBe('Processed by @Get decorator');
+      expect(queryResult).toBe('readonly');
+      expect(await handle.result()).toBe('readonly');
     });
   });
 
@@ -145,7 +135,7 @@ describe('Workflow', () => {
       expect(await handle.result()).toBe('updated');
     });
 
-    it.skip('Should emit an event on signal invocation', async () => {
+    it('Should emit an event on signal invocation', async () => {
       const handle = await execute(workflows.ShouldEmitEventOnSignal);
       await handle.signal('status', 'updatedByEvent');
 

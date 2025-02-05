@@ -294,6 +294,8 @@ describe('StatefulWorkflow', () => {
     });
   });
 
+  // describe('@Property', () => {});
+
   describe('@Action', () => {
     it.skip('Should update state and child workflow and maintain state in parent and child correctly', async () => {
       const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Awesome test listing' }] };
@@ -674,7 +676,7 @@ describe('StatefulWorkflow', () => {
       expect(childStatus.name).toBe('CANCELLED');
     });
 
-    it.skip('Should handle completed child workflow and maintain state in the parent', async () => {
+    it('Should handle completed child workflow and maintain state in the parent', async () => {
       const listing = { id: uuid4(), name: 'Test Listing' };
       const data = { id: uuid4(), listings: [listing] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });

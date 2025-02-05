@@ -11,7 +11,5 @@ export { ShouldExecuteStateful } from './ShouldExecuteStateful';
 export { ShouldCreateDefaultPropertyAccessors } from './ShouldCreateDefaultPropertyAccessors';
 export { ShouldCreateCustomPropertyAccessors } from './ShouldCreateCustomPropertyAccessors';
 export { ShouldDisableSetForProperty } from './ShouldDisableSetForProperty';
-export { ShouldInvokeSetMethodOnPropertySet } from './ShouldInvokeSetMethodOnPropertySet';
-export { ShouldInvokeGetMethodOnPropertyGet } from './ShouldInvokeGetMethodOnPropertyGet';
 export { ShouldExecuteStatefulChild } from './ShouldExecuteStatefulChild';
 export { ShouldSignalWithStartAndArguments } from './ShouldSignalWithStartAndArguments';

@@ -49,6 +49,7 @@ export type ManagedPath = {
   };
   cancellationType?: workflow.ChildWorkflowCancellationType;
   parentClosePolicy?: workflow.ParentClosePolicy;
+  workflowIdConflictPolicy?: workflow.WorkflowIdConflictPolicy;
   condition?: (entity: Record<string, any>, data: StatefulWorkflow['data']) => boolean;
   processData?: (entity: Record<string, any>, data: StatefulWorkflow['data']) => Record<string, any>;
 };
@@ -129,6 +130,42 @@ export abstract class StatefulWorkflow<
   protected iteration = 0;
   protected schema: Schema;
 
+  /**
+   * The `conditionTimeout` property is utilized in the `StatefulWorkflow` class to manage timeout settings
+   * for workflow conditions. This optional parameter allows the developer to define a specific duration
+   * for which the workflow should wait for certain conditions to be satisfied before proceeding.
+   *
+   * Example:
+   * ```typescript
+   * protected conditionTimeout: Duration = Duration.fromMinutes(1);
+   * ```
+   *
+   * ### Usage:
+   * - **Context**: Used within the `executeWorkflow` method to prevent indefinite waits in case certain
+   *   conditions are not met in a timely manner.
+   *
+   * - **Definition**:
+   *   ```typescript
+   *   protected conditionTimeout?: Duration | undefined = undefined;
+   *   ```
+   *
+   * - **Integration**: Applied in scenarios where `await workflow.condition()` is called, controlling how long
+   *   the workflow can pause before proceeding.
+   *
+   * ### Configuration:
+   * - **Default Value**: `undefined`, implying no timeout unless explicitly set.
+   * - **Custom Values**: Use the `Duration` type to set a desired wait duration:
+   *   ```typescript
+   *   this.conditionTimeout = Duration.fromSeconds(30);
+   *   ```
+   *
+   * **Considerations**:
+   * - **Performance**: Setting appropriate timeouts ensures the workflow remains responsive and avoids long pauses.
+   * - **Scalability**: Timeouts should align with the overall system architecture, especially for systems with
+   *   nested or multiple workflows.
+   * - **Failure Handling**: Implement retries or alternative paths to handle situations where conditions
+   *   remain unmet beyond the timeout.
+   */
   protected conditionTimeout?: Duration | undefined = undefined;
 
   /**
@@ -164,7 +201,22 @@ export abstract class StatefulWorkflow<
    */
   protected abstract execute(args?: unknown, options?: ChronoFlowOptions): Promise<unknown>;
 
-  @Property({ set: false })
+  /**
+   * The `apiToken` property is used to store the API token for this workflow, which may interact
+   * with external systems requiring authentication. This property is memoized, meaning its value
+   * is preserved between workflow runs for consistency and reliability.
+   *
+   * ### Characteristics:
+   * - **Visibility**: Protected - Accessible within the class and subclasses.
+   * - **Assignable**: By design, this property is not directly settable (`set: false`), ensuring
+   *   that changes are made through controlled methods such as signals, preserving data integrity.
+   * - **Memoization**: This property is memoized with the key `'apiToken'`, allowing its value to
+   *   persist across different workflow executions.
+   *
+   * This property is essential for workflows that need secure and authenticated interactions
+   * with external services.
+   */
+  @Property({ set: false, memo: 'apiToken' })
   protected apiToken?: string;
 
   /**
@@ -1283,7 +1335,8 @@ export abstract class StatefulWorkflow<
         idAttribute,
         includeParentId,
         cancellationType = workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_COMPLETED,
-        parentClosePolicy = workflow.ParentClosePolicy.PARENT_CLOSE_POLICY_TERMINATE,
+        parentClosePolicy = workflow.ParentClosePolicy.TERMINATE,
+        workflowIdConflictPolicy = workflow.WorkflowIdConflictPolicy.TERMINATE_EXISTING,
         autoStart
       } = config;
 
@@ -1325,7 +1378,8 @@ export abstract class StatefulWorkflow<
         workflowId,
         cancellationType,
         parentClosePolicy,
-        startToCloseTimeout: '10 minutes',
+        workflowIdConflictPolicy,
+        startToCloseTimeout: '30 days',
         args: [
           {
             id,

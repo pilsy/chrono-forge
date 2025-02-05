@@ -13,18 +13,33 @@ import {
 } from '../decorators';
 import { Duration } from '@temporalio/common';
 
+/**
+ * Options for configuring a ChronoFlow.
+ */
 export interface ChronoFlowOptions {
+  /**
+   * The name of the workflow.
+   */
   name?: string;
+
+  /**
+   * The task queue for the workflow.
+   */
   taskQueue?: string;
+
+  /**
+   * Additional arbitrary options.
+   */
   [key: string]: any;
 }
 
 /**
- * `ChronoFlow` Decorator
+ * ChronoFlow Decorator
  *
- * Decorator to transform a class into a Temporal workflow function. This function dynamically creates and assigns
- * named functions for each workflow class that extends the `Workflow` base class. This ensures that Temporal can
- * register and invoke them by name while providing a clean class-based API for developers.
+ * Transforms a class into a Temporal workflow function.
+ * This function creates and assigns named workflow functions
+ * for each class extending the Workflow base class, allowing
+ * Temporal to register and invoke workflows by name with a clean class-based API.
  *
  * @param options - Configuration options for the workflow.
  */
@@ -78,42 +93,95 @@ export function ChronoFlow(options?: ChronoFlowOptions) {
   };
 }
 
+/**
+ * Base Workflow class for Temporal workflows.
+ *
+ * Represents a base class that provides essential infrastructure for creating workflows.
+ * Includes mechanisms for handling signals, queries, event handling, and more.
+ * Extends the EventEmitter to aid in workflow event management.
+ *
+ * @template P - Type of input parameters for the workflow constructor.
+ * @template O - Type of configuration options for the workflow.
+ */
 export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
-  // Change handles to a Map
+  /**
+   * Map to keep track of child workflow handles.
+   */
   protected handles: Map<string, workflow.ChildWorkflowHandle<any>> = new Map();
 
+  // Internal state binding flags
   private _hooksBound = false;
   private _eventsBound = false;
   private _signalsBound = false;
   private _queriesBound = false;
   private _propertiesBound = false;
 
+  /**
+   * Workflow logging instance provided by Temporal.
+   */
   protected log = workflow.log;
+
+  /**
+   * Workflow execution result.
+   */
   protected result: any;
+
+  /**
+   * Handlers for workflow queries.
+   */
   protected queryHandlers: { [key: string]: (...args: any[]) => any } = {};
+
+  /**
+   * Handlers for workflow signals.
+   */
   protected signalHandlers: { [key: string]: (args: any[]) => Promise<void> } = {};
 
+  /**
+   * Determines whether the workflow is a long running continueAsNew type workflow or a short lived one.
+   */
   @Property({ set: false })
   protected continueAsNew = false;
 
+  /**
+   * Boolean flag indicating if workflow should continue as new immediately.
+   */
   @Property()
   protected shouldContinueAsNew = false;
 
+  /**
+   * Maximum number of iterations for the workflow.
+   */
   @Property({ set: false })
   protected maxIterations = 10000;
 
+  /**
+   * Current workflow iteration count.
+   */
   @Property({ set: false })
   protected iteration = 0;
 
+  /**
+   * Boolean flag indicating pending iteration, setting this to true will result in a full execute() loop being run.
+   * This is useful if you have made changes and want the state or memo to update, or similar.
+   */
   @Property()
   protected pendingIteration: boolean = false;
 
+  /**
+   * Current status of the workflow.
+   */
   @Property()
   protected status: string = 'running';
 
+  /**
+   * Boolean flag indicating a pending update, setting this to true will result in loadData() being called if it is defined.
+   */
   @Property()
   protected pendingUpdate = true;
 
+  /**
+   * Signal to pause workflow execution.
+   */
   @Signal()
   public pause(): void {
     if (this.status !== 'paused') {
@@ -129,6 +197,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
   }
 
+  /**
+   * Signal to resume workflow execution.
+   */
   @Signal()
   public resume(): void {
     if (this.status !== 'running') {
@@ -144,6 +215,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
   }
 
+  /**
+   * Signal to cancel workflow execution.
+   */
   @Signal()
   public cancel(): void {
     if (this.status !== 'cancelling') {
@@ -159,6 +233,12 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
   }
 
+  /**
+   * Basic constructor for Workflow.
+   *
+   * @param args - Initial parameters for workflow execution.
+   * @param options - Configuration options for the workflow.
+   */
   constructor(
     protected args: P,
     protected options: O
@@ -168,17 +248,37 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     this.options = options;
   }
 
+  /**
+   * Optional duration for condition timeout.
+   */
   @Property()
   protected conditionTimeout?: Duration | undefined = undefined;
 
+  /**
+   * Check if workflow is in a terminal state.
+   *
+   * @returns {boolean} True if the workflow is in a terminal state, false otherwise.
+   */
   protected isInTerminalState(): boolean {
     return ['complete', 'completed', 'cancel', 'cancelling', 'cancelled', 'error', 'erroring', 'errored'].includes(
       this.status
     );
   }
 
+  /**
+   * Abstract method to execute the workflow logic.
+   *
+   * @param args - Arguments required for execution.
+   * @returns {Promise<unknown>} Result of the workflow execution.
+   */
   protected abstract execute(...args: unknown[]): Promise<unknown>;
 
+  /**
+   * Core method to manage workflow execution and its lifecycle.
+   *
+   * @param args - Arguments passed for workflow execution.
+   * @returns {Promise<any>} Result of the workflow processing.
+   */
   protected async executeWorkflow(...args: unknown[]): Promise<any> {
     return new Promise(async (resolve, reject) => {
       try {
@@ -234,6 +334,11 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     });
   }
 
+  /**
+   * Handle the scenario when maximum iterations are reached.
+   *
+   * @returns {Promise<void>} Denotes successful handling of max iterations.
+   */
   protected async handleMaxIterations(): Promise<void> {
     await workflow.condition(() => workflow.allHandlersFinished(), '30 seconds');
 
@@ -247,6 +352,13 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
   }
 
+  /**
+   * Generic method to handle errors encountered during workflow execution.
+   *
+   * @param err - Error encountered.
+   * @param reject - Function to call with rejection error.
+   * @returns {Promise<void>}
+   */
   protected async handleExecutionError(err: any, reject: (err: Error) => void): Promise<void> {
     this.log.debug(`[Workflow]:${this.constructor.name}:handleExecutionError`);
     this.log.error(`Error encountered: ${err?.message}: ${err?.stack}`);
@@ -273,6 +385,12 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
   }
 
+  /**
+   * Emit events asynchronously to the necessary listeners.
+   *
+   * @param event - The event to be emitted.
+   * @param args - Arguments to pass to the listeners.
+   */
   protected async emitAsync(event: string, ...args: any[]): Promise<void> {
     const listeners = this.listeners(event);
     for (const listener of listeners) {
@@ -280,6 +398,12 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
   }
 
+  /**
+   * Send a signal to the workflow.
+   *
+   * @param signalName - The name of the signal.
+   * @param args - The arguments associated with the signal.
+   */
   protected async signal(signalName: string, ...args: unknown[]): Promise<void> {
     try {
       if (typeof this.signalHandlers[signalName] === 'function') {
@@ -292,6 +416,13 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
   }
 
+  /**
+   * Execute a query over the workflow.
+   *
+   * @param queryName - Name of the query.
+   * @param args - Arguments for the query.
+   * @returns {Promise<any>} Result of the query execution.
+   */
   protected async query(queryName: string, ...args: unknown[]): Promise<any> {
     let result: any;
     try {
@@ -304,6 +435,12 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     return result;
   }
 
+  /**
+   * Forward a signal to all child workflows.
+   *
+   * @param signalName - The name of the signal to be forwarded.
+   * @param args - Additional arguments to pass.
+   */
   protected async forwardSignalToChildren(signalName: string, ...args: unknown[]): Promise<void> {
     for (const handle of this.handles.values()) {
       try {
@@ -314,6 +451,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
   }
 
+  /**
+   * Bind event handlers using metadata.
+   */
   private async bindEventHandlers() {
     if (this._eventsBound) {
       return;
@@ -335,6 +475,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     this._eventsBound = true;
   }
 
+  /**
+   * Bind lifecycle hooks to workflow methods.
+   */
   @On('hooks')
   private async bindHooks() {
     if (this._hooksBound) {
@@ -389,6 +532,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     this._hooksBound = true;
   }
 
+  /**
+   * Bind property handlers based on metadata.
+   */
   @On('init')
   protected async bindProperties() {
     if (!!this._propertiesBound) {
@@ -400,19 +546,22 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
         const getter = () => (this as any)[propertyKey];
         this.queryHandlers[queryName] = getter.bind(this);
         // @ts-ignore
-        workflow.setHandler(workflow.defineQuery(queryName), getter);
+        workflow.setHandler(workflow.defineQuery(typeof g === 'string' ? g : queryName), getter);
       }
 
       if (s) {
         const setter = (value: any) => ((this as any)[propertyKey] = value);
         this.signalHandlers[signalName] = setter.bind(this);
         // @ts-ignore
-        workflow.setHandler(workflow.defineSignal(signalName), setter);
+        workflow.setHandler(workflow.defineSignal(typeof g === 'string' ? s : signalName), setter);
       }
     });
     this._propertiesBound = true;
   }
 
+  /**
+   * Bind query handlers for the workflow.
+   */
   @On('init')
   protected bindQueries() {
     if (!!this._queriesBound) {
@@ -429,6 +578,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     this._queriesBound = true;
   }
 
+  /**
+   * Bind signal handlers for the workflow.
+   */
   @On('init')
   protected bindSignals() {
     if (!!this._signalsBound) {
@@ -445,6 +597,13 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     this._signalsBound = true;
   }
 
+  /**
+   * Collect custom metadata for event handlers.
+   *
+   * @param metadataKey - The metadata key symbol.
+   * @param target - The target to collect metadata from.
+   * @returns {any[]} The collected metadata.
+   */
   protected collectMetadata(metadataKey: Symbol, target: any): any[] {
     const collectedMetadata: any[] = [];
     const seen = new Set();
@@ -465,6 +624,12 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     return collectedMetadata;
   }
 
+  /**
+   * Collect hook metadata for processing lifecycle hooks.
+   *
+   * @param target - The target prototype.
+   * @returns {Object} The collected hook metadata.
+   */
   private collectHookMetadata(target: any): { [key: string]: { before: string[]; after: string[] } } {
     const collectedMetadata: { [key: string]: { before: string[]; after: string[] } } = {};
     const protoChain: any[] = [];
