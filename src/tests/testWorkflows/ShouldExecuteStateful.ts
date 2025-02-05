@@ -7,8 +7,9 @@ import { Action, Debounce, On, Property, Signal } from '../../decorators';
 
 export type TestAction = {
   actionId: string;
+  type: 'testAction';
   payload: {
-    testUpdate: string;
+    fromUpdate: string;
   };
 };
 
@@ -40,15 +41,20 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
     }
   };
 
+  @Property({ path: 'fromUpdate' })
+  protected fromUpdate!: string;
+
   @Property({ path: 'listings' })
   protected listings: any;
 
-  @Action()
-  protected testAction(action: TestAction) {
+  @Action<TestAction, void>()
+  protected async testAction(action: TestAction): Promise<void> {
     if (!this.data) {
       throw new Error(`There is no data available yet...`);
     }
-    console.log(this.data);
+    const { fromUpdate } = action.payload;
+    this.fromUpdate = fromUpdate;
+    console.log(`fromUpdate=${fromUpdate}`);
   }
 
   @Property()
