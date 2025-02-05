@@ -77,7 +77,7 @@ import { ChronoFlow, Workflow } from 'chrono-forge';
 @ChronoFlow()
 export class SimpleWorkflow extends Workflow {
   protected async execute() {
-    console.log('Executing workflow...');
+    this.log.info('Executing workflow...');
   }
 }
 
@@ -97,44 +97,8 @@ import schemas, { MyEntity } from "@schemas"
   schemas,
 })
 class MyStatefulWorkflow extends StatefulWorkflow {
-  protected maxIterations = 10000;
-  protected continueAsNew = true;
-
-  @Property() // Wires up "custom" query to get the value, and "custom" signal to set the value
-  protected custom: string = "my custom value";
-
-  @Query()
-  public getStateValue(key: string): any {
-    return this.state[key];
-  }
-
-  @Signal()
-  public updateStateValue(key: string, value: any): void {
-    this.state[key] = value;
-  }
-
-  @On("someSignal")
-  async handleSomeSignal(data: any) {
-    this.log.debug(`someSignal event fired! with ${data}...`);
-  }
-
-  @Before("processState")
-  async beforeExecuteAndProcessingNewState(newState: EntitiesState) {
-    this.log.info(`Hooked in before processing new state to do something...`);
-  }
-
-  @Before("execute")
-  async beforeExecute() {
-    this.log.info('Before execution hook.');
-  }
-
   protected async execute() {
-    console.log('Executing stateful workflow with normalized state...');
-  }
-
-  @Hook({ after: 'execute' })
-  async afterExecution() {
-    this.log.info('After execution hook.');
+    this.log.info('Executing stateful workflow...');
   }
 }
 
@@ -142,10 +106,12 @@ export default MyStatefulWorkflow;
 ```
 
 `src/schema/index.ts`
+
 ```typescript
 import { SchemaManager } from '../SchemaManager';
 
 const schemaManager = SchemaManager.getInstance();
+
 schemaManager.setSchemas({
   MyEntity: {
     idAttribute: 'id',
@@ -173,6 +139,8 @@ The `Workflow` class serves as the base class for defining Temporal workflows in
 
 - **Signal Handling**: Real-time communication with running workflows using the `@Signal` decorator. For details, see [Signal Handling](./docs/Workflow/signal_handling.md).
 - **Query Handling**: Retrieve workflow state or computed values using the `@Query` decorator. Learn more in [Query Handling](./docs/Workflow/query_handling.md).
+- **Update Handling**: Update workflow state using the `@Action` decorator. Learn more in [Update Handling](./docs/Workflow/update_handling.md).
+
 - **Error Handling**: Robust error management using the `@OnError` decorator to define custom error handlers. Detailed examples are provided in [Error Handling with `@OnError`](./docs/Workflow/error_handling.md).
 - **Lifecycle Hooks**: Inject custom logic before or after specific methods using the `@Hook` decorator. See [Lifecycle Management Hooks](./docs/Workflow/lifecycle_hooks.md) for more information.
 - **Execution Control**: Manage the workflow execution lifecycle with methods like `execute`, which allow workflows to be paused, resumed, or terminated. For insights into managing long-running workflows, see [Execution Control and Flow Management](./docs/Workflow/execution_control.md).
