@@ -135,6 +135,35 @@ describe('StatefulWorkflow', () => {
   });
 
   describe('State Update Mechanisms', () => {
+    it('Should update state correctly when there are no children', async () => {
+      const data = { id: uuid4() };
+      const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
+      const expectedInitial = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
+      await sleep();
+
+      // Initial state verification
+      const state = await handle.query('state');
+      expect(state).toEqual(expectedInitial);
+
+      const initalExpectedMemo = state;
+      const { state: initialMemoValue } = await getMemo(handle);
+      expect(initialMemoValue).toEqual(initalExpectedMemo);
+
+      // Update state
+      const updatedData = { ...data, update: 'fromUpdate' };
+      const expectedUpdated = normalizeEntities(updatedData, SchemaManager.getInstance().getSchema('User'));
+
+      await handle.signal('update', { data: updatedData, entityName: 'User' });
+      await sleep(5000);
+
+      const updatedState = await handle.query('state');
+      expect(updatedState).toEqual(expectedUpdated);
+
+      const updatedExpectedMemo = expectedUpdated;
+      const { state: updatedMemoValue } = await getMemo(handle);
+      expect(updatedMemoValue).toEqual(updatedExpectedMemo);
+    });
+
     it('Should update state and child workflow and maintain state in parent and child correctly', async () => {
       const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Awesome test listing' }] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
