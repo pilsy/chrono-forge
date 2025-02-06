@@ -4,5 +4,9 @@
     "source.fixAll.eslint": "explicit"
   },
   "eslint.validate": ["javascript", "typescript"],
-  "jest.runMode": "on-demand"
+  "jest.runMode": "on-demand",
+  "sonarlint.connectedMode.project": {
+    "connectionId": "pilsy",
+    "projectKey": "pilsy_chrono-forge"
+  }
 }

@@ -1,28 +1,15 @@
 import EventEmitter from 'eventemitter3';
-import {
-  EntitiesState,
-  EntityAction,
-  reducer,
-  updateEntity,
-  clearEntities,
-  UPDATE_ENTITIES,
-  PARTIAL_UPDATE,
-  updateNormalizedEntity,
-  deleteEntity
-} from '../store/entities';
+import { EntitiesState, EntityAction, reducer, updateEntity, clearEntities } from '../store/entities';
 import { DetailedDiff, detailedDiff } from 'deep-object-diff';
-import { isEmpty, isObject } from 'lodash';
-import { getEntityName, limitRecursion } from '../utils/limitRecursion';
+import { isEmpty } from 'lodash';
 import { Mutex } from '../decorators';
-import { SchemaManager } from './SchemaManager';
-import { get } from 'dottie';
-import { schema } from 'normalizr';
+import { limitRecursion } from '../utils';
 
 export class StateManager extends EventEmitter {
   get instanceId() {
     return this._instanceId;
   }
-  private constructor(private _instanceId: string) {
+  private constructor(private readonly _instanceId: string) {
     super();
     this._instanceId = _instanceId;
     this._state = {};
@@ -55,15 +42,14 @@ export class StateManager extends EventEmitter {
     this.emit('stateChange', { newState, previousState, differences: detailedDiff(previousState, newState) });
   }
 
-  private cache: Map<string, { data: any; lastState: EntitiesState }> = new Map();
-  private _queue: EntityAction[] = [];
+  private readonly cache: Map<string, { data: any; lastState: EntitiesState }> = new Map();
+  private readonly _queue: EntityAction[] = [];
   get queue() {
     return this._queue;
   }
-  private origins: Set<string> = new Set();
+  private readonly origins: Set<string> = new Set();
 
   async dispatch(action: EntityAction, sync = true, origin: string | null = null): Promise<void> {
-    // console.log(`[StateManager]: Dispatch...\n${JSON.stringify(action, null, 2)}`);
     const origins: Set<string> = sync ? new Set() : this.origins;
     if (origin) {
       origins.add(origin);
@@ -86,7 +72,6 @@ export class StateManager extends EventEmitter {
 
     while (pendingChanges.length > 0) {
       const change = pendingChanges.shift();
-      // console.log(`[StateManager]: Processing change`, JSON.stringify(change, null, 2));
       newState = reducer(newState || this._state, change as EntityAction);
     }
 
@@ -197,7 +182,7 @@ export class StateManager extends EventEmitter {
           }
           target[prop] = value;
           this.dispatch(updateEntity(denormalized, entityName), false, this.instanceId);
-          return true;
+          return value;
         },
         get: (target: any, prop: string | symbol) => {
           if (prop === 'toJSON') {
@@ -215,9 +200,6 @@ export class StateManager extends EventEmitter {
       };
       result = new Proxy(denormalized, handler);
       this.cache.set(cacheKey, { data: result, lastState: this._state });
-
-      // result = limitRecursion(id, entityName, this._state, this);
-      // this.cache.set(cacheKey, { data: result, lastState: this._state });
     } else {
       result = entity;
     }
@@ -229,25 +211,39 @@ export class StateManager extends EventEmitter {
     const changedPaths = ['added', 'updated', 'deleted'] as const;
 
     changedPaths.forEach((changeType) => {
-      const entities = differences[changeType];
-      if (!entities || typeof entities !== 'object') return;
+      this.invalidateEntities(differences[changeType]);
+    });
+  }
 
-      Object.entries(entities).forEach(([entityName, entityChanges]) => {
-        if (!entityChanges || typeof entityChanges !== 'object') return;
+  private invalidateEntities(entities: Record<string, any>) {
+    if (!entities || typeof entities !== 'object') return;
 
-        Object.keys(entityChanges).forEach((entityId) => {
-          const cacheKey = `${entityName}.${entityId}`;
-          this.cache.delete(cacheKey); // Invalidate cache for parent entity
+    Object.entries(entities).forEach(([entityName, entityChanges]) => {
+      this.invalidateEntityChanges(entityName, entityChanges);
+    });
+  }
 
-          // Also invalidate cache for nested entities if necessary
-          if (entityChanges[entityId] && typeof entityChanges[entityId] === 'object') {
-            Object.keys(entityChanges[entityId]).forEach((nestedEntityId) => {
-              const nestedCacheKey = `${entityName}.${nestedEntityId}`;
-              this.cache.delete(nestedCacheKey);
-            });
-          }
-        });
-      });
+  private invalidateEntityChanges(entityName: string, entityChanges: Record<string, any>) {
+    if (!entityChanges || typeof entityChanges !== 'object') return;
+
+    Object.keys(entityChanges).forEach((entityId) => {
+      this.deleteCache(entityName, entityId);
+
+      const nestedEntities = entityChanges[entityId];
+      if (nestedEntities && typeof nestedEntities === 'object') {
+        this.invalidateNestedEntities(entityName, nestedEntities);
+      }
+    });
+  }
+
+  private deleteCache(entityName: string, entityId: string) {
+    const cacheKey = `${entityName}.${entityId}`;
+    this.cache.delete(cacheKey);
+  }
+
+  private invalidateNestedEntities(entityName: string, nestedEntities: Record<string, any>) {
+    Object.keys(nestedEntities).forEach((nestedEntityId) => {
+      this.deleteCache(entityName, nestedEntityId);
     });
   }
 

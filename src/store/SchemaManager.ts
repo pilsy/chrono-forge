@@ -63,7 +63,7 @@ export class SchemaManager {
 
     // First pass: Create schema entities without relationships
     for (const [name, definition] of Object.entries(schemaConfig)) {
-      const { idAttribute, ...relationships } = definition;
+      const { idAttribute } = definition;
 
       schemas[name] = new schema.Entity(
         name,
