@@ -866,12 +866,6 @@ export abstract class StatefulWorkflow<
     this.entityName = (this.params?.entityName || options?.schemaName) as string;
     this.schema = this.entityName ? this.schemaManager.getSchema(this.entityName) : (options.schema as schema.Entity);
 
-    if (this.params?.subscriptions) {
-      for (const subscription of this.params.subscriptions) {
-        this.subscribe(subscription);
-      }
-    }
-
     this.stateManager.on('stateChange', this.stateChanged.bind(this));
     this.pendingUpdate = true;
     this.pendingIteration = true;
@@ -891,8 +885,22 @@ export abstract class StatefulWorkflow<
       this.stateManager.state = memo.state;
     }
 
+    this.status = this.params?.status ?? 'running';
+
+    this.apiUrl = this.params?.apiUrl ?? options?.apiUrl;
+    this.apiToken = this.params?.apiToken;
+  }
+
+  @On('setup')
+  protected async onSetup() {
+    if (this.params?.subscriptions) {
+      for (const subscription of this.params.subscriptions) {
+        await this.subscribe(subscription);
+      }
+    }
+
     if (this.params?.state && !isEmpty(this.params?.state)) {
-      this.stateManager.dispatch(
+      await this.stateManager.dispatch(
         updateNormalizedEntities(this.params.state, '$set'),
         false,
         workflow.workflowInfo().workflowId
@@ -900,13 +908,8 @@ export abstract class StatefulWorkflow<
     }
 
     if (this.params?.data && !isEmpty(this.params?.data)) {
-      this.stateManager.dispatch(updateEntity(this.params.data, this.entityName), false);
+      await this.stateManager.dispatch(updateEntity(this.params.data, this.entityName), false);
     }
-
-    this.status = this.params?.status ?? 'running';
-
-    this.apiUrl = this.params?.apiUrl ?? options?.apiUrl;
-    this.apiToken = this.params?.apiToken;
   }
 
   /**

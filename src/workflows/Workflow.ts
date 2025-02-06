@@ -69,6 +69,7 @@ export function ChronoFlow(options?: ChronoFlowOptions) {
 
         try {
           await instance.bindEventHandlers();
+          await instance.emitAsync('setup');
           await instance.emitAsync('hooks');
           await instance.emitAsync('init');
 
