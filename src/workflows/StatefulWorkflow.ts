@@ -24,7 +24,8 @@ import {
   ActionOptions,
   On,
   After,
-  Mutex
+  Mutex,
+  EVENTS_METADATA_KEY
 } from '../decorators';
 import { SchemaManager } from '../store/SchemaManager';
 import { StateManager } from '../store/StateManager';
@@ -332,6 +333,7 @@ export abstract class StatefulWorkflow<
    * Internal state binding flags
    */
   private _actionsBound: boolean = false;
+  protected _eventsBound = false;
 
   /**
    * Internal reference object to hold the values for memo properties.
@@ -2552,6 +2554,29 @@ export abstract class StatefulWorkflow<
     }
 
     this._actionsBound = true;
+  }
+
+  /**
+   * Bind event handlers using metadata.
+   */
+  protected async bindEventHandlers() {
+    if (this._eventsBound) {
+      return;
+    }
+
+    const eventHandlers = this.collectMetadata(EVENTS_METADATA_KEY, this.constructor.prototype);
+    eventHandlers.forEach((handler: { event: string; method: string }) => {
+      (handler.event.startsWith('state:') ? this.stateManager : this).on(
+        handler.event.replace(/^state:/, ''),
+        async (...args: any[]) => {
+          if (typeof (this as any)[handler.method] === 'function') {
+            return await (this as any)[handler.method](...args);
+          }
+        }
+      );
+    });
+
+    this._eventsBound = true;
   }
 
   /**

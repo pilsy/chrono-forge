@@ -46,7 +46,7 @@ export interface ChronoFlowOptions {
 export function ChronoFlow(options?: ChronoFlowOptions) {
   return function (constructor: any) {
     const { name: optionalName, taskQueue, tracerName = 'temporal_worker', ...extraOptions } = options || {};
-    const workflowName: string = optionalName || constructor.name;
+    const workflowName: string = optionalName ?? constructor.name;
 
     if (!(constructor.prototype instanceof Workflow)) {
       abstract class DynamicChronoFlow extends Workflow {
@@ -113,7 +113,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    * Internal flags used to determine if certain decorators have been bound to this workflow instance.
    */
   private _hooksBound = false;
-  private _eventsBound = false;
+  protected _eventsBound = false;
   private _signalsBound = false;
   private _queriesBound = false;
   private _propertiesBound = false;
@@ -254,7 +254,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    * Optional duration for condition timeout.
    */
   @Property()
-  protected conditionTimeout?: Duration | undefined = undefined;
+  protected conditionTimeout: Duration | undefined = undefined;
 
   /**
    * Check if workflow is in a terminal state.
@@ -282,7 +282,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    * @returns {Promise<any>} Result of the workflow processing.
    */
   protected async executeWorkflow(...args: unknown[]): Promise<any> {
-    return new Promise(async (resolve, reject) => {
+    const executeWorkflowLogic = async (resolve: (value: any) => void, reject: (reason?: any) => void) => {
       try {
         while (this.iteration <= this.maxIterations) {
           await workflow.condition(
@@ -333,7 +333,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       } catch (err) {
         await this.handleExecutionError(err, reject);
       }
-    });
+    };
+
+    return new Promise(executeWorkflowLogic);
   }
 
   /**
@@ -396,7 +398,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   protected async emitAsync(event: string, ...args: any[]): Promise<void> {
     const listeners = this.listeners(event);
     for (const listener of listeners) {
-      await listener(...args);
+      await (listener as (...args: any[]) => Promise<void>)(...args);
     }
   }
 
@@ -453,25 +455,19 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
   }
 
-  /**
-   * Bind event handlers using metadata.
-   */
-  private async bindEventHandlers() {
+  protected async bindEventHandlers() {
     if (this._eventsBound) {
       return;
     }
 
     const eventHandlers = this.collectMetadata(EVENTS_METADATA_KEY, this.constructor.prototype);
     eventHandlers.forEach((handler: { event: string; method: string }) => {
-      // @ts-ignore
-      (/^state/.test(handler.event) ? this.stateManager : this).on(
-        handler.event.replace(/^state\:/, ''),
-        async (...args: any[]) => {
-          if (typeof (this as any)[handler.method] === 'function') {
-            return await (this as any)[handler.method](...args);
-          }
+      this.on(handler.event, async (...args: any[]) => {
+        const method = this[handler.method as keyof this];
+        if (typeof method === 'function') {
+          return await method.apply(this, args);
         }
-      );
+      });
     });
 
     this._eventsBound = true;
@@ -490,8 +486,10 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     if (!hooks) return;
 
     const applyHook = async (methodName: string, originalMethod: () => any, ...args: any[]) => {
-      return new Promise(async (resolve, reject) => {
-        const { before, after } = hooks[methodName as string] || { before: [], after: [] };
+      // Create an inner async function to handle asynchronous operations
+      const executeHooks = async () => {
+        const { before, after } = hooks[methodName] || { before: [], after: [] };
+
         if (Array.isArray(before)) {
           for (const beforeHook of before) {
             if (typeof (this as any)[beforeHook] === 'function') {
@@ -506,7 +504,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
         try {
           result = await originalMethod.apply(this, args as any);
         } catch (err) {
-          return reject(err);
+          throw err instanceof Error ? err : new Error(err as string);
         }
 
         if (Array.isArray(after)) {
@@ -518,7 +516,12 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
           }
         }
 
-        resolve(result);
+        return result;
+      };
+
+      // Use the non-async promise executor and call the async function
+      return new Promise((resolve, reject) => {
+        executeHooks().then(resolve).catch(reject);
       });
     };
 
@@ -539,7 +542,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    */
   @On('init')
   protected async bindProperties() {
-    if (!!this._propertiesBound) {
+    if (this._propertiesBound) {
       return;
     }
     const properties = this.collectMetadata(PROPERTY_METADATA_KEY, this.constructor.prototype);
@@ -566,7 +569,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    */
   @On('init')
   protected bindQueries() {
-    if (!!this._queriesBound) {
+    if (this._queriesBound) {
       return;
     }
     const queries = this.collectMetadata(QUERY_METADATA_KEY, this.constructor.prototype);
@@ -585,7 +588,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    */
   @On('init')
   protected bindSignals() {
-    if (!!this._signalsBound) {
+    if (this._signalsBound) {
       return;
     }
     const signals = this.collectMetadata(SIGNAL_METADATA_KEY, this.constructor.prototype);

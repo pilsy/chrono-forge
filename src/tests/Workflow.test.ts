@@ -1,19 +1,8 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
-import path from 'path';
-import { WorkflowCoverage } from '@temporalio/nyc-test-coverage';
-import { Workflow, ChronoFlow, Signal, Query } from '../index';
-import { TestWorkflowEnvironment } from '@temporalio/testing';
-import { Worker, Runtime, DefaultLogger, LogEntry } from '@temporalio/worker';
-import { WorkflowClient } from '@temporalio/client';
 import { v4 as uuid4 } from 'uuid';
 import * as workflows from './testWorkflows';
-import {
-  makeWorkflowExporter,
-  OpenTelemetryActivityInboundInterceptor
-} from '@temporalio/interceptors-opentelemetry/lib/worker';
-import { getExporter, getResource, getTracer } from '../utils/instrumentation';
 
 describe('Workflow', () => {
   let execute;
@@ -170,23 +159,3 @@ describe('Workflow', () => {
     });
   });
 });
-
-/*
-Test Case Descriptions for Decorators
-Property Decorator with Default Get/Set Behavior:
-
-Ensure that properties decorated with @Property without specific get or set options have automatically generated signals and queries for getting and setting values.
-Test that setting the value via signal correctly updates the property.
-Property Decorator with Custom Get/Set Names:
-
-Test that when @Property is used with custom get and set options, the signals and queries are registered under the provided names and invoke the correct methods.
-Property Decorator with Disabled Set or Get:
-
-Test that when @Property is used with get: false or set: false, the respective signal or query is not available, and attempts to access them should fail gracefully.
-Set Decorator:
-
-Ensure that methods decorated with @Set are correctly invoked when setting a value via signal.
-Get Decorator:
-
-Ensure that methods decorated with @Get are correctly invoked when querying a value via query.
-*/
