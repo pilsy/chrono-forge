@@ -29,11 +29,11 @@
 name: SonarCloud analysis
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, synchronize, reopened]
+  # push:
+  #   branches:
+  #     - main
+  # pull_request:
+  #   types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
