@@ -1,3 +1,4 @@
+import yaml from 'js-yaml';
 import { schema } from 'normalizr';
 
 export type SchemasDefinition = {
@@ -88,5 +89,15 @@ export class SchemaManager {
     }
 
     return schemas;
+  }
+}
+
+export function parseSchemasFromYAML(yamlSchema: string) {
+  const schemaManager = SchemaManager.getInstance();
+  try {
+    const schemaConfig = yaml.load(yamlSchema) as Record<string, any>;
+    schemaManager.setSchemas(schemaConfig);
+  } catch (error) {
+    console.error('❌ Failed to parse schemas from YAML string:', error);
   }
 }
