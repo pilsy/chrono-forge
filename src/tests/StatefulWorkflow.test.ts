@@ -2,29 +2,12 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 
-import path from 'path';
-import { WorkflowCoverage } from '@temporalio/nyc-test-coverage';
-import { Workflow, ChronoFlow, StatefulWorkflowParams } from '../index';
-import { Signal, Query } from '../decorators';
-import { TestWorkflowEnvironment } from '@temporalio/testing';
-import { Worker, Runtime, DefaultLogger, LogEntry } from '@temporalio/worker';
-import { WorkflowClient } from '@temporalio/client';
+import { StatefulWorkflowParams } from '../index';
 import { v4 as uuid4 } from 'uuid';
 import { SchemaManager } from '../store/SchemaManager';
 import * as workflows from './testWorkflows';
-import { logger } from '../utils/logger';
-import {
-  OpenTelemetryActivityInboundInterceptor,
-  makeWorkflowExporter
-} from '@temporalio/interceptors-opentelemetry/lib/worker';
 import { normalizeEntities } from '../store/entities';
-import { getExternalWorkflowHandle } from '@temporalio/workflow';
-import { cloneDeep } from 'lodash';
-import dottie, { get, set } from 'dottie';
-import { getExporter, getResource, getTracer } from '../utils/instrumentation';
-import { Photo } from './testSchemas';
-import { getCompositeKey, getMemo, limitRecursion, unflatten } from '../utils';
-import { denormalize } from 'normalizr';
+import { getCompositeKey, getMemo, limitRecursion } from '../utils';
 import { TestAction } from './testWorkflows/ShouldExecuteStateful';
 
 describe('StatefulWorkflow', () => {
@@ -175,9 +158,6 @@ describe('StatefulWorkflow', () => {
       const state = await handle.query('state');
       expect(state).toEqual(expectedInitial);
 
-      // const { state: memoState } = await getMemo(client.workflow.getHandle(`User-${data.id}`));
-      // expect(memoState).toEqual(expectedInitial);
-
       const initalExpectedMemo = state;
       const { state: initialMemoValue } = await getMemo(handle);
       expect(initialMemoValue).toEqual(initalExpectedMemo);
@@ -314,17 +294,15 @@ describe('StatefulWorkflow', () => {
       });
       await sleep();
 
-      await handle.signal('update', { data: { id: userId, age: 25 }, entityName: 'User' }),
-        await handle.signal('update', { data: { id: userId, age: 30 }, entityName: 'User' }),
-        await handle.signal('update', { data: { id: userId, age: 35 }, entityName: 'User' });
+      await handle.signal('update', { data: { id: userId, age: 25 }, entityName: 'User' });
+      await handle.signal('update', { data: { id: userId, age: 30 }, entityName: 'User' });
+      await handle.signal('update', { data: { id: userId, age: 35 }, entityName: 'User' });
 
       await sleep();
       const state = await handle.query('state');
       expect(state.User[userId]).toHaveProperty('age', 35); // Last update should win
     });
   });
-
-  // describe('@Property', () => {});
 
   describe('@Action', () => {
     it('Should update state and child workflow and maintain state in parent and child correctly', async () => {
@@ -536,11 +514,6 @@ describe('StatefulWorkflow', () => {
       expectedState.Listing[listing2Id].name = 'Updated Listing 2 Name';
       let expectedData = limitRecursion(userId, 'User', expectedState);
 
-      const updatedListingData = {
-        id: listingId,
-        user: userId,
-        name: 'Updated Listing Name'
-      };
       await handle.signal('update', {
         data: expectedData,
         entityName: 'User'
@@ -610,7 +583,7 @@ describe('StatefulWorkflow', () => {
 
     it('Should handle restarting child workflow after cancellation', async () => {
       const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Test Listing' }] };
-      const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
+      await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
       await sleep();
 
       const client = getClient();
@@ -791,7 +764,7 @@ describe('StatefulWorkflow', () => {
 
       // Start child Listing and Like workflows
       const client = getClient();
-      const listingHandle = await client.workflow.getHandle(`Listing-${listingId}`);
+      await client.workflow.getHandle(`Listing-${listingId}`);
       const likeHandle = await client.workflow.getHandle(`Like-${likeId}`);
 
       // Update the Like entity directly in the child workflow
