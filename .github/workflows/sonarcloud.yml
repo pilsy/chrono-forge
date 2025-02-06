@@ -30,9 +30,10 @@ name: SonarCloud analysis
 
 on:
   push:
-    branches: ['main']
+    branches:
+      - main
   pull_request:
-    branches: ['main']
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
@@ -41,7 +42,7 @@ permissions:
 jobs:
   Analysis:
     runs-on: ubuntu-latest
-
+    if: github.event_name != 'push' || github.event_name != 'pull_request'
     steps:
       - name: Analyze with SonarCloud
 
