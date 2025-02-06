@@ -11,7 +11,7 @@ import {
 } from '../store/entities';
 import { DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
-import { isEmpty, isEqual, unset } from 'lodash';
+import { isEmpty, isEqual } from 'lodash';
 import { Workflow, ChronoFlowOptions } from './Workflow';
 import {
   Signal,
@@ -20,6 +20,7 @@ import {
   Property,
   ACTIONS_METADATA_KEY,
   VALIDATOR_METADATA_KEY,
+  PROPERTY_METADATA_KEY,
   ActionOptions,
   On,
   After,
@@ -29,7 +30,6 @@ import { SchemaManager } from '../store/SchemaManager';
 import { StateManager } from '../store/StateManager';
 import { limitRecursion } from '../utils/limitRecursion';
 import { getCompositeKey } from '../utils/getCompositeKey';
-import { PROPERTY_METADATA_KEY } from '../decorators';
 import { UpdateHandlerOptions } from '@temporalio/workflow/lib/interfaces';
 import { Duration, HandlerUnfinishedPolicy } from '@temporalio/common';
 import { flatten } from '../utils/flatten';
@@ -405,7 +405,7 @@ export abstract class StatefulWorkflow<
    * - **Failure Handling**: Implement retries or alternative paths to handle situations where conditions
    *   remain unmet beyond the timeout.
    */
-  protected conditionTimeout?: Duration | undefined = undefined;
+  protected conditionTimeout: Duration | undefined = undefined;
 
   /**
    * Determines whether data should be loaded in the workflow based on internal state.
@@ -862,9 +862,7 @@ export abstract class StatefulWorkflow<
 
     this.id = this.params?.id;
     this.entityName = (this.params?.entityName || options?.schemaName) as string;
-    this.schema = this.entityName
-      ? (this.schemaManager.getSchema(this.entityName) as schema.Entity)
-      : (options.schema as schema.Entity);
+    this.schema = this.entityName ? this.schemaManager.getSchema(this.entityName) : (options.schema as schema.Entity);
 
     if (this.params?.subscriptions) {
       for (const subscription of this.params.subscriptions) {
@@ -905,7 +903,7 @@ export abstract class StatefulWorkflow<
 
     this.status = this.params?.status ?? 'running';
 
-    this.apiUrl = this.params?.apiUrl || options?.apiUrl;
+    this.apiUrl = this.params?.apiUrl ?? options?.apiUrl;
     this.apiToken = this.params?.apiToken;
   }
 
@@ -939,7 +937,7 @@ export abstract class StatefulWorkflow<
   protected async executeWorkflow(): Promise<any> {
     this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.executeWorkflow`);
 
-    return new Promise(async (resolve, reject) => {
+    const executeWorkflowLogic = async (resolve: (value: any) => void, reject: (reason?: any) => void) => {
       try {
         if (this.schema) this.configureManagedPaths(this.schema);
         while (this.iteration <= this.maxIterations) {
@@ -989,7 +987,6 @@ export abstract class StatefulWorkflow<
           }
 
           if (!this.actionRunning) {
-            // Here we specifically want to always do another iteration loop if we are pendingUpdate
             if (this.pendingUpdate) {
               this.pendingUpdate = false;
             } else if (this.pendingIteration) {
@@ -1002,7 +999,9 @@ export abstract class StatefulWorkflow<
       } catch (err) {
         await this.handleExecutionError(err, reject);
       }
-    });
+    };
+
+    return new Promise(executeWorkflowLogic);
   }
 
   /**
@@ -1179,7 +1178,7 @@ export abstract class StatefulWorkflow<
     const { workflowId, subscriptionId } = subscription;
     if (!this.subscriptions.find((sub) => sub.workflowId === workflowId && sub.subscriptionId === subscriptionId)) {
       this.subscriptions.push(subscription);
-      this.subscriptionHandles.set(workflowId, await workflow.getExternalWorkflowHandle(workflowId));
+      this.subscriptionHandles.set(workflowId, workflow.getExternalWorkflowHandle(workflowId));
     }
   }
 
@@ -1941,7 +1940,7 @@ export abstract class StatefulWorkflow<
 
     if (hasStateChanged || !existingHandle) {
       if (existingHandle && 'result' in existingHandle) {
-        await this.updateChildWorkflow(existingHandle as workflow.ChildWorkflowHandle<any>, newItem, newState, config);
+        await this.updateChildWorkflow(existingHandle, newItem, newState, config);
       } else if (!existingHandle && !isEmpty(differences)) {
         await this.startChildWorkflow(config, newItem, newState);
       }
@@ -2058,7 +2057,7 @@ export abstract class StatefulWorkflow<
         return;
       }
 
-      const { [idAttribute as string]: id, ...rest } = state;
+      const { [idAttribute as string]: id } = state;
       const parentData = limitRecursion(this.id, this.entityName, newState);
 
       const rawData = limitRecursion(id, String(entityName), newState);
@@ -2214,7 +2213,7 @@ export abstract class StatefulWorkflow<
         return;
       }
 
-      const { [idAttribute as string]: id, ...rest } = state;
+      const { [idAttribute as string]: id } = state;
       const parentData = limitRecursion(this.id, this.entityName, newState);
       const rawData = limitRecursion(id, String(entityName), newState);
       const data = typeof config.processData === 'function' ? config.processData(rawData, parentData) : rawData;
@@ -2365,7 +2364,7 @@ export abstract class StatefulWorkflow<
         ...Object.keys(this.params).reduce(
           (params, key: string) => ({
             ...params, // @ts-ignore
-            [key as string]: this[key as string]
+            [key]: this[key]
           }),
           {}
         )
@@ -2536,8 +2535,8 @@ export abstract class StatefulWorkflow<
     const actions: ActionMetadata[] = Reflect.getMetadata(ACTIONS_METADATA_KEY, this.constructor.prototype) || [];
     const validators = Reflect.getMetadata(VALIDATOR_METADATA_KEY, this.constructor.prototype) || {};
 
-    for (const { method, options } of actions) {
-      const methodName = method as keyof StatefulWorkflow<any, any>;
+    for (const { method } of actions) {
+      const methodName = method;
       const updateOptions: UpdateHandlerOptions<any[]> = {};
       const validatorMethod = validators[methodName];
       if (validatorMethod) {
@@ -2606,7 +2605,7 @@ export abstract class StatefulWorkflow<
 
     // Return the result or the error if it exists
     if (error !== undefined) {
-      return Promise.reject(error);
+      return Promise.reject(!(error instanceof Error) ? new Error(error) : error);
     }
     return result !== undefined ? result : this.data;
   }
