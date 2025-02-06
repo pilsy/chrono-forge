@@ -1,4 +1,4 @@
-# ChronoForge [![Test Suite](https://github.com/pilsy/chrono-forge/actions/workflows/run-tests.yml/badge.svg)](https://github.com/pilsy/chrono-forge/actions/workflows/run-tests.yml)
+# ChronoForge [![Test Suite](https://github.com/pilsy/chrono-forge/actions/workflows/run-tests.yml/badge.svg)](https://github.com/pilsy/chrono-forge/actions/workflows/run-tests.yml) [![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-♥-ff69b4)](https://github.com/sponsors/pilsy)
 
 ChronoForge is an open-source framework designed to streamline the creation and management of workflows using Temporal.io in TypeScript. By providing a rich set of decorators, a robust workflow execution engine, and integrated state management, ChronoForge simplifies the development of complex workflows. The framework is ideal for building scalable, maintainable workflows that require intricate state management, dynamic branching, and robust error handling.
 
