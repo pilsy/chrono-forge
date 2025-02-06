@@ -1,7 +1,6 @@
 import { schema as normalizrSchema } from 'normalizr';
 import { SchemaManager } from '../store/SchemaManager';
 import { StateManager } from '../store/StateManager'; // Assuming the StateManager class is imported from here
-import { updateEntity } from '../store/entities';
 
 export const limitRecursion: Function = (
   entityId: string,
@@ -44,23 +43,6 @@ export const limitRecursion: Function = (
         result[key] = value;
       }
     }
-  }
-
-  if (proxy instanceof StateManager) {
-    return new Proxy(result, {
-      get(target, prop, receiver) {
-        if (prop === 'toJSON') {
-          return () => JSON.parse(JSON.stringify(target));
-        }
-        return target[String(prop)];
-      },
-      set(target, prop, value) {
-        target[prop as string] = value;
-        proxy.dispatch(updateEntity(result, entityName), false, proxy.instanceId);
-        // proxy.dispatch(entityName, entityId, { [prop as string]: value }); // Call the dispatch method of StateManager
-        return true;
-      }
-    });
   }
 
   return result;

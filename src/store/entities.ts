@@ -77,11 +77,7 @@ export const deleteEntity = (entityId: string, entityName: string): EntityAction
   entityName
 });
 
-export const deleteNormalizedEntity = (entityId: string, entityName: string): EntityAction => ({
-  type: DELETE_ENTITY,
-  entityId,
-  entityName
-});
+export const deleteNormalizedEntity = deleteEntity;
 
 export const deleteEntities = (entities: EntitiesState, entityName: string): EntityAction =>
   deleteNormalizedEntities(normalizeEntities(entities, entityName));
@@ -149,7 +145,42 @@ const applyArrayOperation = (
   return actions;
 };
 
-// Control structure for the handleUpdateEntities function
+// Define separate functions for each strategy to minimize nesting
+
+const applySetStrategy = (entityGroup: Record<string, any>): Spec<EntitiesState> => {
+  return { $set: entityGroup };
+};
+
+const applyMergeStrategy = (
+  state: EntitiesState,
+  entityName: string,
+  entityGroup: Record<string, any>
+): Spec<EntitiesState> => {
+  return {
+    ...(createUpdateStatement(state, { [entityName]: entityGroup }) as IndexableSpec<EntitiesState>)[entityName]
+  };
+};
+
+const applyUnsetStrategy = (entityGroup: Record<string, any>): Spec<EntitiesState> => {
+  return { $unset: Object.keys(entityGroup) };
+};
+
+const applySpliceStrategy = (entityGroup: Record<string, any>, value: any): Spec<EntitiesState> => {
+  return Object.keys(entityGroup).reduce(
+    (actions, key) => {
+      actions[key] = { items: { $splice: value[key] || [] } };
+      return actions;
+    },
+    {} as IndexableSpec<Record<string, any>>
+  );
+};
+
+const applyApplyStrategy = (entityGroup: Record<string, any>, value: any): Spec<EntitiesState> => {
+  return Object.fromEntries(
+    Object.entries(entityGroup).map(([key, _]) => [key, { $apply: (original: any) => value(original) }])
+  );
+};
+
 export const handleUpdateEntities = (
   state: EntitiesState,
   entities: Record<string, any>,
@@ -157,44 +188,35 @@ export const handleUpdateEntities = (
   value?: any
 ): Spec<EntitiesState> => {
   return Object.entries(entities).reduce<IndexableSpec<EntitiesState>>((acc, [entityName, entityGroup]) => {
-    acc[entityName] = state[entityName]
-      ? (() => {
-          switch (strategy) {
-            case '$set':
-              return { $set: entityGroup };
-            case '$merge':
-              return {
-                ...(createUpdateStatement(state, { [entityName]: entityGroup }) as IndexableSpec<EntitiesState>)[
-                  entityName
-                ]
-              };
-            case '$unset':
-              return { $unset: Object.keys(entityGroup) };
-            case '$push':
-            case '$unshift':
-              return applyArrayOperation(state[entityName], entityGroup, strategy);
-            case '$splice':
-              return Object.keys(entityGroup).reduce(
-                (actions, key) => {
-                  actions[key] = { items: { $splice: value[key] || [] } };
-                  return actions;
-                },
-                {} as IndexableSpec<Record<string, any>>
-              );
-            case '$apply':
-              // The function should be called with only the original state
-              return Object.fromEntries(
-                Object.entries(entityGroup).map(([key, _]) => [
-                  key,
-                  { $apply: (original: any) => value(original) } // Only pass original
-                ])
-              );
+    if (!state[entityName]) {
+      acc[entityName] = { $set: entityGroup };
+      return acc;
+    }
 
-            default:
-              return {};
-          }
-        })()
-      : { $set: entityGroup };
+    switch (strategy) {
+      case '$set':
+        acc[entityName] = applySetStrategy(entityGroup);
+        break;
+      case '$merge':
+        acc[entityName] = applyMergeStrategy(state, entityName, entityGroup);
+        break;
+      case '$unset':
+        acc[entityName] = applyUnsetStrategy(entityGroup);
+        break;
+      case '$push':
+      case '$unshift':
+        acc[entityName] = applyArrayOperation(state[entityName], entityGroup, strategy);
+        break;
+      case '$splice':
+        acc[entityName] = applySpliceStrategy(entityGroup, value);
+        break;
+      case '$apply':
+        acc[entityName] = applyApplyStrategy(entityGroup, value);
+        break;
+      default:
+        acc[entityName] = {};
+    }
+
     return acc;
   }, {} as IndexableSpec<EntitiesState>);
 };
@@ -225,7 +247,7 @@ export function reducer(state: EntitiesState = initialState, action: EntityActio
     }
     case PARTIAL_UPDATE: {
       const { entityName, entityId, updates } = action;
-      if (entityName && entityId && updates && updates[entityId]) {
+      if (entityName && entityId && updates?.[entityId]) {
         return update(state, {
           [entityName]: {
             [entityId]: updates[entityId]

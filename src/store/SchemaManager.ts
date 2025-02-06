@@ -98,6 +98,6 @@ export function parseSchemasFromYAML(yamlSchema: string) {
     const schemaConfig = yaml.load(yamlSchema) as Record<string, any>;
     schemaManager.setSchemas(schemaConfig);
   } catch (error) {
-    console.error('❌ Failed to parse schemas from YAML string:', error);
+    console.error('Failed to parse schemas from YAML string:', error);
   }
 }

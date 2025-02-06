@@ -6,3 +6,4 @@ src/.DS_Store
 chrono-forge-old
 /coverage
 src/workflows/prototypes/*
+keys/*

@@ -97,16 +97,13 @@ export class StateManager extends EventEmitter {
     const changedPaths = ['added', 'updated', 'deleted'] as const;
 
     const emitMatchingEvents = (event: string, details: object) => {
-      // Emit the exact event if there are listeners
       if (this.listenerCount(event) > 0) {
         this.emit(event, details);
       }
 
-      // Emit for wildcard listeners
       const [entityName, eventIdAndType] = event.split('.');
       const [eventId, eventType] = eventIdAndType.split(':');
 
-      // Create wildcard patterns
       const wildcardPatterns = [
         `${entityName}.*:${eventType}`, // EntityName.*:changeType
         `*.*:${eventType}`, // *.*:changeType
@@ -132,21 +129,17 @@ export class StateManager extends EventEmitter {
         Object.keys(entityChanges).forEach((entityId) => {
           const eventName = `${entityName}.${entityId}:${changeType}`;
 
-          // Avoid emitting events for the originating instance
           if (origins.includes(this.instanceId)) {
             return;
           }
 
-          // Create the event details
           const eventDetails = { newState, previousState, changeType, changes: entityChanges[entityId], origins };
 
-          // Emit all relevant events, including those for wildcard patterns
           emitMatchingEvents(eventName, eventDetails);
         });
       });
     });
 
-    // Emit a general 'stateChange' event with the complete activity summary
     this.emit('stateChange', { newState, previousState, differences, changeOrigins: origins });
   }
 
