@@ -4,31 +4,33 @@ import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { Worker, Runtime, DefaultLogger, LogEntry } from '@temporalio/worker';
 import { Client, WorkflowClient } from '@temporalio/client';
 import { v4 as uuid4 } from 'uuid';
-import { makeWorkflowExporter, OpenTelemetryActivityInboundInterceptor } from '@temporalio/interceptors-opentelemetry/lib/worker';
-import { getExporter, getResource, getTracer } from '../utils/instrumentation';
+import {
+  makeWorkflowExporter,
+  OpenTelemetryActivityInboundInterceptor
+} from '@temporalio/interceptors-opentelemetry/lib/worker';
+import { getExporter, getResource, initTracer, getTracer } from '../utils/instrumentation';
 import { Tracer } from '@opentelemetry/api';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { Resource } from '@opentelemetry/resources';
-import { initTracer } from '../utils/instrumentation';
 import { logger } from '../utils/logger';
 import schemas from './testSchemas';
 
 jest.setTimeout(60000);
 
 declare global {
-  var tracer: Tracer | undefined;
-  var exporter: OTLPTraceExporter | undefined;
-  var resource: Resource | undefined;
-  var testEnv: TestWorkflowEnvironment;
-  var worker: Worker;
-  var client: Client;
-  var nativeConnection: any;
-  var shutdown: () => Promise<void>;
-  var getClient: () => Client;
-  var execute: (workflowName: string, params: any, timeout: number) => () => any;
-  var workflowCoverage: WorkflowCoverage;
-  var sleep: (duration?: number) => Promise<void>;
-  var mockActivities: { [key: string]: (...args: any[]) => Promise<any> };
+  let tracer: Tracer | undefined;
+  let exporter: OTLPTraceExporter | undefined;
+  let resource: Resource | undefined;
+  let testEnv: TestWorkflowEnvironment;
+  let worker: Worker;
+  let client: Client;
+  let nativeConnection: any;
+  let shutdown: () => Promise<void>;
+  let getClient: () => Client;
+  let execute: (workflowName: string, params: any, timeout: number) => () => any;
+  let workflowCoverage: WorkflowCoverage;
+  let sleep: (duration?: number) => Promise<void>;
+  let mockActivities: { [key: string]: (...args: any[]) => Promise<any> };
 }
 
 global.tracer = initTracer('temporal_worker', 'local', 'http://localhost:4317/v1/traces')?.tracer;
@@ -50,7 +52,7 @@ Runtime.install({
 global.sleep = async (duration = 1000) =>
   new Promise((resolve) => {
     setTimeout(async () => {
-      resolve();
+      resolve(true);
     }, duration);
   });
 

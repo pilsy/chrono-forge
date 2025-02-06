@@ -1,6 +1,6 @@
 import { v4 } from 'uuid';
 import { StateManager } from '../store/StateManager';
-import { EntityAction, normalizeEntities, PARTIAL_UPDATE, reducer } from '../store/entities';
+import { normalizeEntities, PARTIAL_UPDATE } from '../store/entities';
 import schemas from './testSchemas';
 
 const sleep = async (duration = 1000) =>
@@ -206,7 +206,6 @@ describe('StateManager', () => {
       const listingId = v4();
       const listing2Id = v4();
       const photoId = v4();
-      const photo2Id = v4();
       const like1 = { id: v4(), user: userId, photo: photoId };
       const like2 = { id: v4(), user: userId, photo: photoId };
 
@@ -266,7 +265,6 @@ describe('StateManager', () => {
 
   describe('StateManager with ID-Based Nested References', () => {
     it.skip('should update nested list item correctly using ID reference', async () => {
-      const user = stateManager.query('User', '1');
       const nested = stateManager.query('Nested', '100');
       nested.list[0] = 15; // Modify first element
 
