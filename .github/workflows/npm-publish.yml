@@ -67,7 +67,7 @@ jobs:
       - name: Create Git tag
         env:
           VERSION: ${{ needs.version-check.outputs.current_version }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           git tag "v$VERSION"
           git push origin "v$VERSION"
@@ -75,7 +75,7 @@ jobs:
 
       - name: Create Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
           VERSION: ${{ needs.version-check.outputs.current_version }}
         run: |
           export LAST_VERSION=$(git tag --sort=-v:refname | head -n 2 | tail -n 1 | sed 's/^v//')
