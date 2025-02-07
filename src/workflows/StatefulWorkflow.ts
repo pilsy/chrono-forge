@@ -37,35 +37,32 @@ import { flatten } from '../utils/flatten';
 import { unflatten } from '../utils';
 
 /**
- * Defines the configuration structure for managing entity paths and associated workflows.
+ * Configuration structure defining how entity paths and associated workflows are managed.
  *
- * This type specifies the layout and options available for configuring how entities are managed
- * within workflows, capturing details such as entity identifiers, workflow types, and start conditions.
+ * This type outlines the available options for configuring entity management within workflows. It includes
+ * essential details such as entity identifiers, workflow behavior, and conditions for workflow execution.
  *
  * ## Properties
- * - `entityName` (optional): A string representing the name of the entity, used for identification.
- * - `path` (optional): A string indicating the path within the state where the entity data is located.
- * - `workflowType` (optional): A string specifying the type of workflow associated with this entity.
- * - `idAttribute` (optional): Specifies the identifying attribute or attributes of the entity,
- *   which can be a single string or an array for composite keys.
- * - `isMany` (optional): A boolean flag indicating if the path refers to multiple entities.
- * - `includeParentId` (optional): A boolean that, if true, includes the parent identifier in workflow
- *   IDs to ensure unique identification.
- * - `autoStart` (optional): A boolean flag determining whether the workflow should start automatically
- *   when conditions are met.
- * - `subscriptions` (optional): An object defining subscription options for entity updates and deletions:
- *   - `update` (optional): A boolean indicating subscription to update events.
- *   - `deletion` (optional): A boolean indicating subscription to deletion events.
- * - `cancellationType` (optional): Specifies the type of cancellation policy applied to child workflows,
- *   using values from `workflow.ChildWorkflowCancellationType`.
- * - `parentClosePolicy` (optional): Specifies the policy on how the closing of a parent workflow affects
- *   the child, using values from `workflow.ParentClosePolicy`.
- * - `workflowIdConflictPolicy` (optional): Specifies the policy for handling conflicts with workflow
- *   IDs, using values from `workflow.WorkflowIdConflictPolicy`.
- * - `condition` (optional): A function that takes an entity and its associated data, returning a boolean
- *   to determine if the workflow should start based on custom logic.
- * - `processData` (optional): A function to process entity data, taking the entity and its associated
- *   workflow data as parameters, returning processed data for the workflow context.
+ * - **`entityName`** (optional): Represents the entity's name used for identification purposes.
+ * - **`path`** (optional): Describes the path in the state where the entity data is stored.
+ * - **`workflowType`** (optional): Specifies the workflow type that corresponds to this entity.
+ * - **`idAttribute`** (optional): Identifies the attribute(s) that uniquely determine the entity; can be a string or an array for composite keys.
+ * - **`isMany`** (optional): Boolean indicating whether the path refers to multiple entities.
+ * - **`includeParentId`** (optional): If true, includes parent identifiers in the workflow IDs to ensure they are unique.
+ * - **`autoStart`** (optional): Determines if the workflow should initiate automatically once configured conditions are met.
+ * - **`cancellationType`** (optional): Determines the child workflow's cancellation policy using values from `workflow.ChildWorkflowCancellationType`.
+ * - **`parentClosePolicy`** (optional): Defines the effect of a parent workflow's closure on the child workflow, using `workflow.ParentClosePolicy`.
+ * - **`workflowIdConflictPolicy`** (optional): Dictates how to handle workflow ID conflicts, utilizing values from `workflow.WorkflowIdConflictPolicy`.
+ * - **`workflowIdReusePolicy`** (optional): Indicates policy for workflow ID reuse, using values from `workflow.WorkflowIdReusePolicy`.
+ * - **`retry`** (optional): Configuration object defining retry parameters for the workflow:
+ *   - `initialInterval`: Initial retry interval in milliseconds.
+ *   - `maximumInterval`: Maximum interval for retries.
+ *   - `backoffCoefficient`: Coefficient for retry backoff calculations.
+ *   - `maximumAttempts`: Maximum retry attempts allowed.
+ * - **`startToCloseTimeout`** (optional): Duration after which the workflow should time out if it hasn't completed.
+ * - **`condition`** (optional): Function determining whether the workflow should start, given the entity and related data.
+ * - **`getSubscriptions`** (optional): Function returning an array of subscription configurations based on an update subscription object.
+ * - **`processData`** (optional): Function for processing entity data before starting the workflow, providing ready-to-use data for workflow context.
  *
  * ## Usage Example
  * ```typescript
@@ -79,8 +76,8 @@ import { unflatten } from '../utils';
  * ```
  *
  * ## Notes
- * - The type encapsulates various configuration aspects to manage both single and composite entity scenarios.
- * - Proper configuration ensures effective management and automation of workflow operations, facilitating robust entity lifecycle handling.
+ * - The `ManagedPath` type captures a comprehensive set of configuration options for entity management, supporting both single and composite entities.
+ * - Proper configuration is crucial for robust, automated workflow operations, ensuring effective entity lifecycle handling.
  */
 export type ManagedPath = {
   entityName?: string;

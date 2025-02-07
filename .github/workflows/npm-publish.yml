@@ -43,8 +43,11 @@ jobs:
           registry-url: https://registry.npmjs.org/
       - run: npm ci
       - run: |
-          jq '.name = "temporal-forge"' package.json > temp.json && mv temp.json package.json
+          jq '.name = "temporal-forge"' package.json > temp.json
+          mv temp.json package.json
           npm version $VERSION --no-git-tag-version
+          npm run clean
+          npm run build
           npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
