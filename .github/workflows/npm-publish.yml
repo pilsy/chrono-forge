@@ -1,24 +1,73 @@
 name: Node.js Package
 
 on:
-  release:
-    types: [created]
+  workflow_run:
+    workflows: ['Test Suite']
+    types:
+      - completed
 
 jobs:
-  build:
+  version-check:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    outputs:
+      version_changed: ${{ steps.check_version.outputs.version_changed }}
+      current_version: ${{ steps.current_version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm ci
-      - run: npm test
-      - run: echo "VERSION=$(node -p 'require(\"./package.json\").version')" >> $GITHUB_ENV
+
+      - name: Get current version
+        id: current_version
+        run: echo "version=$(node -p \"require('./package.json').version\")" >> $GITHUB_ENV
+
+      - name: Get last version from Git tags
+        id: last_version
+        run: |
+          git fetch --tags
+          echo "last_version=$(git tag --sort=-v:refname | head -n 1 | sed 's/^v//')" >> $GITHUB_ENV
+
+      - name: Check if version changed
+        id: check_version
+        run: |
+          if [ "$version" != "$last_version" ]; then
+            echo "version_changed=true" >> $GITHUB_ENV
+          else
+            echo "version_changed=false" >> $GITHUB_ENV
+        continue-on-error: true
+
+  create-tag:
+    if: ${{ needs.version-check.outputs.version_changed == 'true' }}
+    runs-on: ubuntu-latest
+    needs: version-check
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create Git tag
+        env:
+          VERSION: ${{ needs.version-check.outputs.current_version }}
+        run: |
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+
+      - name: Create Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version-check.outputs.current_version }}
+        run: |
+          export LAST_VERSION=$(git tag --sort=-v:refname | head -n 2 | tail -n 1 | sed 's/^v//')
+          gh release create "v$VERSION" --title "Release $VERSION" --notes "See changes: https://github.com/${{ github.repository }}/compare/v$LAST_VERSION...v$VERSION"
 
   publish-npm-chrono:
-    needs: build
+    if: ${{ needs.version-check.outputs.version_changed == 'true' }}
     runs-on: ubuntu-latest
+    needs: create-tag
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,15 +75,14 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org/
       - run: npm ci
-      - run: |
-          npm version $VERSION --no-git-tag-version
-          npm publish
+      - run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-npm-temporal:
-    needs: build
+    if: ${{ needs.version-check.outputs.version_changed == 'true' }}
     runs-on: ubuntu-latest
+    needs: create-tag
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -43,9 +91,7 @@ jobs:
           registry-url: https://registry.npmjs.org/
       - run: npm ci
       - run: |
-          jq '.name = "temporal-forge"' package.json > temp.json
-          mv temp.json package.json
-          npm version $VERSION --no-git-tag-version
+          jq '.name = "temporal-forge"' package.json > temp.json && mv temp.json package.json
           npm run clean
           npm run build
           npm publish
