@@ -90,14 +90,19 @@ export type ManagedPath = {
   isMany?: boolean;
   includeParentId?: boolean;
   autoStart?: boolean;
-  subscriptions?: {
-    update?: boolean;
-    deletion?: boolean;
-  };
   cancellationType?: workflow.ChildWorkflowCancellationType;
   parentClosePolicy?: workflow.ParentClosePolicy;
   workflowIdConflictPolicy?: workflow.WorkflowIdConflictPolicy;
+  workflowIdReusePolicy?: workflow.WorkflowIdReusePolicy;
+  retry?: {
+    initialInterval?: number;
+    maximumInterval?: number;
+    backoffCoefficient?: number;
+    maximumAttempts?: number;
+  };
+  startToCloseTimeout?: string;
   condition?: (entity: Record<string, any>, data: StatefulWorkflow['data']) => boolean;
+  getSubscriptions?: (updateSubscription: Partial<Subscription>) => Partial<Subscription>[];
   processData?: (entity: Record<string, any>, data: StatefulWorkflow['data']) => Record<string, any>;
 };
 
@@ -2052,7 +2057,16 @@ export abstract class StatefulWorkflow<
         cancellationType = workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_COMPLETED,
         parentClosePolicy = workflow.ParentClosePolicy.TERMINATE,
         workflowIdConflictPolicy = workflow.WorkflowIdConflictPolicy.TERMINATE_EXISTING,
-        autoStart
+        workflowIdReusePolicy = workflow.WorkflowIdReusePolicy.ALLOW_DUPLICATE,
+        startToCloseTimeout = '30 days',
+        retry = {
+          initialInterval: 1000 * 1,
+          maximumInterval: 1000 * 20,
+          backoffCoefficient: 1.5,
+          maximumAttempts: 30
+        },
+        autoStart,
+        getSubscriptions
       } = config;
 
       if (!autoStart) {
@@ -2089,38 +2103,36 @@ export abstract class StatefulWorkflow<
         }
       }
 
+      const updateSubscription = {
+        subscriptionId: `${this.entityName}:${this.id}.${config.path}:${id}`,
+        workflowId: workflow.workflowInfo().workflowId,
+        signalName: 'update',
+        selector: '*',
+        parent: `${this.entityName}:${this.id}`,
+        child: `${config.entityName}:${id}`,
+        ancestorWorkflowIds: [...this.ancestorWorkflowIds]
+      };
+      const subscriptions =
+        typeof getSubscriptions === 'function' ? getSubscriptions(updateSubscription) : [updateSubscription];
+
       const startPayload = {
         workflowId,
         cancellationType,
         parentClosePolicy,
         workflowIdConflictPolicy,
-        startToCloseTimeout: '30 days',
+        workflowIdReusePolicy,
+        startToCloseTimeout,
         args: [
           {
             id,
             state: normalizeEntities(data, SchemaManager.getInstance().getSchema(entityName as string)),
             entityName,
-            subscriptions: [
-              {
-                subscriptionId: `${this.entityName}:${this.id}.${config.path}:${id}`,
-                workflowId: workflow.workflowInfo().workflowId,
-                signalName: 'update',
-                selector: '*',
-                parent: `${this.entityName}:${this.id}`,
-                child: `${config.entityName}:${id}`,
-                ancestorWorkflowIds: [...this.ancestorWorkflowIds]
-              }
-            ],
+            subscriptions,
             apiToken: this.apiToken,
             ancestorWorkflowIds: [...this.ancestorWorkflowIds, workflow.workflowInfo().workflowId]
           }
         ],
-        retry: {
-          initialInterval: 1000 * 1,
-          maximumInterval: 1000 * 20,
-          backoffCoefficient: 1.5,
-          maximumAttempts: 30
-        }
+        retry
       };
 
       this.log.trace(
