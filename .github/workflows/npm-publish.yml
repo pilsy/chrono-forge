@@ -25,7 +25,9 @@ jobs:
 
       - name: Get current version
         id: current_version
-        run: echo "version=$(node -p 'require(\"./package.json\").version')" >> $GITHUB_ENV
+        run: |
+          current_version=$(node -p "require('./package.json').version")
+          echo "version=$current_version" >> $GITHUB_ENV
         shell: bash
 
       - name: Get last version from Git tags
