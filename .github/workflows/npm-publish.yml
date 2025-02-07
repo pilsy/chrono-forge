@@ -5,6 +5,7 @@ on:
     workflows: ['Test Suite']
     types:
       - completed
+  workflow_dispatch:
 
 jobs:
   version-check:
@@ -24,13 +25,15 @@ jobs:
 
       - name: Get current version
         id: current_version
-        run: echo "version=$(node -p \"require('./package.json').version\")" >> $GITHUB_ENV
+        run: echo "version=$(node -p 'require(\"./package.json\").version')" >> $GITHUB_ENV
+        shell: bash
 
       - name: Get last version from Git tags
         id: last_version
         run: |
           git fetch --tags
           echo "last_version=$(git tag --sort=-v:refname | head -n 1 | sed 's/^v//')" >> $GITHUB_ENV
+        shell: bash
 
       - name: Check if version changed
         id: check_version
@@ -39,7 +42,7 @@ jobs:
             echo "version_changed=true" >> $GITHUB_ENV
           else
             echo "version_changed=false" >> $GITHUB_ENV
-        continue-on-error: true
+        shell: bash
 
   create-tag:
     if: ${{ needs.version-check.outputs.version_changed == 'true' }}
