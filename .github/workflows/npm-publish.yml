@@ -67,6 +67,7 @@ jobs:
       - name: Create Git tag
         env:
           VERSION: ${{ needs.version-check.outputs.current_version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           git tag "$VERSION"
           git push origin "$VERSION"
@@ -75,6 +76,7 @@ jobs:
       - name: Create Release
         env:
           VERSION: ${{ needs.version-check.outputs.current_version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           git fetch --tags
           LAST_VERSION=$(git tag --sort=-v:refname | grep -v "^${VERSION}$" | head -n 1)
