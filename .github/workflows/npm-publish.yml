@@ -42,10 +42,8 @@ jobs:
         run: |
           if [ "$version" != "$last_version" ]; then
             echo "version_changed=true" >> $GITHUB_ENV
-            echo "::set-output name=version_changed::true"
           else
             echo "version_changed=false" >> $GITHUB_ENV
-            echo "::set-output name=version_changed::false"
           fi
         env:
           version: ${{ steps.current_version.outputs.version }}
