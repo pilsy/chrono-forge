@@ -1,82 +1,108 @@
-# Temporal Forge [![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-♥-ff69b4)](https://github.com/sponsors/pilsy) [![Test Suite](https://github.com/pilsy/chrono-forge/actions/workflows/run-tests.yml/badge.svg)](https://github.com/pilsy/chrono-forge/actions/workflows/run-tests.yml) [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge) [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge) [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge) [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge) [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge) [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=bugs)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge)
+## Temporal-Forge -- (A Next-Gen Temporal Workflow Orchestration Framework for TypeScript)
 
-ChronoForge is an open-source framework designed to streamline the creation and management of workflows using Temporal.io in TypeScript. By providing a rich set of decorators, a robust workflow execution engine, and integrated state management, ChronoForge simplifies the development of complex workflows. The framework is ideal for building scalable, maintainable workflows that require intricate state management, dynamic branching, and robust error handling.
+ [![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-♥-ff69b4)](https://github.com/sponsors/pilsy)   [![Test Suite](https://github.com/pilsy/chrono-forge/actions/workflows/run-tests.yml/badge.svg)](https://github.com/pilsy/chrono-forge/actions/workflows/run-tests.yml)   [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge)   [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge)   [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge)   [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge)  
 
-> ***"Those who say it cannot be done should stop interrupting the people doing it."***
+Temporal-Forge **supercharges** Temporal.io workflows by **eliminating boilerplate, automating state management, and enabling seamless hierarchical orchestration.**  
 
-## Documentation
+- **Decorator-Based API** → Write workflows in a **declarative, intuitive** way  
+- **Event-Driven Updates** → **No polling**—Workflows **automatically synchronize state**  
+- **State Normalization & Hierarchical Management** → Built-in **entity normalization & child workflow orchestration**  
+- **ContinueAsNew & Long-Running Workflow Support** → **Efficiently persists state** and **prevents history bloat**  
+- **API Integration** → Load & sync external data in **real-time**  
+- **Built-in Observability** → OpenTelemetry support for **tracing and debugging**  
 
-For detailed documentation on all features and usage, please refer to the following:
+---
 
-- **[StatefulWorkflow Documentation](docs/StatefulWorkflow.md)**: Comprehensive guide on using the `StatefulWorkflowClass`.
-- **[Workflow Documentation](docs/Workflow.md)**: Detailed documentation on the base `Workflow` class and its features.
-- **[Entities Documentation](docs/entities.md)**: Guide on managing normalized state within workflows.
+## **💡 Why Use Temporal-Forge?**
 
-## Table of Contents
+- **🚀 Faster Workflow Development** → No need to manually manage signals, queries, or updates.  
+- **🧠 Intelligent State Management** → Normalized entities with **automatic denormalization** and caching.  
+- **🎯 Precision Updates** → Changes **only propagate where needed**, eliminating redundant state syncing.  
+- **🤖 Automatic Child Workflow Handling** → Start, stop, and update workflows **without writing extra logic**.  
 
-1. [Introduction to ChronoForge](#introduction-to-chronoforge)
-2. [Installation](#installation)
-3. [Getting Started](#getting-started)
-   - [Workflow Example](#workflow-example)
-   - [Stateful Workflow Example](#stateful-workflow-example)
-4. [Core Concepts and Features](#core-concepts-and-features)
-   - [Workflow Class](#workflow-class)
-   - [StatefulWorkflow Class](#statefulworkflow-class)
-5. [Detailed Feature Documentation](#detailed-feature-documentation)
-   - [Workflow Class Features](#workflow-class-features)
-   - [StatefulWorkflow Class Features](#statefulworkflow-class-features)
-6. [Decorators Overview](#decorators-overview)
-   - [List of Decorators](#list-of-decorators)
-   - [Detailed Documentation and Examples for `@ChronoFlow`](#detailed-documentation-and-examples-for-chronoflow)
-7. [Advanced Topics](#advanced-topics)
-   - [Handling Circular Workflow Relationships](#handling-circular-workflow-relationships)
-   - [Security and API Token Management](#security-and-api-token-management)
-8. [API Reference and Technical Specifications](#api-reference-and-technical-specifications)
-9. [Testing and Validation](#testing-and-validation)
-10. [Contributing](#contributing)
-11. [License](#license)
+---
 
-## Introduction to ChronoForge
+## **📌 Key Features**
 
-ChronoForge enhances Temporal's workflow engine by providing developers with a set of tools and abstractions to manage complex workflows in a declarative and flexible way. Whether you're building a system that handles hierarchical task management, real-time data synchronization, or a robust microservice orchestration platform, ChronoForge provides the building blocks necessary to manage stateful workflows effectively.
+### **1️⃣ Step-Based Workflow Execution**
 
-ChronoForge consists of two primary classes:
+**Temporal-Forge simplifies workflow design** using decorators like `@Step()`, `@Query()`, and `@Signal()` to define workflow logic.  
 
-- **Workflow Class**: The foundational class that provides core features for handling signals, queries, error management, and lifecycle hooks.
-- **StatefulWorkflow Class**: An extension of the `Workflow` class, adding powerful state management capabilities, automatic child workflow orchestration, dynamic subscription handling, and more.
+- **Step-based execution with dependencies**  
+- **Conditional branching & dynamic workflow control**  
+- **Lifecycle hooks (`@Before()`, `@After()`, `@Hook()`)**  
 
-For a quick introduction, see the [Overview](./docs/Workflow/overview.md) documentation, which provides a high-level overview of the `Workflow` class and its role in the ChronoForge framework.
+---
 
-## Installation
+### **2️⃣ Advanced Stateful Workflow Management**
 
-To get started with ChronoForge, install it via npm or yarn:
+**Stateful workflows handle complex entity relationships with automatic state tracking.**  
+✔ **Automatic child workflow execution & cancellation**  
+✔ **Parent workflows automatically sync child state changes**  
+✔ **Limitless nesting of parent-child workflows**  
+
+---
+
+### **3️⃣ Event-Driven, Subscription-Based Updates (No Polling)**
+
+- **Entities update automatically across workflows**
+- **Only relevant workflows receive updates** via event-driven **signals**
+- **Ancestor tracking prevents infinite loops & redundant updates**  
+
+💡 **How it Works?** → Each workflow **subscribes to only the data it cares about.**  
+If an entity updates, **only dependent workflows receive updates**, ensuring **low-latency state propagation**.  
+
+---
+
+### **4️⃣ Normalized State & Cached Denormalization**
+
+State is structured using `normalizr`, ensuring **efficient, normalized entity management**.  
+✔ **Automatically flattens nested relationships**  
+✔ **StateManager & limitRecursion cache queries to optimize lookups**  
+✔ **Denormalization is fully cached & optimized**  
+
+---
+
+### **5️⃣ Auto-Managed Child Workflow Lifecycle**
+
+- ✅ **Starts child workflows when needed**  
+- ✅ **Cancels workflows when dependencies change**  
+- ✅ **Passes subscription objects so child workflows notify parents of updates**  
+
+No more **manual child workflow management**—it just works.  
+
+---
+
+## **📦 Installation**
 
 ```bash
 npm install chrono-forge
 ```
 
-Or with yarn:
+or  
 
 ```bash
 yarn add chrono-forge
 ```
 
-ChronoForge requires Node.js 14 or later and integrates seamlessly with Temporal.io's TypeScript SDK.
+**🔧 Requirements:**  
 
-## Getting Started
+- Node.js 18+  
+- Temporal.io’s TypeScript SDK  
 
-ChronoForge offers a streamlined approach to creating both basic and stateful workflows. Below are examples demonstrating the use of the framework’s features.
+---
 
-### Workflow Example
+## **🚀 Quick Start**
 
-A basic workflow in ChronoForge utilizes the `@ChronoFlow` decorator along with various step and signal decorators to define its logic:
+### **Basic Workflow**
 
 ```typescript
-import { ChronoFlow, Workflow } from 'chrono-forge';
+import { ChronoFlow, Workflow, Step } from 'chrono-forge';
 
 @ChronoFlow()
 export class SimpleWorkflow extends Workflow {
-  protected async execute() {
+  @Step()
+  async execute() {
     this.log.info('Executing workflow...');
   }
 }
@@ -84,181 +110,91 @@ export class SimpleWorkflow extends Workflow {
 export default SimpleWorkflow;
 ```
 
-### Stateful Workflow Example
-
-ChronoForge also supports stateful workflows that manage normalized state across executions:
+### **Stateful Workflow Example**
 
 ```typescript
-import { StatefulWorkflow, Property, Signal, Query, Before, Hook, ContinueAsNew } from 'chrono-forge';
-import schemas, { MyEntity } from "@schemas"
+import { StatefulWorkflow, Property, Query, Signal, ChronoFlow } from 'chrono-forge';
 
-@ChronoFlow({
-  schema: MyEntity,
-  schemas,
-})
+@ChronoFlow()
 class MyStatefulWorkflow extends StatefulWorkflow {
-  protected async execute() {
-    this.log.info('Executing stateful workflow...');
+  @Property()
+  myState!: string;
+
+  @Signal()
+  async updateState(newState: string) {
+    this.myState = newState;
+  }
+
+  @Query()
+  getState() {
+    return this.myState;
   }
 }
 
 export default MyStatefulWorkflow;
 ```
 
-`src/schema/index.ts`
+💡 **This workflow automatically normalizes state and updates subscribers when `updateState` is called!**
 
-```typescript
-import { SchemaManager } from '../SchemaManager';
+---
 
-const schemaManager = SchemaManager.getInstance();
+## **📖 Documentation**
 
-schemaManager.setSchemas({
-  MyEntity: {
-    idAttribute: 'id',
-    myOtherEntity: ['MyOtherEntity']
-  },
-  MyOtherEntity: {
-    idAttribute: 'id',
-    myEntity: 'MyEntity'
-  }
-});
+📚 **Read the full docs:**  
 
-const schemas = schemaManager.getSchemas();
-const { MyEntity, MyOtherEntity } = schemas;
-export { MyEntity, MyOtherEntity };
-export default schemas;
+- **[StatefulWorkflow Documentation](docs/StatefulWorkflow.md)**
+- **[Workflow Documentation](docs/Workflow.md)**
+- **[Entity State Management](docs/entities.md)**
+
+---
+
+## **🛠️ Core Concepts**
+
+✔ **Step-Based Execution** → Define steps using `@Step()`  
+✔ **Workflow Lifecycle Management** → Manage workflow execution state  
+✔ **Query & Signal Handling** → Real-time data retrieval and updates  
+✔ **Automatic Retry & Error Handling** → Decorators like `@OnError()` simplify failure recovery  
+
+---
+
+## **📌 Advanced Topics**
+
+- **Handling Circular Workflow Relationships** → Prevents redundant updates  
+- **Security & API Token Management** → Securely handle external API access  
+- **ContinueAsNew Optimization** → Ensures long-running workflows stay within Temporal’s execution limits  
+
+🔍 **Full API reference available in** [docs/API.md](docs/API.md)  
+
+---
+
+## **🧪 Testing & Validation**
+
+Temporal-Forge includes a **comprehensive test suite**:
+
+- ✅ Unit tests for **decorators, subscriptions, and state management**  
+- ✅ **Integration tests** covering **real-world workflow scenarios**  
+- ✅ SonarCloud reports for **maintainability, security, and reliability**  
+
+💡 **Run tests locally:**  
+
+```bash
+npm run test
 ```
 
-In this example, `MyStatefulWorkflow` handles normalized state using the `normalizr` library, allowing for complex state management across multiple executions.
+---
 
-## Core Concepts and Features
+## **🤝 Contributing**
 
-### Workflow Class
+🚀 We welcome contributions! Whether it's **bug fixes, feature requests, or documentation improvements**—join the project and help make Temporal-Forge even better.  
 
-The `Workflow` class serves as the base class for defining Temporal workflows in ChronoForge. It provides essential features such as signal and query handling, error management with decorators, and lifecycle hooks for executing custom logic at different stages of workflow execution. The `Workflow` class is designed to be extended, allowing developers to define workflows that leverage Temporal's capabilities while integrating ChronoForge's advanced features.
+📌 **See [CONTRIBUTING.md](./CONTRIBUTING.md) for details.**  
 
-- **Signal Handling**: Real-time communication with running workflows using the `@Signal` decorator. For details, see [Signal Handling](./docs/Workflow/signal_handling.md).
-- **Query Handling**: Retrieve workflow state or computed values using the `@Query` decorator. Learn more in [Query Handling](./docs/Workflow/query_handling.md).
-- **Update Handling**: Update workflow state using the `@Action` decorator. Learn more in [Update Handling](./docs/Workflow/update_handling.md).
+---
 
-- **Error Handling**: Robust error management using the `@OnError` decorator to define custom error handlers. Detailed examples are provided in [Error Handling with `@OnError`](./docs/Workflow/error_handling.md).
-- **Lifecycle Hooks**: Inject custom logic before or after specific methods using the `@Hook` decorator. See [Lifecycle Management Hooks](./docs/Workflow/lifecycle_hooks.md) for more information.
-- **Execution Control**: Manage the workflow execution lifecycle with methods like `execute`, which allow workflows to be paused, resumed, or terminated. For insights into managing long-running workflows, see [Execution Control and Flow Management](./docs/Workflow/execution_control.md).
+## **📜 License**
 
-The comprehensive breakdown of the `Workflow` class features can be found in the [Workflow Class Features](./docs/Workflow/features.md) section.
+**MIT License** – See the [LICENSE](./LICENSE) file for more details.
 
-### StatefulWorkflow Class
+---
 
-The `StatefulWorkflow` class extends the `Workflow` class by introducing advanced state management capabilities and automatic orchestration of child workflows. This class is ideal for workflows that require managing complex states, such as nested workflows, dynamic data loading, and API integration.
-
-- **State Management**: Manage and normalize workflow state using schemas. For an in-depth guide, see [State Management and Data Normalization](./docs/StatefulWorkflow/state_management_and_data_normalization.md).
-- **Child Workflow Management**: Automatically manage child workflows' lifecycles. Details can be found in [Child Workflow Lifecycle Management](./docs/StatefulWorkflow/child_workflow_lifecycle_management.md).
-- **Dynamic Subscription Handling**: Dynamically handle subscriptions to state changes within workflows. For more information, refer to [Dynamic Subscription Handling](./docs/StatefulWorkflow/subscriptions_and_signal_based_communication.md).
-- **Error Handling and Recovery**: Error management strategies for complex workflows are discussed in [Error Handling with `@OnError`](./docs/Workflow/error_handling.md).
-
-A complete overview of the `StatefulWorkflow` class and its features is available in the [StatefulWorkflow Class Features](./docs/StatefulWorkflow/getting_started.md) section.
-
-## Detailed Feature Documentation
-
-### Workflow Class Features
-
-The `Workflow` class offers various features to streamline the development of Temporal workflows. Each feature is designed to address common workflow development challenges such as error handling, state management, and inter-workflow communication.
-
-- [Signal Handling](./docs/Workflow/signal_handling.md)
-- [Query Handling](./docs/Workflow/query_handling.md)
-- [Execution Control and Flow Management](./docs/Workflow/execution_control.md)
-- [Error Handling with `@OnError`](./docs/Workflow/error_handling.md)
-- [Lifecycle Management Hooks](./docs/Workflow/lifecycle_hooks.md)
-- [Decorators Overview](./docs/Workflow/decorators.md)
-
-For a complete list of decorators provided by the `Workflow` class and their usage, see the [Decorators Provided by Workflow.ts](./docs/Workflow/decorators.md).
-
-### StatefulWorkflow Class Features
-
-The `StatefulWorkflow` class extends the functionality provided by the `Workflow` class by adding advanced state management, automatic child workflow orchestration, and dynamic subscription handling capabilities. This class is particularly useful for building complex, stateful workflows that require a high degree of flexibility and scalability.
-
-- [State Management and Data Normalization](./docs/StatefulWorkflow/state_management_and_data_normalization.md)
-- [Child Workflow Lifecycle Management](./docs/StatefulWorkflow/child_workflow_lifecycle_management.md)
-- [Dynamic Data Loading and API Integration](./docs/StatefulWorkflow/dynamic_data_loading_and_api_integration.md)
-- [Handling Circular Workflow Relationships](./docs/StatefulWorkflow/handling_circular_relationships_and_workflow_ancestry.md)
-- [Security and API Token Management](./docs/StatefulWorkflow/security_and_api_token_management.md)
-
-## Decorators Overview
-
-ChronoForge uses a series of decorators to define and manage various aspects of workflows, such as signals, queries, hooks, and error handling. These decorators simplify the process of extending workflows and ensure consistency across different parts of the workflow system.
-
-### List of Decorators
-
-1. **`@ChronoFlow` Decorator**:  
-   Used to register a class as a Temporal workflow within ChronoForge. This decorator manages setup tasks, ensures correct initialization, and binds signals, queries, and hooks.  
-   - [Read more about `@ChronoFlow`](./docs/Workflow/chronoflow_decorator.md#chrono-flow-decorator)
-
-2. **`@Signal` Decorator**:  
-   Defines signal handlers for real-time communication with running workflows.  
-   - [Read more about `@Signal`](./docs/Workflow/signal_decorator.md#signal-decorator)
-
-3. **`@Query` Decorator**:  
-   Specifies query handlers for retrieving workflow state or computed values.  
-   - [Read more about `@Query`](./docs/Workflow/query_decorator.md#query-decorator)
-
-4. **`@Hook` Decorator**:  
-   (Speculative) Used for method interception to inject custom logic before and after methods in a workflow.  
-   - [Read more about `@Hook`](./docs/Workflow/hook_decorator.md#hook-decorator)
-
-5. **`@OnError` Decorator**:  
-   Enables custom error handling logic for specific methods or globally across the workflow.  
-   - [Read more about `@OnError`](./docs/Workflow/error_handling.md#error-handling-with-onerror)
-
-6. **`@On` Decorator**:  
-   Binds methods to specific events, optionally filtered by workflow type or child workflow events, allowing for fine-grained event handling within workflows.  
-   - [Read more about `@On`](./docs/StatefulWorkflow/exposed_queries_and_signals.md#on-decorator)
-
-### Detailed Documentation and Examples for `@ChronoFlow`
-
-- **Introduction to ChronoForge and Decorators**: To understand the overall role of decorators in ChronoForge and how `@ChronoFlow` fits into the workflow development process, refer to the [Introduction to StatefulWorkflow](./docs/StatefulWorkflow/introduction.md) documentation.
-
-- **Creating a Workflow with `@ChronoFlow`**: The [Getting Started Guide](./docs/StatefulWorkflow/getting_started.md#creating-a-stateful-workflow) provides step-by-step instructions on how to create a basic workflow using the `@ChronoFlow` decorator. It covers how to define a class as a workflow and set up initial signals and queries.
-
-- **Advanced Usage and Complete Example**: For an advanced example that demonstrates the `@ChronoFlow` decorator's full capabilities, see the [Complete Usage Example](./docs/Workflow/complete_example.md). This example shows how to combine signals, queries, error handling, and hooks to build a robust workflow that handles complex interactions and state management.
-
-## Advanced Topics
-
-### Handling Circular Workflow Relationships
-
-ChronoForge offers advanced features for managing circular relationships between workflows, ensuring that circular dependencies do not cause infinite loops or state conflicts. This is particularly important when dealing with parent-child workflow relationships and bidirectional subscriptions.
-
-- To learn more, see [Handling Circular Workflow Relationships](./docs/StatefulWorkflow/handling_circular_relationships_and_workflow_ancestry.md).
-
-### Security and API Token Management
-
-Security is a critical aspect of workflow management, especially when dealing with dynamic data loading and external API integrations. ChronoForge provides built-in support for managing API tokens and securing workflows.
-
-- For a detailed overview, see [Security and API Token Management](./docs/StatefulWorkflow/security_and_api_token_management.md).
-
-## API Reference and Technical Specifications
-
-ChronoForge's API is built around decorators and workflow classes that provide a rich set of features for managing workflows. Developers can extend these classes and utilize decorators to customize workflows for their specific use cases.
-
-- The [API Reference and Technical Specifications](./docs/Workflow/features.md) section contains links to all relevant technical documentation files, including:
-  - [Workflow Class Overview](./docs/Workflow/overview.md)
-  - [StatefulWorkflow Class Overview](./docs/StatefulWorkflow/introduction.md)
-  - [All Decorators and Their Usage](./docs/Workflow/decorators.md)
-  - [Complete Usage Example](./docs/Workflow/complete_example.md) demonstrating a comprehensive workflow setup using all features.
-
-## Testing and Validation
-
-ChronoForge includes a suite of test cases to validate the behavior of workflows and ensure that features like bi-directional subscriptions, error handling, and state synchronization work as expected.
-
-- For detailed test cases and examples, refer to:
-  - [Workflow Class Tests](./src/tests/Workflow.test.ts)
-  - [StatefulWorkflow Class Tests](./src/tests/StatefulWorkflow.test.ts)
-
-These test files demonstrate how to use the ChronoForge framework in various scenarios, including setting up workflows, handling signals, managing errors, and more.
-
-## Contributing
-
-We welcome contributions from the community! Whether you’re fixing bugs, adding new features, or improving documentation, your contributions are valued. Please refer to our [Contributing Guidelines](./CONTRIBUTING.md) for more details.
-
-## License
-
-ChronoForge is licensed under the MIT License. See the [LICENSE](./LICENSE) file for more details.
+### **💡 "Those who say it cannot be done should stop interrupting the people doing it."**  
