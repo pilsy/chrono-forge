@@ -9,7 +9,7 @@ on:
 
 jobs:
   version-check:
-    # if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     outputs:
       version_changed: ${{ steps.check_version.outputs.version_changed }}
@@ -67,7 +67,6 @@ jobs:
       - name: Create Git tag
         env:
           VERSION: ${{ needs.version-check.outputs.current_version }}
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           git tag "v$VERSION"
           git push origin "v$VERSION"
@@ -75,7 +74,6 @@ jobs:
 
       - name: Create Release
         env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
           VERSION: ${{ needs.version-check.outputs.current_version }}
         run: |
           export LAST_VERSION=$(git tag --sort=-v:refname | head -n 2 | tail -n 1 | sed 's/^v//')
@@ -94,7 +92,7 @@ jobs:
       - run: npm ci
       - run: npm publish
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-npm-temporal:
     if: ${{ needs.version-check.outputs.version_changed == 'true' }}
@@ -113,4 +111,4 @@ jobs:
           npm run build
           npm publish
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
