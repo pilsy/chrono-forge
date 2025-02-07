@@ -100,7 +100,7 @@ jobs:
       - run: npm ci
       - run: npm publish
         env:
-          NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-npm-temporal:
     if: ${{ needs.version-check.outputs.version_changed == 'true' }}
@@ -119,4 +119,4 @@ jobs:
           npm run build
           npm publish
         env:
-          NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
