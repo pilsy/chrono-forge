@@ -28,24 +28,28 @@ jobs:
         run: |
           current_version=$(node -p "require('./package.json').version")
           echo "version=$current_version" >> $GITHUB_ENV
+          echo "::set-output name=version::$current_version"
         shell: bash
 
       - name: Get last version from Git tags
         id: last_version
         run: |
           git fetch --tags
-          echo "last_version=$(git tag --sort=-v:refname | head -n 1 | sed 's/^v//')" >> $GITHUB_ENV
+          last_version=$(git tag --sort=-v:refname | head -n 1 | sed 's/^v//')
+          echo "last_version=$last_version" >> $GITHUB_ENV
+          echo "::set-output name=last_version::$last_version"
         shell: bash
 
       - name: Check if version changed
         id: check_version
         run: |
-          if [ "$version" != "$last_version" ]; then
+          if [ "${{ steps.current_version.outputs.version }}" != "${{ steps.last_version.outputs.last_version }}" ]; then
             echo "version_changed=true" >> $GITHUB_ENV
+            echo "::set-output name=version_changed::true"
           else
             echo "version_changed=false" >> $GITHUB_ENV
+            echo "::set-output name=version_changed::false"
           fi
-        shell: bash
 
   create-tag:
     if: ${{ needs.version-check.outputs.version_changed == 'true' }}
