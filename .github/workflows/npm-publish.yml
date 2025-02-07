@@ -9,7 +9,7 @@ on:
 
 jobs:
   version-check:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     outputs:
       version_changed: ${{ steps.check_version.outputs.version_changed }}
@@ -25,9 +25,7 @@ jobs:
 
       - name: Get current version
         id: current_version
-        run: |
-          current_version=$(node -p "require('./package.json').version")
-          echo "version=$current_version" >> $GITHUB_ENV
+        run: echo "version=$(node -p 'require(\"./package.json\").version')" >> $GITHUB_ENV
         shell: bash
 
       - name: Get last version from Git tags
@@ -45,9 +43,6 @@ jobs:
           else
             echo "version_changed=false" >> $GITHUB_ENV
           fi
-        env:
-          version: ${{ steps.current_version.outputs.version }}
-          last_version: ${{ steps.last_version.outputs.last_version }}
         shell: bash
 
   create-tag:
