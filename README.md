@@ -1,4 +1,5 @@
-## Temporal-Forge -- (A Next-Gen Temporal Workflow Orchestration Framework for TypeScript)
+# Temporal-Forge
+### (A Next-Gen Temporal Workflow Orchestration Framework for TypeScript)
 
  [![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-♥-ff69b4)](https://github.com/sponsors/pilsy)   [![Test Suite](https://github.com/pilsy/chrono-forge/actions/workflows/run-tests.yml/badge.svg)](https://github.com/pilsy/chrono-forge/actions/workflows/run-tests.yml)   [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge)   [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge)   [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge)   [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge)  
 
