@@ -1308,7 +1308,7 @@ export abstract class StatefulWorkflow<
       }
 
       await this.processChildState(newState, differences, previousState || {}, changeOrigins);
-      if (this.iteration !== 0) {
+      if (this.iteration !== 0 || this.pendingUpdate) {
         await this.processSubscriptions(newState, differences, previousState || {}, changeOrigins);
       }
 
