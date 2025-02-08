@@ -35,6 +35,7 @@ import { UpdateHandlerOptions } from '@temporalio/workflow/lib/interfaces';
 import { Duration, HandlerUnfinishedPolicy } from '@temporalio/common';
 import { flatten } from '../utils/flatten';
 import { unflatten } from '../utils';
+import { mergeDeepRight } from 'ramda';
 
 /**
  * Configuration structure defining how entity paths and associated workflows are managed.
@@ -1297,10 +1298,16 @@ export abstract class StatefulWorkflow<
       const updated = get(differences.updated, `${this.entityName}.${this.id}`, false);
       const deleted = get(differences.deleted, `${this.entityName}.${this.id}`, false);
 
-      if (created) {
+      if (created && this.iteration === 0) {
         await this.emit('created', created, newState, previousState, changeOrigins);
-      } else if (updated) {
-        await this.emit('updated', updated, newState, previousState, changeOrigins);
+      } else if (created || updated) {
+        await this.emit(
+          'updated',
+          mergeDeepRight(created || {}, updated || {}),
+          newState,
+          previousState,
+          changeOrigins
+        );
       } else if (deleted && this.isItemDeleted(differences, this.entityName, this.id)) {
         if (!(await this.emit('deleted', deleted, newState, previousState, changeOrigins))) {
           this.status = 'cancelled';
