@@ -148,6 +148,70 @@ describe('StatefulWorkflow', () => {
       expect(updatedMemoValue).toEqual(updatedExpectedMemo);
     });
 
+    it('Should allow memoState to be turned off via options (memoStateEnabled)', async () => {
+      const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Awesome test listing' }] };
+      const handle = await execute(workflows.ShouldExecuteWithoutMemoStateful, {
+        id: data.id,
+        entityName: 'User',
+        data,
+        options: { memoStateEnabled: false }
+      });
+      const expectedInitial = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
+      await sleep();
+
+      // Initial state verification
+      const state = await handle.query('state');
+      expect(state).toEqual(expectedInitial);
+
+      const initalExpectedMemo = undefined;
+      const { state: initialMemoValue } = await getMemo(handle);
+      expect(initialMemoValue).toEqual(initalExpectedMemo);
+
+      // Update state
+      const updatedData = { ...data, update: 'fromUpdate', listings: [{ ...data.listings[0], update: 'fromUpdate' }] };
+      const expectedUpdated = normalizeEntities(updatedData, SchemaManager.getInstance().getSchema('User'));
+
+      await handle.signal('update', { data: updatedData, entityName: 'User' });
+      await sleep(5000);
+
+      const updatedState = await handle.query('state');
+      expect(updatedState).toEqual(expectedUpdated);
+
+      const updatedExpectedMemo = undefined;
+      const { state: updatedMemoValue } = await getMemo(handle);
+      expect(updatedMemoValue).toEqual(updatedExpectedMemo);
+
+      // Verify child workflow state
+      const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
+      const updatedListingState = await childHandle.query('state');
+      expect(updatedListingState).toEqual({ Listing: expectedUpdated.Listing });
+
+      await childHandle.signal('update', {
+        data: { id: data.listings[0].id, update: 'directly' },
+        entityName: 'Listing',
+        strategy: '$merge'
+      });
+      await sleep();
+
+      const parentData = await handle.query('state');
+      const childData = await childHandle.query('state');
+
+      expect(parentData).toEqual(
+        normalizeEntities(
+          { ...data, update: 'fromUpdate', listings: [{ ...data.listings[0], update: 'directly' }] },
+          SchemaManager.getInstance().getSchema('User')
+        )
+      );
+      expect(childData).toEqual({
+        Listing: {
+          [data.listings[0]?.id]: {
+            ...data.listings[0],
+            update: 'directly'
+          }
+        }
+      });
+    });
+
     it('Should update state and child workflow and maintain state in parent and child correctly', async () => {
       const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Awesome test listing' }] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });

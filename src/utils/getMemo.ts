@@ -22,7 +22,7 @@ export async function getMemo<D>(handle: WorkflowHandle): Promise<WorkflowData<D
   }
 
   const memoState = unflatten(memo) as WorkflowData;
-  memoState.data = limitRecursion(entityId, entityName, memoState.state);
+  memoState.data = limitRecursion(entityId, entityName, memoState.state ?? {});
 
   return memoState;
 }

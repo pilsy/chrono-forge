@@ -100,6 +100,7 @@ export type ManagedPath = {
   };
   startToCloseTimeout?: string;
   condition?: (entity: Record<string, any>, data: StatefulWorkflow['data']) => boolean;
+  subscriptionsEnabled?: boolean;
   getSubscriptions?: (updateSubscription: Partial<Subscription>) => Partial<Subscription>[];
   processData?: (entity: Record<string, any>, data: StatefulWorkflow['data']) => Record<string, any>;
 };
@@ -236,6 +237,8 @@ export type StatefulWorkflowOptions = {
   schema?: schema.Entity;
   schemaName?: string;
   autoStart?: boolean;
+  autoSubscribe?: boolean;
+  memoStateEnabled?: boolean;
   apiUrl?: string;
   workflowType?: string;
 };
@@ -855,6 +858,10 @@ export abstract class StatefulWorkflow<
     this.params = params;
     this.options = options;
 
+    if (this.options.memoStateEnabled !== false) {
+      this.options.memoStateEnabled = true;
+    }
+
     this.stateManager = StateManager.getInstance(workflow.workflowInfo().workflowId);
 
     if (this.params?.ancestorWorkflowIds) {
@@ -1364,7 +1371,10 @@ export abstract class StatefulWorkflow<
       properties: Record<string, any>;
     };
 
-    const flattenedNewState = flatten({ state: this.state, properties: this._memoProperties });
+    const flattenedNewState = flatten({
+      state: this.options?.memoStateEnabled ? this.state : {},
+      properties: this._memoProperties
+    });
     const flattenedCurrentState: any = memo || {};
 
     const updatedMemo: Record<string, any> = {};
@@ -2016,6 +2026,7 @@ export abstract class StatefulWorkflow<
         idAttribute: schema._idAttribute,
         workflowType: `${schema._key}Workflow`,
         autoStart: typeof this.options?.autoStart === 'boolean' ? this.options?.autoStart : true,
+        subscriptionsEnabled: typeof this.options?.autoSubscribe === 'boolean' ? this.options?.autoSubscribe : true,
         entityName: schema._key,
         isMany: _schema instanceof Array,
         ...(this.managedPaths[path] || {})
@@ -2078,6 +2089,7 @@ export abstract class StatefulWorkflow<
           maximumAttempts: 30
         },
         autoStart,
+        subscriptionsEnabled = true,
         getSubscriptions
       } = config;
 
@@ -2139,7 +2151,7 @@ export abstract class StatefulWorkflow<
             id,
             state: normalizeEntities(data, SchemaManager.getInstance().getSchema(entityName as string)),
             entityName,
-            subscriptions,
+            subscriptions: subscriptionsEnabled ? subscriptions : [],
             apiToken: this.apiToken,
             ancestorWorkflowIds: [...this.ancestorWorkflowIds, workflow.workflowInfo().workflowId]
           }
