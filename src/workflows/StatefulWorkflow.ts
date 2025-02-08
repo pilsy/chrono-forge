@@ -328,6 +328,14 @@ export type AncestorHandleEntry = {
   handle: workflow.ExternalWorkflowHandle;
 };
 
+export type StateEventListener = {
+  newState: EntitiesState;
+  previousState: EntitiesState;
+  changeType: 'added' | 'updated' | 'deleted';
+  changes: DetailedDiff;
+  origins: string[];
+};
+
 export abstract class StatefulWorkflow<
   P extends StatefulWorkflowParams = StatefulWorkflowParams,
   O extends StatefulWorkflowOptions = StatefulWorkflowOptions
