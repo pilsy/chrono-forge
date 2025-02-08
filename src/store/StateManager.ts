@@ -108,6 +108,7 @@ export class StateManager extends EventEmitter {
         `${entityName}.*:${eventType}`, // EntityName.*:changeType
         `*.*:${eventType}`, // *.*:changeType
         `${entityName}.${eventId}:*`, // EntityName.entityId:*
+        `${entityName}.*:*`, // EntityName.*:*
         '*.*:*' // *.*:*
       ];
 
