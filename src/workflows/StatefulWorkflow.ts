@@ -1312,17 +1312,16 @@ export abstract class StatefulWorkflow<
       const deleted = get(differences.deleted, `${this.entityName}.${this.id}`, false);
 
       if (created && this.iteration === 0) {
-        await this.emit('created', created, newState, previousState, changeOrigins);
+        await this.emit('created', { changes: created, newState, previousState, changeOrigins });
       } else if (created || updated) {
-        await this.emit(
-          'updated',
-          mergeDeepRight(created || {}, updated || {}),
+        await this.emit('updated', {
+          changes: mergeDeepRight(created || {}, updated || {}),
           newState,
           previousState,
           changeOrigins
-        );
+        });
       } else if (deleted && this.isItemDeleted(differences, this.entityName, this.id)) {
-        if (!(await this.emit('deleted', deleted, newState, previousState, changeOrigins))) {
+        if (!(await this.emit('deleted', { changes: deleted, newState, previousState, changeOrigins }))) {
           this.status = 'cancelled';
         }
       }
