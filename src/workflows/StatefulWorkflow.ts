@@ -490,7 +490,7 @@ export abstract class StatefulWorkflow<
   public setApiToken(apiToken: string): void {
     this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.setApiToken`);
     if (apiToken && this.apiToken !== apiToken) {
-      this.log.info(`Updating apiToken...`);
+      this.log.debug(`Updating apiToken...`);
       this.apiToken = apiToken;
       this.pendingUpdate = true;
       this.forwardSignalToChildren('apiToken', apiToken);
@@ -858,9 +858,7 @@ export abstract class StatefulWorkflow<
     this.params = params;
     this.options = options;
 
-    if (this.options.memoStateEnabled !== false) {
-      this.options.memoStateEnabled = true;
-    }
+    this.options.memoStateEnabled = this.options.memoStateEnabled !== false;
 
     this.stateManager = StateManager.getInstance(workflow.workflowInfo().workflowId);
 
@@ -958,13 +956,13 @@ export abstract class StatefulWorkflow<
    */
   @Mutex('executeWorkflow')
   protected async executeWorkflow(): Promise<any> {
-    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.executeWorkflow`);
+    this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.executeWorkflow`);
 
     const executeWorkflowLogic = async (resolve: (value: any) => void, reject: (reason?: any) => void) => {
       try {
         if (this.schema) this.configureManagedPaths(this.schema);
         while (this.iteration <= this.maxIterations) {
-          this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}:execute`);
+          this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}:execute`);
 
           await workflow.condition(
             () =>
@@ -1257,7 +1255,7 @@ export abstract class StatefulWorkflow<
   @Before('execute')
   protected async processState(): Promise<void> {
     if (this.actionRunning) {
-      this.log.info(
+      this.log.trace(
         `[${this.constructor.name}]:${this.entityName}:${this.id}: Action is running, waiting for all changes to be made before processing...`
       );
       await workflow.condition(() => !this.actionRunning);
@@ -1306,7 +1304,7 @@ export abstract class StatefulWorkflow<
     differences: DetailedDiff;
     changeOrigins: string[];
   }): Promise<void> {
-    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.stateChanged`);
+    this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.stateChanged`);
 
     if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
       const created = get(differences.added, `${this.entityName}.${this.id}`, false);
@@ -1362,7 +1360,7 @@ export abstract class StatefulWorkflow<
   @Mutex('memo')
   @After('processState')
   protected async upsertStateToMemo(): Promise<void> {
-    this.log.info(`[StatefulWorkflow]: Saving state to memo: ${workflow.workflowInfo().workflowId}`);
+    this.log.trace(`[StatefulWorkflow]: Saving state to memo: ${workflow.workflowInfo().workflowId}`);
 
     const memo = (workflow.workflowInfo().memo || {}) as {
       state?: EntitiesState;
@@ -1508,12 +1506,12 @@ export abstract class StatefulWorkflow<
     changeOrigins?: string[],
     ancestorWorkflowIds: string[] = []
   ): boolean {
-    this.log.debug(`[StatefulWorkflow]: Checking if we should propagate update for selector: ${selector}`);
+    this.log.trace(`[StatefulWorkflow]: Checking if we should propagate update for selector: ${selector}`);
 
     if (changeOrigins) {
       for (const origin of changeOrigins) {
         if (origin && ancestorWorkflowIds.includes(origin)) {
-          this.log.debug(
+          this.log.trace(
             `Skipping propagation for selector ${selector} because the change originated from an ancestor workflow (${origin}).`
           );
           return false;
@@ -1536,11 +1534,11 @@ export abstract class StatefulWorkflow<
                 const selectedData = get(newState, path);
 
                 if (condition && !condition(selectedData)) {
-                  this.log.debug(`Custom condition for selector ${selector} not met.`);
+                  this.log.trace(`Custom condition for selector ${selector} not met.`);
                   continue;
                 }
 
-                this.log.debug(`Differences detected that match selector ${selector}, propagation allowed.`);
+                this.log.trace(`Differences detected that match selector ${selector}, propagation allowed.`);
                 return true;
               } else {
                 // Check if the selector is a parent path of the current path
@@ -1563,11 +1561,11 @@ export abstract class StatefulWorkflow<
                   const selectedData = get(newState, `${entityName}.${entityId}.${parentKey}`);
 
                   if (condition && !condition(selectedData)) {
-                    this.log.debug(`Custom condition for selector ${selector} not met.`);
+                    this.log.trace(`Custom condition for selector ${selector} not met.`);
                     continue;
                   }
 
-                  this.log.debug(`Differences detected within selector ${selector}, propagation allowed.`);
+                  this.log.trace(`Differences detected within selector ${selector}, propagation allowed.`);
                   return true;
                 }
               }
@@ -1577,7 +1575,7 @@ export abstract class StatefulWorkflow<
       }
     }
 
-    this.log.debug(
+    this.log.trace(
       `No matching differences found, conditions not met, or ancestry conflicts for selector: ${selector}`
     );
     return false;
@@ -1702,14 +1700,14 @@ export abstract class StatefulWorkflow<
             : item[config.idAttribute as string];
 
           if (this.isItemDeleted(differences, String(config.entityName), compositeId)) {
-            this.log.debug(`Processing deleted item in ${config.entityName}`);
+            this.log.trace(`Processing deleted item in ${config.entityName}`);
             await this.handleDeletion(config, compositeId);
           }
         }
       } else if (previousValue) {
         const itemId = previousValue[config.idAttribute as string];
         if (this.isItemDeleted(differences, String(config.entityName), itemId)) {
-          this.log.debug(`Processing deleted item in ${config.entityName}`);
+          this.log.trace(`Processing deleted item in ${config.entityName}`);
           await this.handleDeletion(config, itemId);
         }
       }
@@ -1961,7 +1959,7 @@ export abstract class StatefulWorkflow<
       : `${config.entityName}-${compositeId}`;
 
     if (changeOrigins.includes(workflowId)) {
-      this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id} Skipping recursive update...`);
+      this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id} Skipping recursive update...`);
       return;
     }
 
@@ -2014,7 +2012,7 @@ export abstract class StatefulWorkflow<
   protected configureManagedPaths(
     parentSchema: Schema & { schema?: { [key: string]: Schema & [{ _idAttribute: string; _key: string }] } }
   ): void {
-    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.configureManagedPaths`);
+    this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.configureManagedPaths`);
     if (!parentSchema.schema) {
       throw new Error("The provided schema does not have 'schema' defined.");
     }
@@ -2109,7 +2107,7 @@ export abstract class StatefulWorkflow<
       const workflowId = includeParentId ? `${entityName}-${compositeId}-${this.id}` : `${entityName}-${compositeId}`;
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {
-        this.log.info(
+        this.log.warn(
           `[${this.constructor.name}]:${this.entityName}:${this.id} Circular dependency detected for workflowId: ${workflowId}. Skipping child workflow start.`
         );
         return;
@@ -2120,7 +2118,7 @@ export abstract class StatefulWorkflow<
           `[${this.constructor.name}]:${this.entityName}:${this.id}: Calling condition function before starting child...`
         );
         if (!config.condition.apply(this, [rawData, this])) {
-          this.log.info(
+          this.log.trace(
             `[${this.constructor.name}]:${this.entityName}:${this.id}: Condition returned false, not starting child.`
           );
           return;
@@ -2243,12 +2241,12 @@ export abstract class StatefulWorkflow<
     newState: any,
     config: ManagedPath
   ): Promise<void> {
-    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.updateChildWorkflow`);
+    this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.updateChildWorkflow`);
     try {
       const { workflowType, entityName, idAttribute, includeParentId, autoStart } = config;
 
       if (!autoStart) {
-        this.log.warn(
+        this.log.trace(
           `${workflowType} with entityName ${entityName} not configured to autoStart...\n${JSON.stringify(config, null, 2)}`
         );
         return;
@@ -2262,18 +2260,18 @@ export abstract class StatefulWorkflow<
       const workflowId = includeParentId ? `${entityName}-${compositeId}-${this.id}` : `${entityName}-${compositeId}`;
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {
-        this.log.info(
+        this.log.debug(
           `[${this.constructor.name}]:${this.entityName}:${this.id} Circular update detected for workflowId: ${workflowId}. Skipping child workflow update.`
         );
         return;
       }
 
       if (typeof config.condition === 'function') {
-        this.log.info(
+        this.log.trace(
           `[${this.constructor.name}]:${this.entityName}:${this.id}: Calling condition function before starting child...`
         );
         if (!config.condition.apply(this, [rawData, this])) {
-          this.log.info(
+          this.log.trace(
             `[${this.constructor.name}]:${this.entityName}:${this.id}: Condition returned false, not starting child.`
           );
           return;
@@ -2341,7 +2339,7 @@ export abstract class StatefulWorkflow<
     );
     try {
       if (handle) {
-        this.log.info(`[${this.constructor.name}]:${this.entityName}:${this.id}: Cancelling child workflow...`);
+        this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}: Cancelling child workflow...`);
         const extHandle = workflow.getExternalWorkflowHandle(handle.workflowId);
         await extHandle.cancel();
       }
