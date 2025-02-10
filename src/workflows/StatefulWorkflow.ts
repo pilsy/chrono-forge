@@ -883,7 +883,7 @@ export abstract class StatefulWorkflow<
     this.schema = this.entityName ? this.schemaManager.getSchema(this.entityName) : (options.schema as schema.Entity);
 
     this.stateManager.on('stateChange', this.stateChanged.bind(this));
-    this.pendingUpdate = true;
+    this.pendingUpdate = typeof (this as any)?.loadData === 'function';
     this.pendingIteration = true;
 
     const memo = unflatten(workflow.workflowInfo()?.memo ?? {}) as {
