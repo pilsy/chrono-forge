@@ -1686,6 +1686,8 @@ export abstract class StatefulWorkflow<
       const currentValue: any = get(newData, config.path as string);
       const previousValue: any = get(oldData, config.path as string);
 
+      if (!config.autoStart) return;
+
       if (Array.isArray(currentValue)) {
         await this.processArrayItems(newState, currentValue, config, differences, previousState, changeOrigins);
       } else if (currentValue) {
