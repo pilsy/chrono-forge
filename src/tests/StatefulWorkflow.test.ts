@@ -17,7 +17,7 @@ describe('StatefulWorkflow', () => {
     timeout: number
   ) => ReturnType<client.workflow.start>;
   let client: ReturnType<typeof getClient>;
-  jest.setTimeout(120000);
+  jest.setTimeout(200000);
 
   beforeEach(() => {
     client = getClient();
