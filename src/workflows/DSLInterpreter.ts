@@ -31,12 +31,15 @@ const acts = proxyActivities<Record<string, (...args: string[]) => Promise<strin
 
 export async function DSLInterpreter(dsl: DSL): Promise<unknown> {
   const bindings = dsl.variables as Record<string, string>;
-  const dependencyGraph = buildDependencyGraph(dsl.root);
+  const dependencyGraph = buildDependencyGraph(dsl.root, bindings);
   return await executeGraph(dependencyGraph, bindings);
 }
 
 // Function to build a dependency graph based on the DSL structure
-function buildDependencyGraph(root: Statement): Map<string, { dependencies: string[]; execute: () => Promise<void> }> {
+function buildDependencyGraph(
+  root: Statement,
+  bindings: Record<string, string>
+): Map<string, { dependencies: string[]; execute: () => Promise<void> }> {
   const graph = new Map<string, { dependencies: string[]; execute: () => Promise<void> }>();
 
   const addNode = (name: string, dependencies: string[], execute: () => Promise<void>) => {
@@ -49,6 +52,7 @@ function buildDependencyGraph(root: Statement): Map<string, { dependencies: stri
       const dependencies = args.filter((arg) => graph.has(arg)); // List of dependencies
       addNode(result || name, dependencies, async () => {
         let resolvedArgs = args.map((arg) => graph.get(arg)?.execute() || Promise.resolve(arg));
+        // @ts-expect-error stfu
         const result = await acts[name](...(await Promise.all(resolvedArgs)));
         if (result) bindings[result] = result;
       });
