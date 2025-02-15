@@ -368,6 +368,41 @@ export abstract class StatefulWorkflow<
   protected continueAsNew: boolean = true;
 
   /**
+   * Flag indicating whether the workflow should continue as new in the next iteration.
+   *
+   * When set to `true`, the workflow will be recreated with a new history after the current
+   * iteration completes. This is useful for:
+   *
+   * - Preventing workflow histories from growing too large
+   * - Managing long-running workflows efficiently
+   * - Implementing workflow versioning and updates
+   * - Clearing accumulated state when needed
+   *
+   * The workflow will automatically continue as new when:
+   * - The history size approaches Temporal's limit (default ~40MB)
+   * - The maximum number of iterations is reached
+   * - This flag is manually set to true
+   *
+   * @example
+   * ```typescript
+   * class MyWorkflow extends Workflow {
+   *   async execute() {
+   *     // After processing a large batch of data
+   *     if (this.processedItemCount > 1000) {
+   *       this.shouldContinueAsNew = true;
+   *       return this.result;
+   *     }
+   *   }
+   * }
+   * ```
+   *
+   * @default false
+   * @see {@link https://docs.temporal.io/workflows#continue-as-new Temporal Continue-as-New Documentation}
+   */
+  @Property()
+  protected shouldContinueAsNew: boolean = false;
+
+  /**
    * Internal reference to the StateManager instance for this workflow.
    */
   protected stateManager!: StateManager;
@@ -972,6 +1007,7 @@ export abstract class StatefulWorkflow<
               this.pendingIteration ||
               this.pendingUpdate ||
               !!this.pendingChanges.length ||
+              this.shouldContinueAsNew ||
               this.status !== 'running',
             // @ts-ignore
             !this.conditionTimeout ? undefined : this.conditionTimeout
@@ -1020,7 +1056,11 @@ export abstract class StatefulWorkflow<
 
         resolve(this.result ?? this.data);
       } catch (err) {
-        await this.handleExecutionError(err, reject);
+        if (err instanceof workflow.ContinueAsNew) {
+          resolve(this.result ?? this.data);
+        } else {
+          await this.handleExecutionError(err, reject);
+        }
       }
     };
 
@@ -1273,7 +1313,7 @@ export abstract class StatefulWorkflow<
    * Handles changes in the entity's state by processing state differences and
    * triggering appropriate events based on the nature of these changes.
    *
-   * @mutex 'stateChanged'
+   * @mutex 'processState'
    * @protected
    * @async
    * @param {Object} param0 - The object containing state change details, including:
@@ -1294,7 +1334,7 @@ export abstract class StatefulWorkflow<
    * - Processes the states of child entities and related subscriptions if applicable, triggering further handling mechanisms.
    * - Sets the `pendingIteration` flag to true, signaling readiness for further processing.
    */
-  @Mutex('stateChanged')
+  @Mutex('processState')
   protected async stateChanged({
     newState,
     previousState,
@@ -1688,7 +1728,7 @@ export abstract class StatefulWorkflow<
       const currentValue: any = get(newData, config.path as string);
       const previousValue: any = get(oldData, config.path as string);
 
-      if (!config.autoStart) {
+      if (!config.autoStart && typeof config.condition !== 'function') {
         continue;
       }
 
@@ -2097,7 +2137,7 @@ export abstract class StatefulWorkflow<
         getSubscriptions
       } = config;
 
-      if (!autoStart) {
+      if (!autoStart && typeof config.condition !== 'function') {
         this.log.trace(
           `${workflowType} with entityName ${entityName} not configured to autoStart...\n${JSON.stringify(config, null, 2)}`
         );
@@ -2252,7 +2292,7 @@ export abstract class StatefulWorkflow<
     try {
       const { workflowType, entityName, idAttribute, includeParentId, autoStart } = config;
 
-      if (!autoStart) {
+      if (!autoStart && typeof config.condition !== 'function') {
         this.log.trace(
           `${workflowType} with entityName ${entityName} not configured to autoStart...\n${JSON.stringify(config, null, 2)}`
         );

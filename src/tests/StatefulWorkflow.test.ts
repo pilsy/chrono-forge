@@ -98,6 +98,24 @@ describe('StatefulWorkflow', () => {
     });
   });
 
+  describe('ContinueAsNew', () => {
+    it('Should continue as new', async () => {
+      const data = { id: uuid4() };
+      const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
+      await sleep();
+
+      const state = await handle.query('state');
+      expect(state).toEqual(normalizeEntities(data, SchemaManager.getInstance().getSchema('User')));
+      const { state: initialMemoValue } = await getMemo(handle);
+      expect(initialMemoValue).toEqual(state);
+
+      await handle.signal('shouldContinueAsNew', true);
+      await sleep(5000);
+
+      console.log(await handle.query('state'));
+    });
+  });
+
   describe('@Debounce() decorator', () => {
     it('Should debounce properly', async () => {
       const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Awesome test listing' }] };

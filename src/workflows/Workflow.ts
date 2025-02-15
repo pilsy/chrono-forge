@@ -384,7 +384,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
         this.status = 'cancelled';
       });
       reject(err);
-    } else {
+    } else if (!(err instanceof workflow.ContinueAsNew)) {
       this.log.error(`Handling non-cancellation error: ${err?.message} \n ${err.stack}`);
       reject(err);
     }
