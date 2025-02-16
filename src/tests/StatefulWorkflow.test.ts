@@ -203,7 +203,7 @@ describe('StatefulWorkflow', () => {
         entityName: 'Listing',
         strategy: '$merge'
       });
-      await sleep(2500);
+      await sleep();
 
       const parentData = await handle.query('state');
       const childData = await childHandle.query('state');
@@ -218,7 +218,7 @@ describe('StatefulWorkflow', () => {
         User: {
           [userId]: {
             ...data,
-            // update: 'fromUpdate',
+            update: 'fromUpdate',
             listings: [data.listings[0].id]
           }
         },
