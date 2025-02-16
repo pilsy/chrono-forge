@@ -169,7 +169,7 @@ describe('StatefulWorkflow', () => {
       const data = { id: userId, listings: [{ id: uuid4(), name: 'Awesome test listing', user: userId }] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
       const expectedInitial = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
-      await sleep();
+      await sleep(2500);
 
       // Initial state verification
       const state = await handle.query('state');
@@ -203,7 +203,7 @@ describe('StatefulWorkflow', () => {
         entityName: 'Listing',
         strategy: '$merge'
       });
-      await sleep();
+      await sleep(2500);
 
       const parentData = await handle.query('state');
       const childData = await childHandle.query('state');
