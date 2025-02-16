@@ -1057,7 +1057,7 @@ export abstract class StatefulWorkflow<
         resolve(this.result ?? this.data);
       } catch (err) {
         if (err instanceof workflow.ContinueAsNew) {
-          resolve(this.result ?? this.data);
+          reject(err);
         } else {
           await this.handleExecutionError(err, reject);
         }
