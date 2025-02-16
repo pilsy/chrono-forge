@@ -1307,6 +1307,7 @@ export abstract class StatefulWorkflow<
    * - Logs a debug message indicating the start of the state processing.
    * - If there are any pending changes, it triggers the `stateManager` to process these changes.
    */
+  @Mutex('processState')
   @Before('execute')
   protected async processState(): Promise<void> {
     if (this.actionRunning) {
@@ -1347,6 +1348,7 @@ export abstract class StatefulWorkflow<
    * - Processes the states of child entities and related subscriptions if applicable, triggering further handling mechanisms.
    * - Sets the `pendingIteration` flag to true, signaling readiness for further processing.
    */
+  @Mutex('processState')
   protected async stateChanged({
     newState,
     previousState,
