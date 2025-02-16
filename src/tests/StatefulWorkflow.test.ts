@@ -507,12 +507,12 @@ describe('StatefulWorkflow', () => {
       // Verify Listing workflow state for listingId
       const listingHandle = await client.workflow.getHandle(`Listing-${listingId}`);
       const listingState = await listingHandle.query('state');
-      expect(listingState.Listing).toEqual(expectedState.Listing);
+      expect(listingState.Listing).toEqual({ [listingId]: expectedState.Listing[listingId] });
 
       // Verify Listing2 workflow state**
       const listing2Handle = await client.workflow.getHandle(`Listing-${listing2Id}`);
       const listing2State = await listing2Handle.query('state');
-      expect(listing2State.Listing).toEqual(expectedState.Listing);
+      expect(listing2State.Listing).toEqual({ [listing2Id]: expectedState.Listing[listing2Id] });
 
       // Verify child Photo workflow state
       const photoHandle = await client.workflow.getHandle(`Photo-${photoId}`);
