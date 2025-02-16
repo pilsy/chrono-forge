@@ -218,7 +218,7 @@ describe('StatefulWorkflow', () => {
         User: {
           [userId]: {
             ...data,
-            update: 'fromUpdate',
+            // update: 'fromUpdate',
             listings: [data.listings[0].id]
           }
         },
