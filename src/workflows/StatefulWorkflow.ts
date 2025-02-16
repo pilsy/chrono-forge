@@ -11,7 +11,7 @@ import {
 } from '../store/entities';
 import { DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
-import { isEmpty, isEqual } from 'lodash';
+import { isEmpty, isEqual, omit } from 'lodash';
 import { Workflow, ChronoFlowOptions } from './Workflow';
 import {
   Signal,
@@ -34,7 +34,7 @@ import { getCompositeKey } from '../utils/getCompositeKey';
 import { UpdateHandlerOptions } from '@temporalio/workflow/lib/interfaces';
 import { Duration, HandlerUnfinishedPolicy } from '@temporalio/common';
 import { flatten } from '../utils/flatten';
-import { unflatten } from '../utils';
+import { LRUHandleCache, unflatten } from '../utils';
 import { mergeDeepRight } from 'ramda';
 
 /**
@@ -350,6 +350,17 @@ export abstract class StatefulWorkflow<
    */
   private _actionsBound: boolean = false;
   protected _eventsBound = false;
+
+  private readonly selectorPatternCache = new Map<string, RegExp>();
+
+  private getSelectorPattern(selector: string): RegExp {
+    let pattern = this.selectorPatternCache.get(selector);
+    if (!pattern) {
+      pattern = new RegExp('^' + selector.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
+      this.selectorPatternCache.set(selector, pattern);
+    }
+    return pattern;
+  }
 
   /**
    * Internal reference object to hold the values for memo properties.
@@ -677,7 +688,8 @@ export abstract class StatefulWorkflow<
   /**
    * A map to keep track of workflows that have open subscriptions to this workflows state.
    */
-  protected subscriptionHandles: Map<string, workflow.ExternalWorkflowHandle> = new Map();
+  protected subscriptionHandles: LRUHandleCache<workflow.ExternalWorkflowHandle> =
+    new LRUHandleCache<workflow.ExternalWorkflowHandle>(2500);
 
   /**
    * Defines paths within the workflow's state that are automatically managed, often
@@ -860,7 +872,7 @@ export abstract class StatefulWorkflow<
   /**
    * A map to keep track of handles to ancestor workflows.
    */
-  protected ancestorHandles: Map<string, AncestorHandleEntry> = new Map();
+  protected ancestorHandles: LRUHandleCache<AncestorHandleEntry> = new LRUHandleCache<AncestorHandleEntry>(1000);
 
   /**
    * Constructs an instance of the class with the specified parameters and options.
@@ -1293,7 +1305,6 @@ export abstract class StatefulWorkflow<
    * - Logs a debug message indicating the start of the state processing.
    * - If there are any pending changes, it triggers the `stateManager` to process these changes.
    */
-  @Mutex('processState')
   @Before('execute')
   protected async processState(): Promise<void> {
     if (this.actionRunning) {
@@ -1334,7 +1345,6 @@ export abstract class StatefulWorkflow<
    * - Processes the states of child entities and related subscriptions if applicable, triggering further handling mechanisms.
    * - Sets the `pendingIteration` flag to true, signaling readiness for further processing.
    */
-  @Mutex('processState')
   protected async stateChanged({
     newState,
     previousState,
@@ -1398,7 +1408,6 @@ export abstract class StatefulWorkflow<
    *   - The current iteration count and workflow status.
    *   - A timestamp representing the last update.
    */
-  @Mutex('memo')
   @After('processState')
   protected async upsertStateToMemo(): Promise<void> {
     this.log.trace(`[StatefulWorkflow]: Saving state to memo: ${workflow.workflowInfo().workflowId}`);
@@ -1638,7 +1647,7 @@ export abstract class StatefulWorkflow<
     const updates: EntitiesState = {};
     const deletions: EntitiesState = {};
 
-    const selectorRegex = new RegExp('^' + selector.replace(/\*/g, '.*') + '$');
+    let selectorRegex = this.getSelectorPattern(selector);
 
     for (const diffType of ['added', 'updated', 'deleted'] as const) {
       const entities = differences[diffType] as EntitiesState;
@@ -1721,8 +1730,8 @@ export abstract class StatefulWorkflow<
   ): Promise<void> {
     this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.processChildState`);
 
-    const newData = limitRecursion(this.id, this.entityName, newState);
-    const oldData = limitRecursion(this.id, this.entityName, previousState);
+    const newData = limitRecursion(this.id, this.entityName, newState, this.stateManager);
+    const oldData = limitRecursion(this.id, this.entityName, previousState, this.stateManager);
 
     for (const [path, config] of Object.entries(this.managedPaths)) {
       const currentValue: any = get(newData, config.path as string);
@@ -2145,10 +2154,25 @@ export abstract class StatefulWorkflow<
       }
 
       const { [idAttribute as string]: id } = state;
-      const parentData = limitRecursion(this.id, this.entityName, newState);
 
-      const rawData = limitRecursion(id, String(entityName), newState);
-      const data = typeof config.processData === 'function' ? config.processData(rawData, parentData) : rawData;
+      // Only get the specific entity data needed for this child workflow
+      const rawData = normalizeEntities(
+        limitRecursion(id, String(entityName), newState, this.stateManager),
+        SchemaManager.getInstance().getSchema(entityName as string)
+      );
+
+      // Add minimal parent context
+      rawData[this.entityName] = {
+        [this.id]: newState[this.entityName][this.id]
+      };
+
+      const data =
+        typeof config.processData === 'function'
+          ? config.processData(
+              limitRecursion(id, String(entityName), newState, this.stateManager),
+              limitRecursion(this.id, this.entityName, newState, this.stateManager)
+            )
+          : rawData;
       const compositeId = Array.isArray(idAttribute) ? getCompositeKey(data, idAttribute) : id;
       const workflowId = includeParentId ? `${entityName}-${compositeId}-${this.id}` : `${entityName}-${compositeId}`;
 
@@ -2194,7 +2218,10 @@ export abstract class StatefulWorkflow<
         args: [
           {
             id,
-            state: normalizeEntities(data, SchemaManager.getInstance().getSchema(entityName as string)),
+            state:
+              typeof config.processData === 'function'
+                ? normalizeEntities(data, SchemaManager.getInstance().getSchema(entityName as string))
+                : rawData,
             entityName,
             subscriptions: subscriptionsEnabled ? subscriptions : [],
             apiToken: this.apiToken,
@@ -2207,9 +2234,12 @@ export abstract class StatefulWorkflow<
       this.log.trace(
         `[${this.constructor.name}]:${this.entityName}:${this.id}.startChildWorkflow( workflowType=${workflowType}, startPayload=${JSON.stringify(startPayload, null, 2)}\n)`
       );
+
       const handle = await workflow.startChild(String(workflowType), startPayload);
       this.handles.set(workflowId, handle);
-      this.emit(`child:${entityName}:started`, { ...config, workflowId, data, handle });
+      if (this.listenerCount(`child:${entityName}:started`) > 0)
+        this.emit(`child:${entityName}:started`, { ...config, workflowId, data, handle });
+
       handle
         .result()
         .then((result) => this.emit(`child:${entityName}:completed`, { ...config, workflowId, result }))
@@ -2300,9 +2330,14 @@ export abstract class StatefulWorkflow<
       }
 
       const { [idAttribute as string]: id } = state;
-      const parentData = limitRecursion(this.id, this.entityName, newState);
-      const rawData = limitRecursion(id, String(entityName), newState);
-      const data = typeof config.processData === 'function' ? config.processData(rawData, parentData) : rawData;
+
+      // Only get the specific entity data needed for this child workflow
+      const rawData = limitRecursion(id, String(entityName), newState, this.stateManager);
+
+      const data =
+        typeof config.processData === 'function'
+          ? config.processData(rawData, limitRecursion(this.id, this.entityName, newState, this.stateManager))
+          : rawData;
       const compositeId = Array.isArray(idAttribute) ? getCompositeKey(data, idAttribute) : id;
       const workflowId = includeParentId ? `${entityName}-${compositeId}-${this.id}` : `${entityName}-${compositeId}`;
 
@@ -2325,19 +2360,23 @@ export abstract class StatefulWorkflow<
         }
       }
 
-      await handle.signal('update', {
-        data,
+      const updateSignalPayload: any = {
+        updates: normalizeEntities(data, SchemaManager.getInstance().getSchema(entityName as string)),
         entityName: config.entityName,
         strategy: '$merge',
         sync: true,
         changeOrigin: workflow.workflowInfo().workflowId
-      });
-      this.emit(`child:${entityName}:updated`, {
-        ...config,
-        workflowId: handle.workflowId,
-        data,
-        changeOrigin: workflow.workflowInfo().workflowId
-      });
+      };
+
+      await handle.signal('update', updateSignalPayload);
+
+      if (this.listenerCount(`child:${entityName}:updated`) > 0)
+        this.emit(`child:${entityName}:updated`, {
+          ...config,
+          workflowId: handle.workflowId,
+          data,
+          changeOrigin: workflow.workflowInfo().workflowId
+        });
     } catch (err) {
       if (err instanceof Error) {
         this.log.error(

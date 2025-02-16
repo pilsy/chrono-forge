@@ -2,7 +2,7 @@ import { ChronoFlow } from '../../workflows';
 import { ManagedPaths, StatefulWorkflow } from '../../workflows/StatefulWorkflow';
 import { User, Listing } from '../testSchemas';
 import { trace } from '@opentelemetry/api';
-import { condition, sleep } from '@temporalio/workflow';
+import { condition, sleep, workflowInfo } from '@temporalio/workflow';
 import { Action, Debounce, On, Property, Signal } from '../../decorators';
 
 export type TestAction = {
@@ -74,8 +74,16 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
     this.counter++;
   }
 
+  @Property({ set: false })
+  protected async firstExecutionRunId() {
+    const rid = JSON.stringify(workflowInfo().firstExecutionRunId ?? undefined);
+    this.log.info(`firstExecutionRunId=${rid}`);
+    return rid;
+  }
+
   async execute(params: any) {
     console.log('execute');
+    console.log(this.state);
     // console.log(this.listings);
     // // if (this.listings.length < 3) {
     // //   this.listings.push({

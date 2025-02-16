@@ -12,6 +12,7 @@ import {
   HOOKS_METADATA_KEY
 } from '../decorators';
 import { Duration } from '@temporalio/common';
+import { LRUHandleCache } from '../utils';
 
 /**
  * Options for configuring a ChronoFlow.
@@ -108,7 +109,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   /**
    * Map to keep track of child workflow handles.
    */
-  protected handles: Map<string, workflow.ChildWorkflowHandle<any>> = new Map();
+  protected handles: LRUHandleCache<workflow.ChildWorkflowHandle<any>> = new LRUHandleCache<
+    workflow.ChildWorkflowHandle<any>
+  >(2500);
 
   /**
    * Internal flags used to determine if certain decorators have been bound to this workflow instance.

@@ -37,12 +37,22 @@ export class StateManager extends EventEmitter {
     return this._state ?? {};
   }
   set state(newState) {
+    if (this._state === newState) return; // Skip if reference is the same
+
     const previousState = this._state;
     this._state = newState;
-    this.emit('stateChange', { newState, previousState, differences: detailedDiff(previousState, newState) });
+
+    // Only calculate detailed diff if there are listeners
+    if (this.listenerCount('stateChange') > 0) {
+      this.emit('stateChange', {
+        newState,
+        previousState,
+        differences: detailedDiff(previousState, newState)
+      });
+    }
   }
 
-  private readonly cache: Map<string, { data: any; lastState: EntitiesState }> = new Map();
+  public readonly cache: Map<string, { data: any; lastState: EntitiesState }> = new Map();
   private readonly _queue: EntityAction[] = [];
   get queue() {
     return this._queue;
@@ -75,7 +85,7 @@ export class StateManager extends EventEmitter {
       newState = reducer(newState || this._state, change as EntityAction);
     }
 
-    if (newState) {
+    if (newState && newState !== this._state) {
       const differences = detailedDiff(this._state, newState);
       if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
         this._state = newState;
@@ -168,7 +178,7 @@ export class StateManager extends EventEmitter {
 
     let result: any;
     if (denormalizeData) {
-      const denormalized = limitRecursion(id, entityName, this._state);
+      const denormalized = limitRecursion(id, entityName, this._state, this);
       const handler = {
         set: (target: any, prop: string | symbol, value: any) => {
           if (target[prop] === value) {
