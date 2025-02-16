@@ -56,6 +56,7 @@ import { mergeDeepRight } from 'ramda';
  * - **`workflowIdConflictPolicy`** (optional): Dictates how to handle workflow ID conflicts, utilizing values from `workflow.WorkflowIdConflictPolicy`.
  * - **`workflowIdReusePolicy`** (optional): Indicates policy for workflow ID reuse, using values from `workflow.WorkflowIdReusePolicy`.
  * - **`workflowTaskTimeout`** (optional): Duration after which the workflow should time out if it hasn't completed.
+ * - **`startDelay`** (optional): Duration to wait before starting the workflow.
  * - **`retry`** (optional): Configuration object defining retry parameters for the workflow:
  *   - `initialInterval`: Initial retry interval in milliseconds.
  *   - `maximumInterval`: Maximum interval for retries.
@@ -94,6 +95,7 @@ export type ManagedPath = {
   workflowIdConflictPolicy?: workflow.WorkflowIdConflictPolicy;
   workflowIdReusePolicy?: workflow.WorkflowIdReusePolicy;
   workflowTaskTimeout?: Duration;
+  startDelay?: Duration;
   retry?: {
     initialInterval?: number;
     maximumInterval?: number;
@@ -2134,6 +2136,7 @@ export abstract class StatefulWorkflow<
         workflowIdConflictPolicy = workflow.WorkflowIdConflictPolicy.TERMINATE_EXISTING,
         workflowIdReusePolicy = workflow.WorkflowIdReusePolicy.ALLOW_DUPLICATE,
         workflowTaskTimeout = 30000,
+        startDelay = 1000,
         startToCloseTimeout = '30 days',
         retry = {
           initialInterval: 1000 * 1,
@@ -2215,6 +2218,7 @@ export abstract class StatefulWorkflow<
         workflowIdReusePolicy,
         startToCloseTimeout,
         workflowTaskTimeout,
+        startDelay,
         args: [
           {
             id,
