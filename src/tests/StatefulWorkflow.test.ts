@@ -613,12 +613,15 @@ describe('StatefulWorkflow', () => {
 
       const client = getClient();
       const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
+      const firstRunId = (await childHandle.describe()).runId;
       await childHandle.cancel();
       await sleep();
 
       const restartedChildHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
-      await sleep();
+      const secondRunId = (await restartedChildHandle.describe()).runId;
       const childState = await restartedChildHandle.query('state');
+
+      expect(firstRunId).not.toEqual(secondRunId);
       expect(childState.Listing).toHaveProperty(data.listings[0].id);
     });
 
