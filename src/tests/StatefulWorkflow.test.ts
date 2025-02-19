@@ -615,7 +615,7 @@ describe('StatefulWorkflow', () => {
       const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
       const firstRunId = (await childHandle.describe()).runId;
       await childHandle.cancel();
-      await sleep();
+      await sleep(5000);
 
       const restartedChildHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
       const secondRunId = (await restartedChildHandle.describe()).runId;
@@ -632,7 +632,7 @@ describe('StatefulWorkflow', () => {
 
       expect(await handle.query('data')).toEqual(data);
       await handle.cancel();
-      await sleep();
+      await sleep(5000);
 
       const client = getClient();
       const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
