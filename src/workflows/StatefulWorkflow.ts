@@ -12,7 +12,7 @@ import {
 import { DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
 import { isEmpty, isEqual, omit } from 'lodash';
-import { Workflow, ChronoFlowOptions } from './Workflow';
+import { Workflow, TemporalOptions } from './Workflow';
 import {
   Signal,
   Query,
@@ -504,7 +504,7 @@ export abstract class StatefulWorkflow<
    * - A promise that resolves with the result of the workflow's execution. The return value
    *   may vary depending on the specific workflow implementation.
    */
-  protected abstract execute(args?: unknown, options?: ChronoFlowOptions): Promise<unknown>;
+  protected abstract execute(args?: unknown, options?: TemporalOptions): Promise<unknown>;
 
   /**
    * The `apiToken` property is used to store the API token for this workflow, which may interact

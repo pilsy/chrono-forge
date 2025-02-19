@@ -1,7 +1,7 @@
-import { Workflow, ChronoFlow } from '../../workflows';
+import { Workflow, Temporal } from '../../workflows';
 import { Property } from '../../decorators';
 
-@ChronoFlow()
+@Temporal()
 export class ShouldCreateDefaultPropertyAccessors extends Workflow {
   async execute() {
     // Return the current status after setting via signal

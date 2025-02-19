@@ -77,7 +77,7 @@ import { PROPERTY_METADATA_KEY, GETTER_METADATA_KEY, SETTER_METADATA_KEY } from 
  *
  * @example
  * ```typescript
- * @ChronoFlow()
+ * @Temporal()
  * class OrderWorkflow extends StatefulWorkflow {
  *   // Generates both signal and query handlers
  *   @Property()

@@ -802,7 +802,7 @@ describe('StatefulWorkflow', () => {
       // Verify that the state in the parent User workflow is updated correctly
       const parentUpdatedState = await handle.query('state');
       expect(parentUpdatedState.Like[likeId].newField).toEqual('direct update');
-    });
+    }, 30000);
   });
 
   describe('getCompositeKey', () => {

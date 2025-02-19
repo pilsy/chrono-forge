@@ -19,9 +19,9 @@ To define a signal handler in a workflow, use the `@Signal` decorator provided b
 ##### **Basic Example: Defining and Using Signals**
 
 ```typescript
-import { Workflow, Signal } from 'chrono-forge';
+import { Workflow, Signal } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ExampleWorkflow extends Workflow {
   private status: string = 'initialized';
 
@@ -71,9 +71,9 @@ Signals can be used in more advanced scenarios to handle complex logic, such as 
 ##### **Example: Pausing and Resuming a Workflow**
 
 ```typescript
-import { Workflow, Signal } from 'chrono-forge';
+import { Workflow, Signal } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class PausableWorkflow extends Workflow {
   private paused: boolean = false;
 
@@ -108,9 +108,9 @@ export class PausableWorkflow extends Workflow {
 Signals can be used to enable communication between workflows, allowing one workflow to trigger actions in another workflow.
 
 ```typescript
-import { Workflow, Signal } from 'chrono-forge';
+import { Workflow, Signal } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class CoordinatorWorkflow extends Workflow {
 
   @Signal()

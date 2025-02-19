@@ -1,6 +1,6 @@
-import { SchemaManager, parseSchemasFromYAML } from '../store/SchemaManager';
+import { SchemaManager } from '../store/SchemaManager';
 
-parseSchemasFromYAML(`
+SchemaManager.parseYAML(`
   User:
     idAttribute: id
     listings: [Listing]
@@ -28,6 +28,6 @@ parseSchemasFromYAML(`
     user: User
 `);
 
-const schemas = SchemaManager.getInstance().getSchemas();
+const { schemas } = SchemaManager;
 export const { User, Listing, Photo, Like } = schemas;
 export default schemas;

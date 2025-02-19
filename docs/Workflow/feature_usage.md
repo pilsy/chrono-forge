@@ -27,9 +27,9 @@ To define a signal handler in a workflow, use the `@Signal` decorator to mark a 
 **Example: Defining and Using Signals**
 
 ```typescript
-import { Workflow, Signal } from 'chrono-forge';
+import { Workflow, Signal } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ExampleWorkflow extends Workflow {
   private status: string = 'initialized';
 
@@ -69,9 +69,9 @@ To define a query handler, use the `@Query` decorator on a method that returns t
 **Example: Defining and Using Queries**
 
 ```typescript
-import { Workflow, Query } from 'chrono-forge';
+import { Workflow, Query } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ExampleWorkflow extends Workflow {
   private status: string = 'initialized';
 
@@ -110,9 +110,9 @@ To manage workflow execution flow, you can use signal handlers to control the wo
 **Example: Pausing and Resuming a Workflow**
 
 ```typescript
-import { Workflow, Signal } from 'chrono-forge';
+import { Workflow, Signal } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class PausableWorkflow extends Workflow {
   private paused: boolean = false;
 
@@ -160,9 +160,9 @@ To define an error handler, use the `@OnError` decorator on a method that handle
 **Example: Defining a Custom Error Handler**
 
 ```typescript
-import { Workflow, OnError } from 'chrono-forge';
+import { Workflow, OnError } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ErrorHandlingWorkflow extends Workflow {
 
   @OnError('execute')
@@ -201,9 +201,9 @@ To define lifecycle hooks, use the `@Hook` decorator with `before` or `after` op
 **Example: Defining Lifecycle Hooks**
 
 ```typescript
-import { Workflow, Hook } from 'chrono-forge';
+import { Workflow, Hook } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ExampleWorkflow extends Workflow {
 
   @Hook({ before: 'execute' })

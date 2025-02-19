@@ -27,9 +27,9 @@ To use the `@Hook` decorator, apply it to a method within a class that extends t
 ##### **Basic Usage Example**
 
 ```typescript
-import { Workflow, Hook } from 'chrono-forge';
+import { Workflow, Hook } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ExampleWorkflow extends Workflow {
 
   @Hook({ before: 'execute' })
@@ -58,9 +58,9 @@ export class ExampleWorkflow extends Workflow {
 The `@Hook` decorator can be applied to multiple methods, allowing workflows to manage complex execution flows with layered hooks.
 
 ```typescript
-import { Workflow, Hook } from 'chrono-forge';
+import { Workflow, Hook } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class AdvancedWorkflow extends Workflow {
 
   @Hook({ before: 'processData' })
@@ -108,6 +108,7 @@ export class AdvancedWorkflow extends Workflow {
 1. **Logging and Monitoring**:
    - Hooks can be used to log important events before or after a method is executed. This is useful for debugging, auditing, and monitoring the workflow's behavior.
    - Example:
+
      ```typescript
      @Hook({ before: 'execute' })
      protected async logStart(): Promise<void> {
@@ -123,6 +124,7 @@ export class AdvancedWorkflow extends Workflow {
 2. **Validation and Pre-Processing**:
    - Hooks can be used to perform validation or pre-processing before a method is executed. For example, validating input parameters or preparing resources.
    - Example:
+
      ```typescript
      @Hook({ before: 'performTask' })
      protected async validateInput(): Promise<void> {
@@ -134,6 +136,7 @@ export class AdvancedWorkflow extends Workflow {
 3. **Cleanup and Post-Processing**:
    - Hooks can be used to perform cleanup or post-processing after a method is executed. This is useful for releasing resources, closing connections, or other teardown tasks.
    - Example:
+
      ```typescript
      @Hook({ after: 'execute' })
      protected async cleanup(): Promise<void> {
@@ -145,6 +148,7 @@ export class AdvancedWorkflow extends Workflow {
 4. **Retry Logic and Error Recovery**:
    - Hooks can be used to implement retry logic or error recovery mechanisms after a method fails. This allows workflows to recover from transient errors or perform alternative actions.
    - Example:
+
      ```typescript
      @Hook({ after: 'performTask' })
      protected async retryOnFailure(): Promise<void> {
@@ -156,6 +160,7 @@ export class AdvancedWorkflow extends Workflow {
 5. **Dynamic State Management**:
    - Hooks can be used to dynamically manage state before or after specific operations. This is useful for stateful workflows that need to maintain consistency across multiple method calls.
    - Example:
+
      ```typescript
      @Hook({ after: 'updateState' })
      protected async synchronizeState(): Promise<void> {

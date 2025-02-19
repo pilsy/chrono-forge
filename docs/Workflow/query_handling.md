@@ -23,9 +23,9 @@ To handle queries in a workflow, the `Workflow` class provides the `@Query` deco
 To define a query handler in a workflow, use the `@Query` decorator as follows:
 
 ```typescript
-import { Workflow, Query } from 'chrono-forge';
+import { Workflow, Query } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ExampleWorkflow extends Workflow {
 
   private status: string = 'initialized';
@@ -79,6 +79,7 @@ Queries can be used in various scenarios to retrieve the current state or comput
 2. **Calculating Derived Data**:
    - Queries can compute and return derived data based on the current workflow state. This can be helpful for generating summaries, aggregations, or other calculated metrics.
    - Example:
+
      ```typescript
      @Query()
      calculateProgress(): number {
@@ -94,6 +95,7 @@ Queries can be used in various scenarios to retrieve the current state or comput
 4. **Fetching Workflow Metadata**:
    - Queries can be used to fetch metadata about a workflow, such as its start time, execution history, or other non-sensitive data.
    - Example:
+
      ```typescript
      @Query()
      getWorkflowMetadata(): any {

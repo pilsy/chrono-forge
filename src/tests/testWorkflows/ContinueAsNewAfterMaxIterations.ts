@@ -1,6 +1,6 @@
-import { ChronoFlow, Workflow } from '../../workflows';
+import { Temporal, Workflow } from '../../workflows';
 
-@ChronoFlow()
+@Temporal()
 export class ShouldExecuteWithArguments extends Workflow {
   protected continueAsNew: boolean = true;
   protected maxIterations: number = 3;

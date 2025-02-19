@@ -1,7 +1,7 @@
-import { ChronoFlow } from '../../workflows';
+import { Temporal } from '../../workflows';
 import { ManagedPaths, StatefulWorkflow } from '../../workflows/StatefulWorkflow';
 
-@ChronoFlow({
+@Temporal({
   // schema: Listing
 })
 export class ShouldExecuteStatefulChild extends StatefulWorkflow {

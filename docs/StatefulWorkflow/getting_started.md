@@ -10,18 +10,20 @@ To effectively use `StatefulWorkflow` in your project, it’s essential to under
 
 Before diving into building custom workflows with `StatefulWorkflow`, you need to ensure that your environment is properly set up. The minimum Node.js version required is 18 or newer.
 
-##### Step 1: Install `chrono-forge`
+##### Step 1: Install `temporal-forge`
 
-To begin, you need to install the `chrono-forge` package, which provides the `StatefulWorkflow` class and related utilities.
+To begin, you need to install the `temporal-forge` package, which provides the `StatefulWorkflow` class and related utilities.
 
 Using `npm`:
+
 ```bash
-npm install chrono-forge
+npm install temporal-forge
 ```
 
 Or, if you prefer `yarn`:
+
 ```bash
-yarn add chrono-forge
+yarn add temporal-forge
 ```
 
 Once the package is installed, you are ready to start creating workflows by extending `StatefulWorkflow`.
@@ -39,7 +41,7 @@ When creating a custom workflow that manages complex entities, you often need to
 Create a file named `schema/index.ts` and define your schemas as follows:
 
 ```typescript
-import { SchemaManager } from 'chrono-forge';  // Import SchemaManager from chrono-forge
+import { SchemaManager } from 'temporal-forge';  // Import SchemaManager from temporal-forge
 
 const schemaManager = SchemaManager.getInstance();  // Get an instance of SchemaManager
 
@@ -62,6 +64,7 @@ export default schemas;
 ```
 
 In this example:
+
 - We define two schemas, `User` and `Listing`, with their respective attributes and relationships.
 - `User` has a `listings` array that contains `Listing` entities.
 - `Listing` has a `user` reference that points back to a `User` entity.
@@ -74,7 +77,7 @@ Once the schemas are defined, you can extend `StatefulWorkflow` to create custom
 **Example of Extending `StatefulWorkflow`:**
 
 ```typescript
-import { StatefulWorkflow } from 'chrono-forge';
+import { StatefulWorkflow } from 'temporal-forge';
 import { User } from '../schema';  // Import the User schema
 
 @ChronoForge({ schema: User })  // Use the @ChronoForge decorator and pass the schema
@@ -92,6 +95,7 @@ export class UserWorkflow extends StatefulWorkflow {
 ```
 
 In this example:
+
 - We extend the `StatefulWorkflow` class to create a `UserWorkflow` that handles operations related to `User` entities.
 - The `@ChronoForge` decorator is applied with the `User` schema to ensure that the workflow uses the correct schema for normalization.
 - You can override or add custom methods to define specific behavior for the workflow.

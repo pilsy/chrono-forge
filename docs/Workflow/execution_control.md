@@ -16,9 +16,9 @@ The `Workflow` class provides several key methods and mechanisms for controlling
    - **Usage**: Developers override this method in their custom workflow classes to implement the desired behavior.
 
    ```typescript
-   import { Workflow } from 'chrono-forge';
+   import { Workflow } from 'temporal-forge';
 
-   @ChronoFlow()
+   @Temporal()
    export class ExampleWorkflow extends Workflow {
      async execute(params: any): Promise<void> {
        // Main workflow logic goes here
@@ -32,6 +32,7 @@ The `Workflow` class provides several key methods and mechanisms for controlling
      }
    }
    ```
+
    - **Explanation**:
      - The `execute` method is where the workflow's main operations are defined.
      - In this example, a loop is used to perform some actions with a simulated delay.
@@ -41,14 +42,14 @@ The `Workflow` class provides several key methods and mechanisms for controlling
 
    - **Pausing Workflows**:
      - You can pause a workflow by using a signal handler that sets the workflow's state to "paused" and waits for a condition to be met before proceeding.
-   
+
    - **Resuming Workflows**:
      - To resume a paused workflow, another signal handler can be defined that updates the workflow's state to "resumed" and continues execution.
 
    ```typescript
-   import { Workflow, Signal } from 'chrono-forge';
+   import { Workflow, Signal } from 'temporal-forge';
 
-   @ChronoFlow()
+   @Temporal()
    export class PausableWorkflow extends Workflow {
      private paused: boolean = false;
 
@@ -72,6 +73,7 @@ The `Workflow` class provides several key methods and mechanisms for controlling
      }
    }
    ```
+
    - **Explanation**:
      - The `pause` and `resume` methods are defined using the `@Signal` decorator.
      - The `execute` method checks the `paused` state and waits if the workflow is paused, ensuring that the workflow can be resumed from where it left off.
@@ -81,9 +83,9 @@ The `Workflow` class provides several key methods and mechanisms for controlling
    - To terminate a workflow, you can throw an exception or use Temporal's built-in termination methods.
 
    ```typescript
-   import { Workflow, Signal } from 'chrono-forge';
+   import { Workflow, Signal } from 'temporal-forge';
 
-   @ChronoFlow()
+   @Temporal()
    export class TerminableWorkflow extends Workflow {
 
      @Signal()
@@ -97,6 +99,7 @@ The `Workflow` class provides several key methods and mechanisms for controlling
      }
    }
    ```
+
    - **Explanation**:
      - The `terminate` method throws an error to terminate the workflow when the signal is received.
 
@@ -122,10 +125,11 @@ Long-running workflows are common in Temporal applications where processes can s
 3. **Using `ContinueAsNew` for Long-Running Workflows**:
    - The `ContinueAsNew` feature allows workflows to start a new run with a clean state after a certain number of iterations or when specific conditions are met. This helps manage memory and state size for very long-running workflows.
    - **Usage Example**:
-   ```typescript
-   import { Workflow, Hook } from 'chrono-forge';
 
-   @ChronoFlow()
+   ```typescript
+   import { Workflow, Hook } from 'temporal-forge';
+
+   @Temporal()
    export class ContinuableWorkflow extends Workflow {
      private iteration = 0;
 
@@ -142,6 +146,7 @@ Long-running workflows are common in Temporal applications where processes can s
      }
    }
    ```
+
    - **Explanation**:
      - The `checkForContinuation` method checks if the workflow should continue as new after a certain number of iterations. This is useful for managing memory and state size in long-running workflows.
 

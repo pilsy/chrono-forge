@@ -19,9 +19,9 @@ To define lifecycle hooks in a workflow, use the `@Hook` decorator provided by t
 ##### **Basic Example: Using Lifecycle Hooks for Logging**
 
 ```typescript
-import { Workflow, Hook } from 'chrono-forge';
+import { Workflow, Hook } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ExampleWorkflow extends Workflow {
 
   @Hook({ before: 'execute' })
@@ -51,9 +51,9 @@ export class ExampleWorkflow extends Workflow {
 Lifecycle hooks can be used for more advanced scenarios, such as managing resources, performing validation, or handling errors.
 
 ```typescript
-import { Workflow, Hook } from 'chrono-forge';
+import { Workflow, Hook } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ResourceManagedWorkflow extends Workflow {
 
   @Hook({ before: 'execute' })

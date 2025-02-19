@@ -42,7 +42,7 @@ import { QUERY_METADATA_KEY } from './metadata';
  *
  * @example
  * ```typescript
- * @ChronoFlow()
+ * @Temporal()
  * class OrderWorkflow extends Workflow {
  *   private orderDetails: OrderDetails;
  *

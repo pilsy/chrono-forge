@@ -1,4 +1,5 @@
 # Temporal-Forge
+
 ### (A Next-Gen Temporal Workflow Orchestration Framework for TypeScript)
 
  [![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-♥-ff69b4)](https://github.com/sponsors/pilsy)   [![Test Suite](https://github.com/pilsy/chrono-forge/actions/workflows/run-tests.yml/badge.svg)](https://github.com/pilsy/chrono-forge/actions/workflows/run-tests.yml)   [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge)   [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge)   [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge)   [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=pilsy_chrono-forge&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=pilsy_chrono-forge)  
@@ -77,19 +78,19 @@ No more **manual child workflow management**—it just works.
 ## **📦 Installation**
 
 ```bash
-npm install chrono-forge
+npm install temporal-forge
 ```
 
 or  
 
 ```bash
-yarn add chrono-forge
+yarn add temporal-forge
 ```
 
 **🔧 Requirements:**  
 
-- Node.js 18+  
-- Temporal.io’s TypeScript SDK  
+- Node.js 20+  
+- Temporal.io’s TypeScript SDK 1.11.7+
 
 ---
 
@@ -98,11 +99,10 @@ yarn add chrono-forge
 ### **Basic Workflow**
 
 ```typescript
-import { ChronoFlow, Workflow, Step } from 'chrono-forge';
+import { Temporal, Workflow } from 'temporal-forge';
 
-@ChronoFlow()
-export class SimpleWorkflow extends Workflow {
-  @Step()
+@Temporal()
+class SimpleWorkflow extends Workflow {
   async execute() {
     this.log.info('Executing workflow...');
   }
@@ -114,28 +114,53 @@ export default SimpleWorkflow;
 ### **Stateful Workflow Example**
 
 ```typescript
-import { StatefulWorkflow, Property, Query, Signal, ChronoFlow } from 'chrono-forge';
+// Your types
+type User = {
+  id: string;
+  likes: Like[];
+};
 
-@ChronoFlow()
-class MyStatefulWorkflow extends StatefulWorkflow {
-  @Property()
-  myState!: string;
+type Like = {
+  id: string;
+  user: User;
+};
+```
 
-  @Signal()
-  async updateState(newState: string) {
-    this.myState = newState;
-  }
+```typescript
+import { Temporal, StatefulWorkflow, SchemaManagerStatefulWorkflowParams, StatefulWorkflowOptions } from 'temporal-forge';
 
-  @Query()
-  getState() {
-    return this.myState;
+@Temporal({
+  schemaName: "User",
+  schemas: SchemaManager.schemas
+})
+class UserWorkflow extends StatefulWorkflow<
+  StatefulWorkflowParams<User>,
+  StatefulWorkflowOptions
+> {
+  @Property({ path: 'likes' })
+  protected likes!: Like[];
+
+  async execute() {
+    this.log.info('Executing workflow, all children in this.likes will have been auto started...');
   }
 }
 
-export default MyStatefulWorkflow;
+export default UserWorkflow;
 ```
 
-💡 **This workflow automatically normalizes state and updates subscribers when `updateState` is called!**
+```typescript
+// Set your schemas (usually done in src/schemas.ts)
+SchemaManager.parseYAML(`
+  User:
+    idAttribute: id
+    likes: [Like]
+  Like:
+    idAttribute: id
+    user: User
+`);
+```
+
+💡 **This workflow automatically normalizes state and updates subscribers whenever data is changed!**
 
 ---
 

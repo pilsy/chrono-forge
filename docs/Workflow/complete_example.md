@@ -24,10 +24,10 @@ import {
   Query,
   Hook,
   OnError,
-  ChronoFlow,
-} from 'chrono-forge';
+  Temporal,
+} from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class TaskManagementWorkflow extends Workflow {
   private tasks: Record<string, string> = {}; // Stores task ID to status mapping
   private workflowStatus: string = 'initialized';

@@ -27,9 +27,9 @@ To use the `@Query` decorator, apply it to a method within a class that extends 
 ##### **Basic Usage Example**
 
 ```typescript
-import { Workflow, Query } from 'chrono-forge';
+import { Workflow, Query } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ExampleWorkflow extends Workflow {
 
   private status: string = 'initialized';
@@ -77,9 +77,9 @@ queryWorkflowStatus();
 Queries can also be used to compute and return derived data based on the current state of the workflow. This is useful for generating summaries, aggregations, or other calculated metrics.
 
 ```typescript
-import { Workflow, Query } from 'chrono-forge';
+import { Workflow, Query } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ProgressWorkflow extends Workflow {
   private totalSteps: number = 100;
   private completedSteps: number = 40;
@@ -117,6 +117,7 @@ export class ProgressWorkflow extends Workflow {
 4. **Fetching Workflow Metadata**:
    - Queries can be used to fetch metadata about a workflow, such as its start time, execution history, or other non-sensitive data.
    - Example:
+
      ```typescript
      @Query()
      getWorkflowMetadata(): any {

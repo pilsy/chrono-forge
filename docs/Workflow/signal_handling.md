@@ -21,9 +21,9 @@ To handle signals in a workflow, the `Workflow` class provides the `@Signal` dec
 To define a signal handler in a workflow, use the `@Signal` decorator as follows:
 
 ```typescript
-import { Workflow, Signal } from 'chrono-forge';
+import { Workflow, Signal } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ExampleWorkflow extends Workflow {
   
   private status: string = 'initialized';
@@ -78,6 +78,7 @@ Signals can be used in various scenarios to manage the state and behavior of wor
 2. **Controlling Workflow Execution**:
    - Signals can be used to control the execution flow of a workflow. For example, pausing or resuming a workflow based on user input or external triggers.
    - Example:
+
      ```typescript
      @Signal()
      async pauseWorkflow(): Promise<void> {

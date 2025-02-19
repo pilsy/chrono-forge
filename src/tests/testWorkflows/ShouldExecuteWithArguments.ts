@@ -1,6 +1,6 @@
-import { ChronoFlow, Workflow } from '../../workflows';
+import { Temporal, Workflow } from '../../workflows';
 
-@ChronoFlow()
+@Temporal()
 export class ShouldExecuteWithArguments extends Workflow {
   async execute(one: string, two: string, three: string) {
     return `${one},${two},${three}`;

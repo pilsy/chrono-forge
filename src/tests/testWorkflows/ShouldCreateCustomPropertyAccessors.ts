@@ -1,8 +1,8 @@
-import { Workflow, ChronoFlow } from '../../workflows';
+import { Workflow, Temporal } from '../../workflows';
 import { Property } from '../../decorators';
 import { condition } from '@temporalio/workflow';
 
-@ChronoFlow()
+@Temporal()
 export class ShouldCreateCustomPropertyAccessors extends Workflow {
   @Property({ get: 'customGetQuery', set: 'customSetSignal' })
   public customProperty: string = 'initial';

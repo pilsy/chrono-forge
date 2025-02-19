@@ -41,7 +41,7 @@ import { SIGNAL_METADATA_KEY } from './metadata';
  *
  * @example
  * ```typescript
- * @ChronoFlow()
+ * @Temporal()
  * class OrderWorkflow extends Workflow {
  *   private status: string = 'pending';
  *

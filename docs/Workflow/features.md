@@ -10,11 +10,12 @@ Signals are a powerful way to interact with running workflows asynchronously. Th
 
 - **Purpose**: Handle asynchronous notifications and events sent to workflows.
 - **Key Methods**: Define signal handlers using methods decorated with `@Signal`.
-- **Usage Example**: 
-  ```typescript
-  import { Workflow, Signal } from 'chrono-forge';
+- **Usage Example**:
 
-  @ChronoFlow()
+  ```typescript
+  import { Workflow, Signal } from 'temporal-forge';
+
+  @Temporal()
   export class ExampleWorkflow extends Workflow {
     @Signal()
     async updateStatus(newStatus: string): Promise<void> {
@@ -22,6 +23,7 @@ Signals are a powerful way to interact with running workflows asynchronously. Th
     }
   }
   ```
+
 - **Detailed Documentation**: See [Signal Handling](./signal_handling.md) for more information on defining signals, handling them, and best practices for signal usage.
 
 #### **2. Query Handling**
@@ -31,10 +33,11 @@ Queries provide a synchronous way to retrieve information from a running workflo
 - **Purpose**: Retrieve data from a running workflow synchronously without modifying the state.
 - **Key Methods**: Define query handlers using methods decorated with `@Query`.
 - **Usage Example**:
-  ```typescript
-  import { Workflow, Query } from 'chrono-forge';
 
-  @ChronoFlow()
+  ```typescript
+  import { Workflow, Query } from 'temporal-forge';
+
+  @Temporal()
   export class ExampleWorkflow extends Workflow {
     @Query()
     getStatus(): string {
@@ -42,6 +45,7 @@ Queries provide a synchronous way to retrieve information from a running workflo
     }
   }
   ```
+
 - **Detailed Documentation**: See [Query Handling](./query_handling.md) for more details on how to use queries, handle query results, and optimize performance.
 
 #### **3. Execution Control and Flow Management**
@@ -51,16 +55,18 @@ The `Workflow` class provides methods for managing the workflow's execution life
 - **Purpose**: Manage the lifecycle and flow of workflow execution, including starting, pausing, and terminating workflows.
 - **Key Methods**: `execute`, `pause`, `resume`, and custom lifecycle methods.
 - **Usage Example**:
-  ```typescript
-  import { Workflow } from 'chrono-forge';
 
-  @ChronoFlow()
+  ```typescript
+  import { Workflow } from 'temporal-forge';
+
+  @Temporal()
   export class ExampleWorkflow extends Workflow {
     async execute(params: any): Promise<void> {
       // Workflow execution logic
     }
   }
   ```
+
 - **Detailed Documentation**: See [Execution Control and Flow Management](./execution_control.md) for a comprehensive guide on workflow lifecycle management, including best practices and common patterns.
 
 #### **4. Error Handling with `@OnError`**
@@ -70,10 +76,11 @@ Error handling is a crucial aspect of building reliable and resilient workflows.
 - **Purpose**: Manage errors that occur during workflow execution, ensuring that workflows can recover gracefully or fail cleanly.
 - **Key Methods**: Define error handlers using methods decorated with `@OnError`.
 - **Usage Example**:
-  ```typescript
-  import { Workflow, OnError } from 'chrono-forge';
 
-  @ChronoFlow()
+  ```typescript
+  import { Workflow, OnError } from 'temporal-forge';
+
+  @Temporal()
   export class ExampleWorkflow extends Workflow {
     @OnError('execute')
     protected async handleError(err: Error): Promise<void> {
@@ -81,6 +88,7 @@ Error handling is a crucial aspect of building reliable and resilient workflows.
     }
   }
   ```
+
 - **Detailed Documentation**: See [Error Handling with `@OnError`](./error_handling.md) for more information on defining error handlers, managing retries, and best practices for error handling.
 
 #### **5. Lifecycle Management Hooks**
@@ -90,10 +98,11 @@ Lifecycle hooks provide a way to intercept key moments in a workflow's execution
 - **Purpose**: Run custom logic at specific points during workflow execution, such as before or after a method is executed.
 - **Key Methods**: Define lifecycle hooks using the `@Hook` decorator (speculative).
 - **Usage Example**:
-  ```typescript
-  import { Workflow, Hook } from 'chrono-forge';
 
-  @ChronoFlow()
+  ```typescript
+  import { Workflow, Hook } from 'temporal-forge';
+
+  @Temporal()
   export class ExampleWorkflow extends Workflow {
     @Hook({ before: 'execute' })
     protected async logBeforeExecution() {
@@ -101,6 +110,7 @@ Lifecycle hooks provide a way to intercept key moments in a workflow's execution
     }
   }
   ```
+
 - **Detailed Documentation**: See [Lifecycle Management Hooks](./lifecycle_hooks.md) for more details on how to use hooks to manage workflow behavior dynamically.
 
 ### **Conclusion**

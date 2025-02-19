@@ -1,7 +1,7 @@
-import { ChronoFlow, Workflow } from '../../workflows';
+import { Temporal, Workflow } from '../../workflows';
 import { Before } from '../../decorators';
 
-@ChronoFlow()
+@Temporal()
 export class ShouldApplyBeforeHooksCorrectly extends Workflow {
   public status = 'initial';
 

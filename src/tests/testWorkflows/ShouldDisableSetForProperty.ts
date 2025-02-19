@@ -1,8 +1,8 @@
-import { Workflow, ChronoFlow } from '../../workflows';
+import { Workflow, Temporal } from '../../workflows';
 import { Property } from '../../decorators';
 import { sleep } from '@temporalio/workflow';
 
-@ChronoFlow()
+@Temporal()
 export class ShouldDisableSetForProperty extends Workflow {
   @Property({ set: false })
   public readonlyProperty: string = 'readonly';

@@ -27,9 +27,9 @@ To use the `@Signal` decorator, apply it to a method within a class that extends
 ##### **Basic Usage Example**
 
 ```typescript
-import { Workflow, Signal } from 'chrono-forge';
+import { Workflow, Signal } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ExampleWorkflow extends Workflow {
   
   private status: string = 'initialized';
@@ -78,9 +78,9 @@ sendSignalToWorkflow();
 Signals can be used to handle more complex scenarios, such as pausing and resuming workflows or injecting data for processing.
 
 ```typescript
-import { Workflow, Signal } from 'chrono-forge';
+import { Workflow, Signal } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class PausableWorkflow extends Workflow {
   private paused: boolean = false;
 

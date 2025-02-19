@@ -1,8 +1,8 @@
 import { condition } from '@temporalio/workflow';
-import { ChronoFlow, Workflow } from '../../workflows';
+import { Temporal, Workflow } from '../../workflows';
 import { Signal } from '../../decorators';
 
-@ChronoFlow()
+@Temporal()
 export class ShouldBindSignalsCorrectly extends Workflow {
   public status = 'initial';
 

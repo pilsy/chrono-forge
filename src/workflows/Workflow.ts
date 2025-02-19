@@ -15,9 +15,9 @@ import { Duration } from '@temporalio/common';
 import { LRUHandleCache } from '../utils';
 
 /**
- * Options for configuring a ChronoFlow.
+ * Options for configuring a Temporal Workflow.
  */
-export interface ChronoFlowOptions {
+export interface TemporalOptions {
   /**
    * The name of the workflow.
    */
@@ -35,28 +35,41 @@ export interface ChronoFlowOptions {
 }
 
 /**
- * ChronoFlow Decorator
+ * Temporal Decorator
  *
- * Transforms a class into a Temporal workflow function.
- * This function creates and assigns named workflow functions
- * for each class extending the Workflow base class, allowing
- * Temporal to register and invoke workflows by name with a clean class-based API.
+ * A class decorator that transforms a TypeScript class into a Temporal workflow function.
+ * This decorator handles the registration, initialization, and lifecycle management of workflows
+ * in the TemporalForge framework.
  *
- * @param options - Configuration options for the workflow.
+ * Key Features:
+ * - Automatically registers the class as a Temporal workflow
+ * - Manages workflow initialization and lifecycle events
+ * - Handles workflow naming and task queue assignment
+ * - Provides automatic error handling and cancellation support
+ * - Supports dynamic class extension for non-Workflow classes
+ *
+ * The decorator performs the following operations:
+ * 1. Ensures the class extends the Workflow base class (creates dynamic extension if needed)
+ * 2. Sets up workflow metadata and configuration
+ * 3. Binds event handlers, hooks, and signals
+ * 4. Manages workflow execution flow and error handling
+ *
+ * @param options - Configuration options for the workflow
+ * @returns A class decorator function that transforms the target class into a Temporal workflow
  */
-export function ChronoFlow(options?: ChronoFlowOptions) {
+export function Temporal(options?: TemporalOptions) {
   return function (constructor: any) {
     const { name: optionalName, taskQueue, tracerName = 'temporal_worker', ...extraOptions } = options || {};
     const workflowName: string = optionalName ?? constructor.name;
 
     if (!(constructor.prototype instanceof Workflow)) {
-      abstract class DynamicChronoFlow extends Workflow {
-        constructor(params: any, options: ChronoFlowOptions = {}) {
+      abstract class DynamicTemporal extends Workflow {
+        constructor(params: any, options: TemporalOptions = {}) {
           super(params, options);
           Object.assign(this, new constructor(params, options));
         }
       }
-      constructor = DynamicChronoFlow;
+      constructor = DynamicTemporal;
     }
 
     const construct = new Function(
@@ -94,6 +107,32 @@ export function ChronoFlow(options?: ChronoFlowOptions) {
     return construct;
   };
 }
+
+/**
+ * @deprecated Use @Temporal() instead. This decorator will be removed in a future version.
+ * ChronoFlow is an alias for the Temporal decorator to maintain backwards compatibility.
+ *
+ * Example migration:
+ * ```typescript
+ * // Old usage:
+ * @ChronoFlow()
+ * class MyWorkflow extends Workflow {}
+ *
+ * // New usage:
+ * @Temporal()
+ * class MyWorkflow extends Workflow {}
+ * ```
+ */
+export function ChronoFlow(options?: TemporalOptions) {
+  console.warn(
+    'Warning: @ChronoFlow() is deprecated and will be removed in a future version. ' +
+      'Please use @Temporal() instead. The functionality remains the same.'
+  );
+  return Temporal(options);
+}
+
+// Update the interface name for consistency
+export type ChronoFlowOptions = TemporalOptions;
 
 /**
  * Base Workflow class for Temporal workflows.

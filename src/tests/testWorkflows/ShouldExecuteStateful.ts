@@ -1,4 +1,4 @@
-import { ChronoFlow } from '../../workflows';
+import { Temporal } from '../../workflows';
 import { ManagedPaths, StatefulWorkflow } from '../../workflows/StatefulWorkflow';
 import { User, Listing } from '../testSchemas';
 import { trace } from '@opentelemetry/api';
@@ -13,7 +13,7 @@ export type TestAction = {
   };
 };
 
-@ChronoFlow({
+@Temporal({
   schema: User
 })
 export class ShouldExecuteStateful extends StatefulWorkflow {

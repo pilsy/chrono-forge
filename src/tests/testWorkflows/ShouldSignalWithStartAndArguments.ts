@@ -1,8 +1,8 @@
 import { condition } from '@temporalio/workflow';
-import { ChronoFlow, Workflow } from '../../workflows';
+import { Temporal, Workflow } from '../../workflows';
 import { Signal, Property } from '../../decorators';
 
-@ChronoFlow()
+@Temporal()
 export class ShouldSignalWithStartAndArguments extends Workflow {
   protected continueAsNew: boolean = false;
 

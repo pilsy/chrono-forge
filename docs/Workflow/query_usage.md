@@ -19,9 +19,9 @@ To define a query handler in a workflow, use the `@Query` decorator provided by 
 ##### **Basic Example: Defining and Using Queries**
 
 ```typescript
-import { Workflow, Query } from 'chrono-forge';
+import { Workflow, Query } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ExampleWorkflow extends Workflow {
   private status: string = 'initialized';
 
@@ -70,9 +70,9 @@ Queries can also be used to compute and return derived data based on the current
 ##### **Example: Calculating and Returning Derived Data**
 
 ```typescript
-import { Workflow, Query } from 'chrono-forge';
+import { Workflow, Query } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ProgressWorkflow extends Workflow {
   private totalSteps: number = 100;
   private completedSteps: number = 40;
@@ -98,9 +98,9 @@ export class ProgressWorkflow extends Workflow {
 Queries can also be used to retrieve metadata about a workflow, such as its start time, execution history, or other non-sensitive data.
 
 ```typescript
-import { Workflow, Query } from 'chrono-forge';
+import { Workflow, Query } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class MetadataWorkflow extends Workflow {
   private startTime: Date = new Date();
   private executedSteps: number = 0;

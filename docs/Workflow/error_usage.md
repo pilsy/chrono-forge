@@ -2,7 +2,7 @@
 
 #### **Introduction to Error Handling in Workflows**
 
-Error handling is a crucial aspect of building reliable and resilient workflows. In Temporal workflows, errors can occur due to a variety of reasons—such as network failures, invalid inputs, or exceptions in business logic. Proper error handling ensures that workflows can gracefully recover from these failures, retry operations when appropriate, or transition to a safe state. 
+Error handling is a crucial aspect of building reliable and resilient workflows. In Temporal workflows, errors can occur due to a variety of reasons—such as network failures, invalid inputs, or exceptions in business logic. Proper error handling ensures that workflows can gracefully recover from these failures, retry operations when appropriate, or transition to a safe state.
 
 The `Workflow` class in ChronoForge provides several strategies and mechanisms for handling errors using the `@OnError` decorator, along with general best practices for error management. This section provides a detailed guide on how to define and implement error handling strategies in workflows, with examples and best practices.
 
@@ -20,9 +20,9 @@ To define an error handler for a method in a workflow, use the `@OnError` decora
 ##### **Basic Example: Defining a Custom Error Handler**
 
 ```typescript
-import { Workflow, OnError } from 'chrono-forge';
+import { Workflow, OnError } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class ErrorHandlingWorkflow extends Workflow {
 
   @OnError('execute')
@@ -47,9 +47,9 @@ export class ErrorHandlingWorkflow extends Workflow {
 In more complex workflows, you may need to define error handlers for multiple methods or provide more sophisticated error handling logic.
 
 ```typescript
-import { Workflow, OnError } from 'chrono-forge';
+import { Workflow, OnError } from 'temporal-forge';
 
-@ChronoFlow()
+@Temporal()
 export class AdvancedErrorHandlingWorkflow extends Workflow {
 
   @OnError('fetchData')
@@ -90,6 +90,7 @@ export class AdvancedErrorHandlingWorkflow extends Workflow {
 1. **Retrying Transient Errors with Exponential Backoff**:
    - Temporal provides built-in support for retrying operations with exponential backoff to handle transient errors such as network failures or temporary unavailability of external services.
    - Example:
+
      ```typescript
      @OnError('fetchData')
      protected async handleFetchDataError(err: Error): Promise<void> {
@@ -101,6 +102,7 @@ export class AdvancedErrorHandlingWorkflow extends Workflow {
 2. **Graceful Fallbacks and Alternative Actions**:
    - When a critical operation fails, workflows can implement fallback strategies or alternative actions to recover gracefully. This ensures the workflow can continue to function or exit safely.
    - Example:
+
      ```typescript
      @OnError('fetchData')
      protected async handleFetchDataError(err: Error): Promise<void> {
@@ -112,6 +114,7 @@ export class AdvancedErrorHandlingWorkflow extends Workflow {
 3. **Global Error Handling for Catch-All Scenarios**:
    - For simpler workflows or when centralized error handling is preferred, a global error handler can be defined to catch all errors that occur within the workflow.
    - Example:
+
      ```typescript
      @OnError('*')
      protected async handleGlobalError(err: Error): Promise<void> {
@@ -123,6 +126,7 @@ export class AdvancedErrorHandlingWorkflow extends Workflow {
 4. **Custom Error Types and Handling Strategies**:
    - Workflows can define custom error types and handle them differently based on the error context. This approach allows for more granular and context-specific error management.
    - Example:
+
      ```typescript
      class DataFetchError extends Error {}
      class DataProcessingError extends Error {}
@@ -137,6 +141,7 @@ export class AdvancedErrorHandlingWorkflow extends Workflow {
 5. **Graceful Workflow Termination and Cleanup**:
    - For unrecoverable errors, workflows should be designed to transition to a safe and well-defined termination state, ensuring that any necessary cleanup or resource deallocation is performed.
    - Example:
+
      ```typescript
      @OnError('execute')
      protected async handleErrorAndTerminate(err: Error): Promise<void> {

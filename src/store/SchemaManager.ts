@@ -13,6 +13,11 @@ export class SchemaManager {
   private constructor() {}
   private static instance: SchemaManager;
   private schemas: { [key: string]: schema.Entity } = {};
+  private static cachedSchemas: { [key: string]: schema.Entity } | null = null;
+
+  public static get schemas(): { [key: string]: schema.Entity } {
+    return this.getInstance().getSchemas();
+  }
 
   public static getInstance(): SchemaManager {
     if (!this.instance) {
@@ -28,6 +33,7 @@ export class SchemaManager {
    */
   setSchemas(schemaConfig: SchemasDefinition): { [key: string]: schema.Entity } {
     this.schemas = this.createSchemas(schemaConfig);
+    SchemaManager.cachedSchemas = this.schemas;
     return this.schemas;
   }
 
@@ -90,14 +96,16 @@ export class SchemaManager {
 
     return schemas;
   }
-}
 
-export function parseSchemasFromYAML(yamlSchema: string) {
-  const schemaManager = SchemaManager.getInstance();
-  try {
+  /**
+   * Parses schemas from a YAML string and sets them in the SchemaManager.
+   * @param yamlSchema The YAML string containing schema definitions.
+   */
+  public static parseYAML(yamlSchema: string): void {
+    const schemaManager = SchemaManager.getInstance();
     const schemaConfig = yaml.load(yamlSchema) as Record<string, any>;
     schemaManager.setSchemas(schemaConfig);
-  } catch (error) {
-    console.error('Failed to parse schemas from YAML string:', error);
   }
 }
+
+export const { schemas } = SchemaManager;

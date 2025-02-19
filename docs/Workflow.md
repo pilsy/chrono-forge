@@ -6,7 +6,7 @@ The `Workflow` class in ChronoForge is the foundational component for defining T
 
 1. [Overview](#overview)
 2. [Workflow Decorators](#workflow-decorators)
-   - [@ChronoFlow(options: { name?: string })](#chronoflowoptions--name-string-)
+   - [@Temporal(options: { name?: string })](#temporaloptions--name-string-)
    - [@Signal(name?: string)](#signalname-string)
    - [@Query(name?: string)](#queryname-string)
    - [@Hook(options: { before?: string; after?: string })](#hookoptions--before-string-after-string-)
@@ -59,15 +59,15 @@ For an introduction to the `Workflow` class and its role within ChronoForge, ple
 
 ChronoForge uses decorators to simplify the process of defining and managing workflows. Decorators allow developers to easily add functionality such as signal handling, query management, hooks, and more.
 
-### **`@ChronoFlow(options: { name?: string })`**
+### **`@Temporal(options: { name?: string })`**
 
 - **Purpose**: Marks a class as a Temporal workflow within the ChronoForge system.
 - **Parameters**:
   - **`name?: string`**: An optional custom name for the workflow. If not provided, the class name is used.
-- **Behavior**: 
+- **Behavior**:
   - Ensures that the class extends `Workflow`. If it doesn't, a dynamic class is created that does.
   - Manages initialization, binding of queries and signals, and wrapping the workflow logic within an OpenTelemetry span for tracing.
-- **Documentation**: For a detailed explanation and examples, see the [ChronoFlow Decorator Documentation](./docs/Workflow/chronoflow_decorator.md).
+- **Documentation**: For a detailed explanation and examples, see the [Temporal Decorator Documentation](./docs/Workflow/temporal_decorator.md).
 
 ### **`@Signal(name?: string)`**
 

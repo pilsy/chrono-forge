@@ -8,7 +8,7 @@ This document provides an overview of all the decorators provided by `Workflow.t
 
 #### **List of Decorators**
 
-1. [**`@ChronoFlow` Decorator**](./chronoflow_decorator.md)
+1. [**`@Temporal` Decorator**](./temporal_decorator.md)
 2. [**`@Signal` Decorator**](./signal_decorator.md)
 3. [**`@Query` Decorator**](./query_decorator.md)
 4. [**`@OnError` Decorator**](./error_handling.md)
@@ -16,14 +16,14 @@ This document provides an overview of all the decorators provided by `Workflow.t
 
 ---
 
-### **1. `@ChronoFlow` Decorator**
+### **1. `@Temporal` Decorator**
 
-- **Purpose**: The `@ChronoFlow` decorator is used to register a class as a Temporal workflow within the ChronoForge framework. It ensures that the class is properly recognized by Temporal and is ready for execution.
+- **Purpose**: The `@Temporal` decorator is used to register a class as a Temporal workflow within the ChronoForge framework. It ensures that the class is properly recognized by Temporal and is ready for execution.
 - **Key Features**:
   - Registers the class as a workflow with Temporal.
   - Configures necessary metadata and setup for the workflow.
 - **Usage**: This decorator must be applied to every workflow class to make it discoverable by Temporal.
-- **Detailed Documentation**: See [@ChronoFlow Decorator](./chronoflow_decorator.md) for more information.
+- **Detailed Documentation**: See [@Temporal Decorator](./temporal_decorator.md) for more information.
 
 ### **2. `@Signal` Decorator**
 
