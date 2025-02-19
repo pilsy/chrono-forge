@@ -915,11 +915,9 @@ export abstract class StatefulWorkflow<
 
     if (this.params?.ancestorWorkflowIds) {
       this.ancestorWorkflowIds = this.params.ancestorWorkflowIds;
-    }
 
-    if (this.ancestorWorkflowIds) {
       for (const workflowId of this.ancestorWorkflowIds) {
-        const [entityName, entityId] = workflowId.split('-');
+        const [entityName, entityId] = workflowId.split(/-(.*)/s).slice(0, 2);
         this.ancestorHandles.set(workflowId, {
           entityId,
           entityName,
