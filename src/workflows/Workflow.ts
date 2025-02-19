@@ -109,32 +109,6 @@ export function Temporal(options?: TemporalOptions) {
 }
 
 /**
- * @deprecated Use @Temporal() instead. This decorator will be removed in a future version.
- * ChronoFlow is an alias for the Temporal decorator to maintain backwards compatibility.
- *
- * Example migration:
- * ```typescript
- * // Old usage:
- * @ChronoFlow()
- * class MyWorkflow extends Workflow {}
- *
- * // New usage:
- * @Temporal()
- * class MyWorkflow extends Workflow {}
- * ```
- */
-export function ChronoFlow(options?: TemporalOptions) {
-  console.warn(
-    'Warning: @ChronoFlow() is deprecated and will be removed in a future version. ' +
-      'Please use @Temporal() instead. The functionality remains the same.'
-  );
-  return Temporal(options);
-}
-
-// Update the interface name for consistency
-export type ChronoFlowOptions = TemporalOptions;
-
-/**
  * Base Workflow class for Temporal workflows.
  *
  * Represents a base class that provides essential infrastructure for creating workflows.
@@ -150,7 +124,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    */
   protected handles: LRUHandleCache<workflow.ChildWorkflowHandle<any>> = new LRUHandleCache<
     workflow.ChildWorkflowHandle<any>
-  >(2500);
+  >(2000);
 
   /**
    * Internal flags used to determine if certain decorators have been bound to this workflow instance.
