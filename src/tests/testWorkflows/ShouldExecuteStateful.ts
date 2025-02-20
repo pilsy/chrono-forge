@@ -14,7 +14,8 @@ export type TestAction = {
 };
 
 @Temporal({
-  schema: User
+  schema: User,
+  saveMemoToState: true
 })
 export class ShouldExecuteStateful extends StatefulWorkflow {
   protected maxIterations: number = 1000;
