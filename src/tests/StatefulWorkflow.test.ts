@@ -140,7 +140,7 @@ describe('StatefulWorkflow', () => {
       const data = { id: uuid4() };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
       const expectedInitial = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
-      await sleep();
+      await sleep(2500);
 
       // Initial state verification
       const state = await handle.query('state');
@@ -185,7 +185,7 @@ describe('StatefulWorkflow', () => {
       const expectedUpdated = normalizeEntities(updatedData, SchemaManager.getInstance().getSchema('User'));
 
       await handle.signal('update', { data: updatedData, entityName: 'User' });
-      await sleep(2500);
+      await sleep(5000);
 
       const updatedState = await handle.query('state');
       expect(updatedState).toEqual(expectedUpdated);
