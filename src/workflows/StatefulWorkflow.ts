@@ -928,7 +928,7 @@ export abstract class StatefulWorkflow<
     this.params = params;
     this.options = options;
 
-    this.options.saveMemoToState = this.options.saveMemoToState !== false;
+    this.options.saveMemoToState = this.options.saveMemoToState === true;
 
     this.stateManager = StateManager.getInstance(workflow.workflowInfo().workflowId);
 
@@ -1453,13 +1453,11 @@ export abstract class StatefulWorkflow<
     const flattenedCurrentState: any = memo || {};
 
     const updatedMemo: Record<string, any> = {};
-    let hasChanges = false;
 
     for (const [key, newValue] of Object.entries(flattenedNewState)) {
       const currentValue = flattenedCurrentState[key];
       if (!isEqual(newValue, currentValue)) {
         updatedMemo[key] = newValue;
-        hasChanges = true;
       }
     }
 
@@ -1469,14 +1467,12 @@ export abstract class StatefulWorkflow<
       }
     }
 
-    if (hasChanges) {
-      workflow.upsertMemo({
-        ...updatedMemo,
-        iteration: this.iteration,
-        status: this.status,
-        lastUpdated: new Date().toISOString()
-      });
-    }
+    workflow.upsertMemo({
+      ...updatedMemo,
+      iteration: this.iteration,
+      status: this.status,
+      lastUpdated: new Date().toISOString()
+    });
   }
 
   /**
@@ -2169,7 +2165,7 @@ export abstract class StatefulWorkflow<
         entityName,
         idAttribute,
         includeParentId,
-        cancellationType = workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_COMPLETED,
+        cancellationType = workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_REQUESTED,
         parentClosePolicy = workflow.ParentClosePolicy.TERMINATE,
         workflowIdConflictPolicy = workflow.WorkflowIdConflictPolicy.TERMINATE_EXISTING,
         workflowIdReusePolicy = workflow.WorkflowIdReusePolicy.ALLOW_DUPLICATE,
@@ -2326,6 +2322,13 @@ export abstract class StatefulWorkflow<
     this.log.debug(
       `[${this.constructor.name}]:${this.entityName}:${this.id}: Child workflow cancelled: ${JSON.stringify(payload)}`
     );
+
+    if (await workflow.CancellationScope.current()?.consideredCancelled) {
+      this.log.debug(
+        `[${this.constructor.name}]:${this.entityName}:${this.id}: Skipping restart of child workfllow as parent cancel requested}`
+      );
+      return;
+    }
 
     const { id, entityName, workflowId } = payload;
 
