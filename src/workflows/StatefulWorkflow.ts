@@ -11,7 +11,7 @@ import {
 } from '../store/entities';
 import { DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
-import { isEmpty, isEqual, omit } from 'lodash';
+import { isEmpty, isEqual } from 'lodash';
 import { Workflow, TemporalOptions } from './Workflow';
 import {
   Signal,
@@ -104,8 +104,21 @@ export type ManagedPath = {
   };
   startToCloseTimeout?: string;
   condition?: (entity: Record<string, any>, data: StatefulWorkflow['data']) => boolean;
-  subscriptionsEnabled?: boolean;
-  getSubscriptions?: (updateSubscription: Partial<Subscription>) => Partial<Subscription>[];
+  strategy?: '$set' | '$merge';
+  subscriptions?: {
+    update?: {
+      enabled?: boolean;
+      sync?: boolean;
+      strategy?: '$set' | '$merge';
+      selector?: string;
+    };
+    delete?: {
+      enabled?: boolean;
+      sync?: boolean;
+      strategy?: '$set' | '$merge';
+      selector?: string;
+    };
+  };
   processData?: (entity: Record<string, any>, data: StatefulWorkflow['data']) => Record<string, any>;
 };
 
@@ -159,16 +172,18 @@ export type ManagedPaths = {
  * - Optional fields provide flexibility for hierarchical and condition-based designs, enhancing adaptability in various workflows.
  * - Proper subscription management ensures responsive and efficient workflows, enabling precise event handling and state transitions.
  */
-export type Subscription = {
+type Subscription = {
   workflowId: string;
-  signalName: string;
+  subscriptionId: string;
+  signalName: 'update' | 'delete';
   selector: string;
-  parent?: string;
-  child?: string;
-  ancestorWorkflowIds?: string[];
+  parent: string;
+  child: string;
+  ancestorWorkflowIds: string[];
   condition?: (state: any) => boolean;
   entityName?: string;
-  subscriptionId?: string;
+  sync?: boolean;
+  strategy?: '$set' | '$merge';
 };
 
 /**
@@ -241,10 +256,14 @@ export type StatefulWorkflowOptions = {
   schema?: schema.Entity;
   schemaName?: string;
   autoStart?: boolean;
-  autoSubscribe?: boolean;
-  memoStateEnabled?: boolean;
+  saveMemoToState?: boolean;
   apiUrl?: string;
   workflowType?: string;
+  childUpdatesSync?: boolean;
+  childUpdates?: {
+    sync?: boolean;
+    strategy?: '$set' | '$merge';
+  };
 };
 
 /**
@@ -909,7 +928,7 @@ export abstract class StatefulWorkflow<
     this.params = params;
     this.options = options;
 
-    this.options.memoStateEnabled = this.options.memoStateEnabled !== false;
+    this.options.saveMemoToState = this.options.saveMemoToState !== false;
 
     this.stateManager = StateManager.getInstance(workflow.workflowInfo().workflowId);
 
@@ -1199,7 +1218,7 @@ export abstract class StatefulWorkflow<
    *   data: { id: 2 },
    *   entityName: 'User',
    *   changeOrigin: 'admin',
-   *   sync: true
+   *   sync: false
    * });
    *
    * @remark
@@ -1428,7 +1447,7 @@ export abstract class StatefulWorkflow<
     };
 
     const flattenedNewState = flatten({
-      state: this.options?.memoStateEnabled ? this.state : {},
+      state: this.options?.saveMemoToState ? this.state : {},
       properties: this._memoProperties
     });
     const flattenedCurrentState: any = memo || {};
@@ -1493,7 +1512,12 @@ export abstract class StatefulWorkflow<
     this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.processSubscriptions`);
 
     for (const subscription of this.subscriptions) {
-      const { workflowId, selector, condition, entityName, subscriptionId } = subscription;
+      const { workflowId, selector, condition, entityName, subscriptionId, signalName, sync, strategy } = subscription;
+
+      // Type guard to ensure signalName is either 'update' or 'delete'
+      if (signalName !== 'update' && signalName !== 'delete') {
+        continue;
+      }
 
       const shouldPropagate = this.shouldPropagate(
         newState,
@@ -1512,31 +1536,18 @@ export abstract class StatefulWorkflow<
       const handle = this.subscriptionHandles.get(workflowId);
       if (handle) {
         try {
-          if (!isEmpty(updates)) {
+          if ((signalName === 'update' && !isEmpty(updates)) || (signalName === 'delete' && !isEmpty(deletions))) {
             this.log.trace(
-              `[${this.constructor.name}]:${this.entityName}:${this.id}.Sending update to workflow: ${workflowId}, Subscription ID: ${subscriptionId}`
+              `[${this.constructor.name}]:${this.entityName}:${this.id}.Sending ${signalName} to workflow: ${workflowId}, Subscription ID: ${subscriptionId}`
             );
 
-            await handle.signal('update', {
-              updates,
+            await handle.signal(signalName, {
+              ...(signalName === 'update' ? { updates } : { deletions }),
               entityName,
               changeOrigin: workflow.workflowInfo().workflowId,
               subscriptionId,
-              sync: true
-            });
-          }
-
-          if (!isEmpty(deletions)) {
-            this.log.trace(
-              `[${this.constructor.name}]:${this.entityName}:${this.id}.Sending delete to workflow: ${workflowId}, Subscription ID: ${subscriptionId}`
-            );
-
-            await handle.signal('delete', {
-              deletions,
-              entityName,
-              changeOrigin: workflow.workflowInfo().workflowId,
-              subscriptionId,
-              sync: true
+              sync,
+              strategy
             });
           }
         } catch (err) {
@@ -2078,18 +2089,39 @@ export abstract class StatefulWorkflow<
     if (!parentSchema.schema) {
       throw new Error("The provided schema does not have 'schema' defined.");
     }
+
+    const defaultSubscriptionConfig = {
+      enabled: true,
+      sync: false,
+      strategy: '$merge' as '$merge' | '$set',
+      selector: '*'
+    };
+
+    const defaultManagedPathConfig = {
+      autoStart: typeof this.options?.autoStart === 'boolean' ? this.options?.autoStart : true,
+      strategy: '$merge' as '$merge' | '$set',
+      subscriptions: {
+        update: defaultSubscriptionConfig,
+        delete: defaultSubscriptionConfig
+      }
+    };
+
     const childSchemas = parentSchema.schema;
     for (const [path, _schema] of Object.entries(childSchemas)) {
       const schema = _schema instanceof Array ? _schema[0] : _schema;
       this.managedPaths[path] = {
+        ...defaultManagedPathConfig,
         path,
         idAttribute: schema._idAttribute,
         workflowType: `${schema._key}Workflow`,
-        autoStart: typeof this.options?.autoStart === 'boolean' ? this.options?.autoStart : true,
-        subscriptionsEnabled: typeof this.options?.autoSubscribe === 'boolean' ? this.options?.autoSubscribe : true,
         entityName: schema._key,
         isMany: _schema instanceof Array,
-        ...(this.managedPaths[path] || {})
+        ...(this.managedPaths[path] || {}), // Allow overrides from existing config
+        // Ensure subscriptions are properly merged with defaults
+        subscriptions: {
+          update: { ...defaultSubscriptionConfig, ...(this.managedPaths[path]?.subscriptions?.update || {}) },
+          delete: { ...defaultSubscriptionConfig, ...(this.managedPaths[path]?.subscriptions?.delete || {}) }
+        }
       };
     }
   }
@@ -2150,9 +2182,7 @@ export abstract class StatefulWorkflow<
           backoffCoefficient: 1.5,
           maximumAttempts: 30
         },
-        autoStart,
-        subscriptionsEnabled = true,
-        getSubscriptions
+        autoStart
       } = config;
 
       if (!autoStart && typeof config.condition !== 'function') {
@@ -2204,17 +2234,36 @@ export abstract class StatefulWorkflow<
         }
       }
 
-      const updateSubscription = {
-        subscriptionId: `${this.entityName}:${this.id}.${config.path}:${id}`,
-        workflowId: workflow.workflowInfo().workflowId,
-        signalName: 'update',
-        selector: '*',
-        parent: `${this.entityName}:${this.id}`,
-        child: `${config.entityName}:${id}`,
-        ancestorWorkflowIds: [...this.ancestorWorkflowIds]
-      };
-      const subscriptions =
-        typeof getSubscriptions === 'function' ? getSubscriptions(updateSubscription) : [updateSubscription];
+      // Create subscriptions based on config
+      const subscriptions: Subscription[] = [];
+
+      if (config.subscriptions?.update?.enabled) {
+        subscriptions.push({
+          subscriptionId: `${this.entityName}:${this.id}.${config.path}:${id}`,
+          workflowId: workflow.workflowInfo().workflowId,
+          signalName: 'update',
+          selector: config.subscriptions.update.selector ?? '*',
+          parent: `${this.entityName}:${this.id}`,
+          child: `${config.entityName}:${id}`,
+          ancestorWorkflowIds: [...this.ancestorWorkflowIds],
+          sync: config.subscriptions.update.sync,
+          strategy: config.subscriptions.update.strategy
+        });
+      }
+
+      if (config.subscriptions?.delete?.enabled) {
+        subscriptions.push({
+          subscriptionId: `${this.entityName}:${this.id}.${config.path}:${id}:delete`,
+          workflowId: workflow.workflowInfo().workflowId,
+          signalName: 'delete',
+          selector: config.subscriptions.delete.selector ?? '*',
+          parent: `${this.entityName}:${this.id}`,
+          child: `${config.entityName}:${id}`,
+          ancestorWorkflowIds: [...this.ancestorWorkflowIds],
+          sync: config.subscriptions.delete.sync,
+          strategy: config.subscriptions.delete.strategy
+        });
+      }
 
       const startPayload = {
         workflowId,
@@ -2233,7 +2282,7 @@ export abstract class StatefulWorkflow<
                 ? normalizeEntities(data, SchemaManager.getInstance().getSchema(entityName as string))
                 : rawData,
             entityName,
-            subscriptions: subscriptionsEnabled ? subscriptions : [],
+            subscriptions,
             apiToken: this.apiToken,
             ancestorWorkflowIds: [...this.ancestorWorkflowIds, workflow.workflowInfo().workflowId]
           }
@@ -2430,8 +2479,9 @@ export abstract class StatefulWorkflow<
       const updateSignalPayload: any = {
         updates: normalizeEntities(data, SchemaManager.getInstance().getSchema(entityName as string)),
         entityName: config.entityName,
-        strategy: '$merge',
-        sync: true,
+        strategy:
+          typeof this.options?.childUpdates?.strategy === 'string' ? this.options.childUpdates.strategy : '$merge',
+        sync: typeof this.options?.childUpdates?.sync === 'boolean' ? this.options.childUpdates.sync : false,
         changeOrigin: workflow.workflowInfo().workflowId
       };
 
