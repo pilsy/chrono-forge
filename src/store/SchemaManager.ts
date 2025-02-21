@@ -1,5 +1,19 @@
 import yaml from 'js-yaml';
-import { schema } from 'normalizr';
+import { schema, Schema } from 'normalizr';
+
+// Define a more specific type for schema relationships
+export type SchemaRelationship = {
+  _idAttribute: string;
+  _key: string;
+};
+
+// Define a custom type for our enhanced Entity schema
+export interface EnhancedEntity extends schema.Entity {
+  schema: {
+    [key: string]: Schema | [Schema & SchemaRelationship];
+  };
+  idAttribute: string | ((entity: any, parent?: any, key?: string) => any);
+}
 
 export type SchemasDefinition = {
   [schemaName: string]: SchemaDefinition;
@@ -12,10 +26,10 @@ export type SchemaDefinition = {
 export class SchemaManager {
   private constructor() {}
   private static instance: SchemaManager;
-  private schemas: { [key: string]: schema.Entity } = {};
-  private static cachedSchemas: { [key: string]: schema.Entity } | null = null;
+  private schemas: Record<string, EnhancedEntity> = {};
+  private static cachedSchemas: Record<string, EnhancedEntity> | null = null;
 
-  public static get schemas(): { [key: string]: schema.Entity } {
+  public static get schemas(): Record<string, EnhancedEntity> {
     return this.getInstance().getSchemas();
   }
 
@@ -31,7 +45,8 @@ export class SchemaManager {
    * @param schemaConfig The schema configuration to set.
    * @returns The current schemas.
    */
-  setSchemas(schemaConfig: SchemasDefinition): { [key: string]: schema.Entity } {
+  setSchemas(schemaConfig: SchemasDefinition): Record<string, EnhancedEntity> {
+    // @ts-expect-error stfu
     this.schemas = this.createSchemas(schemaConfig);
     SchemaManager.cachedSchemas = this.schemas;
     return this.schemas;
@@ -41,7 +56,7 @@ export class SchemaManager {
    * Retrieves all schemas.
    * @returns The current schemas.
    */
-  getSchemas(): { [key: string]: schema.Entity } {
+  getSchemas(): Record<string, EnhancedEntity> {
     return this.schemas;
   }
 
@@ -51,7 +66,7 @@ export class SchemaManager {
    * @returns The schema.
    * @throws Error if the schema is not defined.
    */
-  getSchema(schemaName: string): schema.Entity {
+  getSchema(schemaName: string): EnhancedEntity {
     if (!this.schemas[schemaName]) {
       throw new Error(`Schema ${schemaName} not defined!`);
     }

@@ -111,7 +111,6 @@ describe('StatefulWorkflow', () => {
       expect(initialMemoValue).toEqual(state);
 
       await handle.signal('shouldContinueAsNew', true);
-      await sleep(2500);
     });
   });
 
@@ -129,7 +128,7 @@ describe('StatefulWorkflow', () => {
       expect(counter).toBe(0);
 
       await handle.signal('incrementNumberTest');
-      await sleep(15000);
+      await sleep(1500);
 
       expect(await handle.query('counter')).toBe(1);
     });
@@ -140,7 +139,7 @@ describe('StatefulWorkflow', () => {
       const data = { id: uuid4() };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
       const expectedInitial = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
-      await sleep(2500);
+      await sleep();
 
       // Initial state verification
       const state = await handle.query('state');
@@ -155,7 +154,7 @@ describe('StatefulWorkflow', () => {
       const expectedUpdated = normalizeEntities(updatedData, SchemaManager.getInstance().getSchema('User'));
 
       await handle.signal('update', { data: updatedData, entityName: 'User' });
-      await sleep(2500);
+      await sleep();
 
       const updatedState = await handle.query('state');
       expect(updatedState).toEqual(expectedUpdated);
@@ -170,7 +169,7 @@ describe('StatefulWorkflow', () => {
       const data = { id: userId, listings: [{ id: uuid4(), name: 'Awesome test listing', user: userId }] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
       const expectedInitial = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
-      await sleep(2500);
+      await sleep();
 
       // Initial state verification
       const state = await handle.query('state');
@@ -185,7 +184,7 @@ describe('StatefulWorkflow', () => {
       const expectedUpdated = normalizeEntities(updatedData, SchemaManager.getInstance().getSchema('User'));
 
       await handle.signal('update', { data: updatedData, entityName: 'User' });
-      await sleep(5000);
+      await sleep(2500);
 
       const updatedState = await handle.query('state');
       expect(updatedState).toEqual(expectedUpdated);
@@ -244,7 +243,7 @@ describe('StatefulWorkflow', () => {
       const expectedInitialState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
 
       const handle = await execute(workflows.ShouldExecuteStateful, { id, entityName: 'User', data });
-      await sleep(2500);
+      await sleep();
 
       const state = await handle.query('state');
       expect(state).toEqual(expectedInitialState);
@@ -256,7 +255,7 @@ describe('StatefulWorkflow', () => {
         data,
         entityName: 'User'
       });
-      await sleep(5000);
+      await sleep();
 
       const updatedState = await handle.query('state');
       expect(updatedState).toEqual(expectedUpdatedState);
@@ -362,7 +361,7 @@ describe('StatefulWorkflow', () => {
         updateId
       });
 
-      await sleep(2500);
+      await sleep();
 
       const updatedState = await handle.query('state');
       expect(updatedState).toEqual(omit(expectedUpdated, 'fromUpdate'));
@@ -496,7 +495,7 @@ describe('StatefulWorkflow', () => {
         entityName: 'User',
         data
       });
-      await sleep(2500); // Wait for workflows to initialize
+      await sleep(); // Wait for workflows to initialize
 
       // Ensure the User workflow is initialized with the correct normalized state
       const expectedState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
@@ -543,7 +542,7 @@ describe('StatefulWorkflow', () => {
         data: expectedData,
         entityName: 'User'
       });
-      await sleep(2500); // Wait for state to propagate
+      await sleep(); // Wait for state to propagate
 
       // Verify state update propagation in User
       const updatedState = await handle.query('state');
@@ -574,7 +573,7 @@ describe('StatefulWorkflow', () => {
         data: updatedListing2Data,
         entityName: 'Listing'
       });
-      await sleep(2500); // Wait for state to propagate
+      await sleep(); // Wait for state to propagate
 
       // Verify the state update in Listing2 workflow
       updatedListing2State = await listing2Handle.query('state');
@@ -615,7 +614,7 @@ describe('StatefulWorkflow', () => {
       const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
       const firstRunId = (await childHandle.describe()).runId;
       await childHandle.cancel();
-      await sleep(5000);
+      await sleep(2500);
 
       const restartedChildHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
       const secondRunId = (await restartedChildHandle.describe()).runId;
@@ -632,7 +631,7 @@ describe('StatefulWorkflow', () => {
 
       expect(await handle.query('data')).toEqual(data);
       await handle.cancel();
-      await sleep(5000);
+      await sleep(2500);
 
       const client = getClient();
       const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
@@ -702,7 +701,7 @@ describe('StatefulWorkflow', () => {
         await handle.signal('update', { data, entityName: 'User' });
       }
 
-      await sleep(10000);
+      await sleep();
 
       const finalState = await handle.query('state');
       expect(finalState).toEqual(normalizeEntities(data, SchemaManager.getInstance().getSchema('User')));
@@ -726,7 +725,7 @@ describe('StatefulWorkflow', () => {
         await handle.signal('update', { data: update, entityName: 'User' });
       }
 
-      await sleep(2500);
+      await sleep();
       const finalState = await handle.query('state');
       expect(finalState.User[userId].name).toEqual('Update-49');
     });
@@ -739,7 +738,7 @@ describe('StatefulWorkflow', () => {
         listings: [{ id: listingId, content: 'Hello World', user: userId }]
       };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
-      await sleep(2500);
+      await sleep();
 
       const initialState = await handle.query('state');
       expect(initialState).toEqual(normalizeEntities(data, SchemaManager.getInstance().getSchema(`User`)));
@@ -749,7 +748,7 @@ describe('StatefulWorkflow', () => {
       const childHandle = await client.workflow.getHandle(`Listing-${listingId}`);
       await childHandle.signal('update', { data: data.listings[0], entityName: 'Listing' });
 
-      await sleep(2500);
+      await sleep();
 
       const parentData = await handle.query('state');
       expect(parentData.Listing[data.listings[0].id].content).toEqual('Updated Content');
@@ -783,7 +782,7 @@ describe('StatefulWorkflow', () => {
         entityName: 'User',
         data
       });
-      await sleep(2500);
+      await sleep();
 
       // Verify the User workflow is initialized correctly with normalized state
       const expectedInitialState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
@@ -800,7 +799,7 @@ describe('StatefulWorkflow', () => {
         data: { id: likeId, user: userId, newField: 'direct update' },
         entityName: 'Like'
       });
-      await sleep(2500);
+      await sleep();
 
       // Verify that the state in the parent User workflow is updated correctly
       const parentUpdatedState = await handle.query('state');

@@ -1,6 +1,6 @@
 import { Mutex as MutexLock } from 'async-mutex';
 
-const instanceMutexMap: WeakMap<any, Map<string, MutexLock>> = new WeakMap();
+const instanceMutexMap: Map<any, Map<string, MutexLock>> = new Map();
 
 /**
  * Decorator that ensures exclusive execution of a method using a mutex lock.
@@ -38,7 +38,6 @@ const instanceMutexMap: WeakMap<any, Map<string, MutexLock>> = new WeakMap();
  * ```
  *
  * ## Notes
- * - Mutex locks are maintained in a WeakMap to prevent memory leaks
  * - Different methods can share the same mutex by using the same mutexName
  * - The decorator automatically handles async/await operations
  * - Locks are released automatically after method completion or error

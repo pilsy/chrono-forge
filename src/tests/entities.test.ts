@@ -19,7 +19,6 @@ import reducer, {
   normalizeEntities,
   createUpdateStatement,
   initialState,
-  updateEntity,
   handleUpdateEntities,
   handleDeleteEntities
 } from '../store/entities';

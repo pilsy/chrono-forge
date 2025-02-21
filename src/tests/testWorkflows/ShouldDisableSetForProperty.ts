@@ -8,7 +8,7 @@ export class ShouldDisableSetForProperty extends Workflow {
   public readonlyProperty: string = 'readonly';
 
   async execute() {
-    await sleep('10 seconds');
+    await sleep('3 seconds');
     return this.readonlyProperty;
   }
 }

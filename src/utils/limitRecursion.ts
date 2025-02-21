@@ -36,7 +36,6 @@ export const limitRecursion: Function = (
   const schema = SchemaManager.getInstance().getSchema(entityName);
   // Pre-allocate result with approximate size
   const result: Record<string, any> = Object.create(null);
-  // @ts-expect-error Cache schema.schema for repeated access
   const schemaDefinition = schema.schema;
 
   // Use for...of instead of for...in for better performance

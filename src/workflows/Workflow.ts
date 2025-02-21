@@ -406,17 +406,32 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
   }
 
+  emit<T extends string | symbol>(event: T, ...args: any[]): boolean {
+    throw new Error('Workflows need to be deterministic, emitAsync should be used instead!');
+  }
+
   /**
    * Emit events asynchronously to the necessary listeners.
    *
    * @param event - The event to be emitted.
    * @param args - Arguments to pass to the listeners.
    */
-  protected async emitAsync(event: string, ...args: any[]): Promise<void> {
+  protected async emitAsync(event: string, ...args: any[]): Promise<boolean> {
     const listeners = this.listeners(event);
+
+    // Execute all listeners sequentially, waiting for async ones
     for (const listener of listeners) {
-      await (listener as (...args: any[]) => Promise<void>)(...args);
+      try {
+        const result: any = listener(...args);
+        if (result instanceof Promise) {
+          await result;
+        }
+      } catch (error) {
+        console.error(`Error in listener for event '${event}':`, error);
+      }
     }
+
+    return listeners.length > 0;
   }
 
   /**
@@ -482,7 +497,8 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       this.on(handler.event, async (...args: any[]) => {
         const method = this[handler.method as keyof this];
         if (typeof method === 'function') {
-          return await method.apply(this, args);
+          const result = method.apply(this, args);
+          return result instanceof Promise ? result : Promise.resolve(result);
         }
       });
     });
@@ -502,56 +518,58 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     const hooks = this.collectHookMetadata(this.constructor.prototype);
     if (!hooks) return;
 
-    const applyHook = async (methodName: string, originalMethod: () => any, ...args: any[]) => {
-      // Create an inner async function to handle asynchronous operations
-      const executeHooks = async () => {
-        const { before, after } = hooks[methodName] || { before: [], after: [] };
-
-        if (Array.isArray(before)) {
-          for (const beforeHook of before) {
-            if (typeof (this as any)[beforeHook] === 'function') {
-              this.log.trace(`[HOOK]:before(${methodName})`);
-              await (this as any)[beforeHook](...args);
-            }
-          }
-        }
-
-        this.log.info(`[HOOK]:${methodName}.call()...`);
-        let result;
-        try {
-          result = await originalMethod.apply(this, args as any);
-        } catch (err) {
-          throw err instanceof Error ? err : new Error(err as string);
-        }
-
-        if (Array.isArray(after)) {
-          for (const afterHook of after) {
-            if (typeof (this as any)[afterHook] === 'function') {
-              this.log.trace(`[HOOK]:after(${methodName})`);
-              await (this as any)[afterHook](...args);
-            }
-          }
-        }
-
-        return result;
-      };
-
-      // Use the non-async promise executor and call the async function
-      return new Promise((resolve, reject) => {
-        executeHooks().then(resolve).catch(reject);
-      });
-    };
-
     for (const methodName of Object.keys(hooks)) {
       const originalMethod = (this as any)[methodName];
       if (typeof originalMethod === 'function') {
-        (this as any)[methodName] = async (...args: any[]) => {
-          return await applyHook(methodName, originalMethod, ...args);
-        };
+        (this as any)[methodName] = this.createHookedMethod(methodName, originalMethod, hooks[methodName]);
       }
     }
 
     this._hooksBound = true;
+  }
+
+  private createHookedMethod(
+    methodName: string,
+    originalMethod: (...args: any[]) => any,
+    hookConfig: { before: string[]; after: string[] }
+  ) {
+    return async (...args: any[]) => {
+      const { before = [], after = [] } = hookConfig;
+
+      // Execute before hooks sequentially
+      for (const beforeHook of before) {
+        if (typeof (this as any)[beforeHook] === 'function') {
+          this.log.trace(`[HOOK]:before(${methodName})`);
+          const hookResult = (this as any)[beforeHook].call(this, ...args);
+          if (hookResult instanceof Promise) {
+            await hookResult;
+          }
+        }
+      }
+
+      // Execute main method
+      this.log.info(`[HOOK]:${methodName}.call()`);
+      let result;
+      try {
+        const methodResult = originalMethod.call(this, ...args);
+        result = methodResult instanceof Promise ? await methodResult : methodResult;
+      } catch (err) {
+        throw err instanceof Error ? err : new Error(String(err));
+      }
+
+      // Execute after hooks sequentially
+      for (const afterHook of after) {
+        if (typeof (this as any)[afterHook] === 'function') {
+          this.log.trace(`[HOOK]:after(${methodName})`);
+          const hookResult = (this as any)[afterHook].call(this, ...args);
+          if (hookResult instanceof Promise) {
+            await hookResult;
+          }
+        }
+      }
+
+      return result;
+    };
   }
 
   /**

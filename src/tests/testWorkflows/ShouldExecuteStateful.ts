@@ -15,7 +15,7 @@ export type TestAction = {
 
 @Temporal({
   schema: User,
-  saveMemoToState: true
+  saveStateToMemo: true
 })
 export class ShouldExecuteStateful extends StatefulWorkflow {
   protected maxIterations: number = 1000;
@@ -63,14 +63,14 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
 
   @Signal()
   public async incrementNumberTest() {
+    console.log('incrementNumberTest');
     for (let i = 0; i < 10; i++) {
-      console.log('incrementNumberTest');
-      await sleep(10);
-      this.debounceTest();
+      // await sleep(10);
+      await this.debounceTest();
     }
   }
 
-  @Debounce(1000)
+  @Debounce(100)
   private debounceTest() {
     this.counter++;
   }
@@ -83,8 +83,7 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
   }
 
   async execute(params: any) {
-    console.log('execute');
-    console.log(this.state);
+    console.log('execute', this.state);
     // console.log(this.listings);
     // // if (this.listings.length < 3) {
     // //   this.listings.push({

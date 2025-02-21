@@ -14,7 +14,7 @@ export interface WorkflowData<D = any> extends WorkflowState {
 
 export async function getMemo<D>(handle: WorkflowHandle): Promise<WorkflowData<D>> {
   const { memo } = await handle.describe();
-  const entityName = String(handle.workflowId.split('-').shift());
+  const entityName = String(handle.workflowId.split(/-(.*)/s).slice(0, 2));
   const entityId = handle.workflowId.replace(`${entityName}-`, '');
 
   if (!memo) {

@@ -36,15 +36,18 @@ export class StateManager extends EventEmitter {
   get state() {
     return this._state ?? {};
   }
-  set state(newState) {
+  set state(state: EntitiesState) {
+    this._state = state;
+  }
+
+  async setState(newState: EntitiesState) {
     if (this._state === newState) return; // Skip if reference is the same
 
     const previousState = this._state;
-    this._state = newState;
+    this.state = newState;
 
-    // Only calculate detailed diff if there are listeners
     if (this.listenerCount('stateChange') > 0) {
-      this.emit('stateChange', {
+      await this.emitAsync('stateChange', {
         newState,
         previousState,
         differences: detailedDiff(previousState, newState)
@@ -98,60 +101,60 @@ export class StateManager extends EventEmitter {
     this._processing = false;
   }
 
-  private emitStateChangeEvents(
+  private async emitStateChangeEvents(
     differences: DetailedDiff,
     previousState: EntitiesState,
     newState: EntitiesState,
     origins: string[]
-  ): void {
+  ): Promise<void> {
     const changedPaths = ['added', 'updated', 'deleted'] as const;
 
-    const emitMatchingEvents = (event: string, details: object) => {
+    const emitMatchingEvents = async (event: string, details: object) => {
       if (this.listenerCount(event) > 0) {
-        this.emit(event, details);
+        await this.emitAsync(event, details);
       }
 
       const [entityName, eventIdAndType] = event.split('.');
       const [eventId, eventType] = eventIdAndType.split(':');
 
       const wildcardPatterns = [
-        `${entityName}.*:${eventType}`, // EntityName.*:changeType
-        `*.*:${eventType}`, // *.*:changeType
-        `${entityName}.${eventId}:*`, // EntityName.entityId:*
-        `${entityName}.*:*`, // EntityName.*:*
-        '*.*:*' // *.*:*
+        `${entityName}.*:${eventType}`,
+        `*.*:${eventType}`,
+        `${entityName}.${eventId}:*`,
+        `${entityName}.*:*`,
+        '*.*:*'
       ];
 
       // Emit for any wildcard patterns that have listeners
-      wildcardPatterns.forEach((pattern) => {
+      for (const pattern of wildcardPatterns) {
         if (this.listenerCount(pattern) > 0) {
-          this.emit(pattern, details);
+          await this.emitAsync(pattern, details);
         }
-      });
+      }
     };
 
-    changedPaths.forEach((changeType) => {
+    for (const changeType of changedPaths) {
       const entities = differences[changeType];
-      if (!entities || typeof entities !== 'object') return;
+      if (!entities || typeof entities !== 'object') continue;
 
-      Object.entries(entities).forEach(([entityName, entityChanges]) => {
-        if (!entityChanges || typeof entityChanges !== 'object') return;
+      for (const [entityName, entityChanges] of Object.entries(entities)) {
+        if (!entityChanges || typeof entityChanges !== 'object') continue;
 
-        Object.keys(entityChanges).forEach((entityId) => {
+        for (const entityId of Object.keys(entityChanges)) {
           const eventName = `${entityName}.${entityId}:${changeType}`;
 
           if (origins.includes(this.instanceId)) {
-            return;
+            continue;
           }
 
           const eventDetails = { newState, previousState, changeType, changes: entityChanges[entityId], origins };
 
-          emitMatchingEvents(eventName, eventDetails);
-        });
-      });
-    });
+          await emitMatchingEvents(eventName, eventDetails);
+        }
+      }
+    }
 
-    this.emit('stateChange', { newState, previousState, differences, changeOrigins: origins });
+    await this.emitAsync('stateChange', { newState, previousState, differences, changeOrigins: origins });
   }
 
   query(entityName: string, id: string, denormalizeData = true): any {
@@ -253,6 +256,24 @@ export class StateManager extends EventEmitter {
 
   clear() {
     this.dispatch(clearEntities(), true, this.instanceId);
+  }
+
+  async emitAsync(event: string, ...args: any[]): Promise<boolean> {
+    const listeners = this.listeners(event);
+
+    // Execute all listeners sequentially, waiting for async ones
+    for (const listener of listeners) {
+      try {
+        const result: any = listener(...args);
+        if (result instanceof Promise) {
+          await result;
+        }
+      } catch (error) {
+        console.error(`Error in listener for event '${event}':`, error);
+      }
+    }
+
+    return listeners.length > 0;
   }
 }
 

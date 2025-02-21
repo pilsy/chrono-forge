@@ -49,7 +49,7 @@ Runtime.install({
   logger
 });
 
-global.sleep = async (duration = 2500) =>
+global.sleep = async (duration = 1000) =>
   new Promise((resolve) => {
     setTimeout(async () => {
       resolve();

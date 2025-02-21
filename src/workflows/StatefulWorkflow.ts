@@ -181,7 +181,6 @@ type Subscription = {
   child: string;
   ancestorWorkflowIds: string[];
   condition?: (state: any) => boolean;
-  entityName?: string;
   sync?: boolean;
   strategy?: '$set' | '$merge';
 };
@@ -226,6 +225,7 @@ export type StatefulWorkflowParams<D = {}> = {
   subscriptions?: Subscription[];
   autoStart?: boolean;
   ancestorWorkflowIds?: string[];
+  startDelay?: Duration;
 };
 
 /**
@@ -256,7 +256,7 @@ export type StatefulWorkflowOptions = {
   schema?: schema.Entity;
   schemaName?: string;
   autoStart?: boolean;
-  saveMemoToState?: boolean;
+  saveStateToMemo?: boolean;
   apiUrl?: string;
   workflowType?: string;
   childUpdatesSync?: boolean;
@@ -585,13 +585,18 @@ export abstract class StatefulWorkflow<
    * @returns {EntitiesState}
    * - The current state of all entities in the workflow.
    */
-  @Property()
-  get state() {
-    return this.stateManager.state;
+  @Query('state')
+  getState() {
+    return this.state;
   }
 
-  set state(state: EntitiesState) {
-    this.stateManager.state = state;
+  @Signal('state')
+  async setState(state: EntitiesState) {
+    await this.stateManager.setState(state);
+  }
+
+  get state() {
+    return this.stateManager.state;
   }
 
   /**
@@ -928,7 +933,7 @@ export abstract class StatefulWorkflow<
     this.params = params;
     this.options = options;
 
-    this.options.saveMemoToState = this.options.saveMemoToState === true;
+    this.options.saveStateToMemo = this.options.saveStateToMemo === true;
 
     this.stateManager = StateManager.getInstance(workflow.workflowInfo().workflowId);
 
@@ -1026,11 +1031,16 @@ export abstract class StatefulWorkflow<
   protected async executeWorkflow(): Promise<any> {
     this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.executeWorkflow`);
 
+    if (this.schema) this.configureManagedPaths(this.schema);
+
+    if (this.params?.startDelay) await workflow.sleep(this.params.startDelay);
+
     const executeWorkflowLogic = async (resolve: (value: any) => void, reject: (reason?: any) => void) => {
       try {
-        if (this.schema) this.configureManagedPaths(this.schema);
         while (this.iteration <= this.maxIterations) {
-          this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}:execute`);
+          if (this.pendingIteration) {
+            this.pendingIteration = false;
+          }
 
           await workflow.condition(
             () =>
@@ -1043,6 +1053,7 @@ export abstract class StatefulWorkflow<
             // @ts-ignore
             !this.conditionTimeout ? undefined : this.conditionTimeout
           );
+          this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}:execute`);
 
           if (this.status === 'paused') {
             await this.emitAsync('paused');
@@ -1056,6 +1067,9 @@ export abstract class StatefulWorkflow<
 
           if (this.shouldLoadData()) {
             await this.loadDataAndEnqueue();
+          }
+          if (this.pendingUpdate) {
+            this.pendingUpdate = false;
           }
 
           if (!this.isInTerminalState()) {
@@ -1076,13 +1090,7 @@ export abstract class StatefulWorkflow<
             break;
           }
 
-          if (!this.actionRunning) {
-            if (this.pendingUpdate) {
-              this.pendingUpdate = false;
-            } else if (this.pendingIteration) {
-              this.pendingIteration = false;
-            }
-          }
+          await this.upsertToMemo();
         }
 
         resolve(this.result ?? this.data);
@@ -1155,9 +1163,7 @@ export abstract class StatefulWorkflow<
     changeOrigin,
     sync = true
   }: PendingChange & { data?: Record<string, any> }): void {
-    this.log.trace(
-      `[${this.constructor.name}]:${this.entityName}:${this.id}.update(${JSON.stringify({ data, action, updates, entityName, changeOrigin }, null, 2)})`
-    );
+    this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.update`);
 
     if (action) {
       this.stateManager.dispatch(action, sync, changeOrigin);
@@ -1365,7 +1371,6 @@ export abstract class StatefulWorkflow<
    * - Processes the states of child entities and related subscriptions if applicable, triggering further handling mechanisms.
    * - Sets the `pendingIteration` flag to true, signaling readiness for further processing.
    */
-  @Mutex('processState')
   protected async stateChanged({
     newState,
     previousState,
@@ -1385,16 +1390,16 @@ export abstract class StatefulWorkflow<
       const deleted = get(differences.deleted, `${this.entityName}.${this.id}`, false);
 
       if (created && this.iteration === 0) {
-        await this.emit('created', { changes: created, newState, previousState, changeOrigins });
+        await this.emitAsync('created', { changes: created, newState, previousState, changeOrigins });
       } else if (created || updated) {
-        await this.emit('updated', {
+        await this.emitAsync('updated', {
           changes: mergeDeepRight(created || {}, updated || {}),
           newState,
           previousState,
           changeOrigins
         });
       } else if (deleted && this.isItemDeleted(differences, this.entityName, this.id)) {
-        if (!(await this.emit('deleted', { changes: deleted, newState, previousState, changeOrigins }))) {
+        if (!(await this.emitAsync('deleted', { changes: deleted, newState, previousState, changeOrigins }))) {
           this.status = 'cancelled';
         }
       }
@@ -1411,8 +1416,6 @@ export abstract class StatefulWorkflow<
   /**
    * Updates the workflow's memo with the current state, ensuring that any changes are persisted.
    *
-   * @mutex 'memo'
-   * @after 'processState'
    * @protected
    * @async
    * @returns {Promise<void>} A promise that resolves once the current state has been conditionally saved to memo.
@@ -1429,10 +1432,7 @@ export abstract class StatefulWorkflow<
    *   - The current iteration count and workflow status.
    *   - A timestamp representing the last update.
    */
-  @After('processState')
-  protected async upsertStateToMemo(): Promise<void> {
-    this.log.trace(`[StatefulWorkflow]: Saving state to memo: ${workflow.workflowInfo().workflowId}`);
-
+  protected async upsertToMemo(): Promise<void> {
     const memo = (workflow.workflowInfo().memo || {}) as {
       state?: EntitiesState;
       iteration?: number;
@@ -1440,33 +1440,43 @@ export abstract class StatefulWorkflow<
       properties: Record<string, any>;
     };
 
-    const flattenedNewState = flatten({
-      state: this.options?.saveMemoToState ? this.state : {},
+    const flattenedCurrentMemo: any = flatten({
+      status: memo?.status ?? this.status,
+      state: memo?.state ?? {},
+      properties: memo?.properties ?? {}
+    });
+    const flattenedNewMemo = flatten({
+      status: this.status,
+      state: this.options?.saveStateToMemo ? this.state : {},
       properties: this._memoProperties
     });
-    const flattenedCurrentState: any = memo || {};
 
     const updatedMemo: Record<string, any> = {};
 
-    for (const [key, newValue] of Object.entries(flattenedNewState)) {
-      const currentValue = flattenedCurrentState[key];
+    let hasChanges = false;
+    for (const [key, newValue] of Object.entries(flattenedNewMemo)) {
+      const currentValue = flattenedCurrentMemo[key];
       if (!isEqual(newValue, currentValue)) {
         updatedMemo[key] = newValue;
+        hasChanges = true;
       }
     }
-
-    for (const key of Object.keys(flattenedCurrentState)) {
-      if (!(key in flattenedNewState)) {
+    for (const key of Object.keys(flattenedCurrentMemo)) {
+      if (!(key in flattenedNewMemo)) {
         updatedMemo[key] = undefined;
+        hasChanges = true;
       }
     }
 
-    workflow.upsertMemo({
-      ...updatedMemo,
-      iteration: this.iteration,
-      status: this.status,
-      lastUpdated: new Date().toISOString()
-    });
+    if (hasChanges) {
+      this.log.info(`[StatefulWorkflow]: Saving state to memo: ${workflow.workflowInfo().workflowId}`);
+
+      workflow.upsertMemo({
+        ...updatedMemo,
+        iteration: this.iteration,
+        lastUpdated: new Date().toISOString()
+      });
+    }
   }
 
   /**
@@ -1502,7 +1512,7 @@ export abstract class StatefulWorkflow<
     this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.processSubscriptions`);
 
     for (const subscription of this.subscriptions) {
-      const { workflowId, selector, condition, entityName, subscriptionId, signalName, sync, strategy } = subscription;
+      const { workflowId, selector, condition, subscriptionId, signalName, sync, strategy } = subscription;
 
       // Type guard to ensure signalName is either 'update' or 'delete'
       if (signalName !== 'update' && signalName !== 'delete') {
@@ -1533,7 +1543,6 @@ export abstract class StatefulWorkflow<
 
             await handle.signal(signalName, {
               ...(signalName === 'update' ? { updates } : { deletions }),
-              entityName,
               changeOrigin: workflow.workflowInfo().workflowId,
               subscriptionId,
               sync,
@@ -1578,7 +1587,7 @@ export abstract class StatefulWorkflow<
       }
     }
 
-    const selectorRegex = new RegExp('^' + selector.replace(/\\./g, '\\.').replace(/\*/g, '.*') + '$');
+    const selectorRegex = this.getSelectorPattern(selector);
     for (const diffType of ['added', 'updated'] as const) {
       const entities = differences[diffType] as EntitiesState;
       if (!entities) continue;
@@ -2281,17 +2290,19 @@ export abstract class StatefulWorkflow<
       };
 
       this.log.trace(
-        `[${this.constructor.name}]:${this.entityName}:${this.id}.startChildWorkflow( workflowType=${workflowType}, startPayload=${JSON.stringify(startPayload, null, 2)}\n)`
+        `[${this.constructor.name}]:${this.entityName}:${this.id}.startChildWorkflow( workflowType=${workflowType} )`
       );
 
       const handle = await workflow.startChild(String(workflowType), startPayload);
       this.handles.set(workflowId, handle);
       if (this.listenerCount(`child:${entityName}:started`) > 0)
-        this.emit(`child:${entityName}:started`, { ...config, workflowId, data, handle });
+        await this.emitAsync(`child:${entityName}:started`, { ...config, workflowId, data, handle });
 
       handle
         .result()
-        .then((result) => this.emit(`child:${entityName}:completed`, { ...config, workflowId, result }))
+        .then(
+          async (result) => await this.emitAsync(`child:${entityName}:completed`, { ...config, workflowId, result })
+        )
         .catch(async (error) => {
           this.log.error(
             `[${this.constructor.name}]:${this.entityName}:${this.id} Child workflow error: ${error.message}\n${error.stack}`
@@ -2308,7 +2319,7 @@ export abstract class StatefulWorkflow<
               );
             } catch {}
           } else {
-            this.emit(`child:${entityName}:errored`, { ...config, workflowId, error });
+            await this.emitAsync(`child:${entityName}:errored`, { ...config, workflowId, error });
           }
         });
     } catch (err) {
@@ -2373,7 +2384,7 @@ export abstract class StatefulWorkflow<
 
       if (!autoStart && typeof config.condition !== 'function') {
         this.log.trace(
-          `${workflowType} with entityName ${entityName} not configured to autoStart...\n${JSON.stringify(config, null, 2)}`
+          `${workflowType} with entityName ${entityName} at managedPath ${config.path} not configured to autoStart...`
         );
         return;
       }
@@ -2421,7 +2432,7 @@ export abstract class StatefulWorkflow<
       await handle.signal('update', updateSignalPayload);
 
       if (this.listenerCount(`child:${entityName}:updated`) > 0)
-        this.emit(`child:${entityName}:updated`, {
+        await this.emitAsync(`child:${entityName}:updated`, {
           ...config,
           workflowId: handle.workflowId,
           data,
@@ -2656,6 +2667,7 @@ export abstract class StatefulWorkflow<
           set: (value) => {
             if (useMemoPath || memoKeyString) {
               dottie.set(this._memoProperties, resolveMemoKey(), value);
+              this.pendingIteration = true;
             }
             if (isStringPath) {
               dottie.set(this.data || (this.data = {}), path, value);
