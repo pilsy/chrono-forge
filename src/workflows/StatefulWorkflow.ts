@@ -1063,13 +1063,7 @@ export abstract class StatefulWorkflow<
           }
 
           if (this.isInTerminalState()) {
-            const result = this.result || this.data;
-            if (this.status !== 'errored') {
-              await this.handleCompletion(result);
-              return resolve(result);
-            } else {
-              return reject(result);
-            }
+            return this.status !== 'errored' ? resolve(this.result || this.data) : reject(this.result);
           }
 
           if (
@@ -2294,6 +2288,29 @@ export abstract class StatefulWorkflow<
       this.handles.set(workflowId, handle);
       if (this.listenerCount(`child:${entityName}:started`) > 0)
         this.emit(`child:${entityName}:started`, { ...config, workflowId, data, handle });
+
+      handle
+        .result()
+        .then((result) => this.emit(`child:${entityName}:completed`, { ...config, workflowId, result }))
+        .catch(async (error) => {
+          this.log.error(
+            `[${this.constructor.name}]:${this.entityName}:${this.id} Child workflow error: ${error.message}\n${error.stack}`
+          );
+          if (workflow.isCancellation(error) && this.status !== 'cancelled') {
+            this.log.info(
+              `[${this.constructor.name}]:${this.entityName}:${this.id} Restarting child workflow due to cancellation.`
+            );
+            try {
+              await this.startChildWorkflow(
+                config,
+                this.stateManager.query(String(entityName), compositeId, false),
+                this.state
+              );
+            } catch {}
+          } else {
+            this.emit(`child:${entityName}:errored`, { ...config, workflowId, error });
+          }
+        });
     } catch (err) {
       if (err instanceof Error) {
         this.log.error(
@@ -2305,93 +2322,6 @@ export abstract class StatefulWorkflow<
         );
       }
       throw err;
-    }
-  }
-
-  /**
-   * Handles signals from child workflows when they are cancelled.
-   *
-   * @signal
-   * @param payload The cancellation payload containing:
-   *   - id: The identifier of the cancelled child workflow
-   *   - entityName: The entity type of the cancelled workflow
-   *   - workflowId: The workflow ID of the cancelled child
-   */
-  @Signal()
-  protected async childCancelled(payload: { id: string; entityName: string; workflowId: string }): Promise<void> {
-    this.log.debug(
-      `[${this.constructor.name}]:${this.entityName}:${this.id}: Child workflow cancelled: ${JSON.stringify(payload)}`
-    );
-
-    if (await workflow.CancellationScope.current()?.consideredCancelled) {
-      this.log.debug(
-        `[${this.constructor.name}]:${this.entityName}:${this.id}: Skipping restart of child workfllow as parent cancel requested}`
-      );
-      return;
-    }
-
-    const { id, entityName, workflowId } = payload;
-
-    if (this.handles.has(workflowId)) {
-      this.handles.delete(workflowId);
-    }
-
-    // Find the relevant managed path configuration for this child
-    const config = Object.values(this.managedPaths).find((config) => config.entityName === entityName);
-    if (!config) {
-      this.log.warn(
-        `[${this.constructor.name}]:${this.entityName}:${this.id}: No managed path found for cancelled child workflow: ${entityName}`
-      );
-      return;
-    }
-
-    // Only emit if there are listeners
-    if (this.listenerCount(`child:${entityName}:cancelled`) > 0) {
-      await this.emit(`child:${entityName}:cancelled`, {
-        ...config,
-        workflowId,
-        id,
-        entityName
-      });
-    }
-
-    // If configured to auto-start and conditions are met, attempt to restart the workflow with exponential backoff
-    if (config.autoStart && this.status !== 'cancelled') {
-      const maxAttempts = 5; // Maximum number of retry attempts
-      const initialDelay = 2500; // 2.5 seconds
-      const maxDelay = 30000; // 30 seconds
-      const backoffFactor = 2; // Exponential factor
-
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          this.log.info(
-            `[${this.constructor.name}]:${this.entityName}:${this.id}: Attempting to restart cancelled child workflow (attempt ${attempt}/${maxAttempts}): ${workflowId}`
-          );
-
-          // Calculate delay with exponential backoff, capped at maxDelay
-          const delay = Math.min(initialDelay * Math.pow(backoffFactor, attempt - 1), maxDelay);
-          await workflow.sleep(delay);
-
-          await this.startChildWorkflow(config, this.state[String(config.entityName)][id], this.state);
-
-          // If successful, break out of retry loop
-          this.log.info(
-            `[${this.constructor.name}]:${this.entityName}:${this.id}: Successfully restarted child workflow after ${attempt} attempt(s)`
-          );
-          break;
-        } catch (error) {
-          const isLastAttempt = attempt === maxAttempts;
-          this.log.error(
-            `[${this.constructor.name}]:${this.entityName}:${this.id}: Failed to restart cancelled child workflow (attempt ${attempt}/${maxAttempts}): ${error}${
-              isLastAttempt ? ' - Max retry attempts reached' : ''
-            }`
-          );
-
-          if (isLastAttempt) {
-            throw error; // Rethrow error after max attempts
-          }
-        }
-      }
     }
   }
 
@@ -2876,122 +2806,5 @@ export abstract class StatefulWorkflow<
       return Promise.reject(!(error instanceof Error) ? new Error(error) : error);
     }
     return result !== undefined ? result : this.data;
-  }
-
-  /**
-   * Generic method to handle errors encountered during workflow execution.
-   *
-   * @param err - Error encountered.
-   * @param reject - Function to call with rejection error.
-   * @returns {Promise<void>}
-   */
-  protected async handleExecutionError(err: any, reject: (err: Error) => void): Promise<void> {
-    this.log.debug(`[StatefulWorkflow]:${this.constructor.name}.${this.id}:handleExecutionError`);
-
-    if (workflow.isCancellation(err)) {
-      this.log.debug(`[StatefulWorkflow]:${this.constructor.name}.${this.id}: Cancelling...`);
-
-      await workflow.CancellationScope.nonCancellable(async () => {
-        const parentWorkflowId = workflow.workflowInfo().parent?.workflowId;
-
-        if (parentWorkflowId) {
-          try {
-            const parentHandle = this.ancestorHandles.has(parentWorkflowId)
-              ? this.ancestorHandles.get(parentWorkflowId)!.handle
-              : workflow.getExternalWorkflowHandle(parentWorkflowId);
-
-            await parentHandle.signal(`childCancelled`, {
-              id: this.id,
-              entityName: this.entityName
-            });
-          } catch (e) {
-            this.log.error(`Failed to signal parent workflow: ${e}`);
-          }
-        }
-      });
-    }
-
-    // Call the base Workflow handleExecutionError method
-    await super.handleExecutionError(err, reject);
-  }
-
-  /**
-   * Handles signals from child workflows when they complete successfully.
-   *
-   * @signal
-   * @param payload The completion payload containing:
-   *   - id: The identifier of the completed child workflow
-   *   - entityName: The entity type of the completed workflow
-   *   - workflowId: The workflow ID of the completed child
-   *   - result: The final result of the child workflow
-   */
-  @Signal()
-  protected async childCompleted(payload: {
-    id: string;
-    entityName: string;
-    workflowId: string;
-    result?: any;
-  }): Promise<void> {
-    this.log.debug(
-      `[${this.constructor.name}]:${this.entityName}:${this.id}: Child workflow completed: ${JSON.stringify(payload)}`
-    );
-
-    const { id, entityName, workflowId, result } = payload;
-
-    if (this.handles.has(workflowId)) {
-      this.handles.delete(workflowId);
-    }
-
-    // Find the relevant managed path configuration for this child
-    const config = Object.values(this.managedPaths).find((config) => config.entityName === entityName);
-    if (!config) {
-      this.log.warn(
-        `[${this.constructor.name}]:${this.entityName}:${this.id}: No managed path found for completed child workflow: ${entityName}`
-      );
-      return;
-    }
-
-    // Only emit if there are listeners
-    if (this.listenerCount(`child:${entityName}:completed`) > 0) {
-      await this.emit(`child:${entityName}:completed`, {
-        ...config,
-        workflowId,
-        id,
-        entityName,
-        result
-      });
-    }
-  }
-
-  /**
-   * Handles the completion of the workflow execution, signaling the parent if it exists.
-   *
-   * @protected
-   * @param {any} result - The final result of the workflow execution
-   * @returns {Promise<void>}
-   */
-  protected async handleCompletion(result: any): Promise<void> {
-    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}: Handling workflow completion`);
-
-    await workflow.CancellationScope.nonCancellable(async () => {
-      const parentWorkflowId = workflow.workflowInfo().parent?.workflowId;
-
-      if (parentWorkflowId) {
-        try {
-          const parentHandle = this.ancestorHandles.has(parentWorkflowId)
-            ? this.ancestorHandles.get(parentWorkflowId)!.handle
-            : workflow.getExternalWorkflowHandle(parentWorkflowId);
-
-          await parentHandle.signal('childCompleted', {
-            id: this.id,
-            entityName: this.entityName,
-            workflowId: workflow.workflowInfo().workflowId,
-            result
-          });
-        } catch (e) {
-          this.log.error(`Failed to signal parent workflow completion: ${e}`);
-        }
-      }
-    });
   }
 }
