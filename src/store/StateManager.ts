@@ -258,16 +258,18 @@ export class StateManager extends EventEmitter {
     this.dispatch(clearEntities(), true, this.instanceId);
   }
 
-  async emitAsync(event: string, ...args: any[]): Promise<boolean> {
+  /**
+   * Emit events asynchronously to the necessary listeners.
+   *
+   * @param event - The event to be emitted.
+   * @param args - Arguments to pass to the listeners.
+   */
+  protected async emitAsync(event: string, ...args: any[]): Promise<boolean> {
     const listeners = this.listeners(event);
 
-    // Execute all listeners sequentially, waiting for async ones
     for (const listener of listeners) {
       try {
-        const result: any = listener(...args);
-        if (result instanceof Promise) {
-          await result;
-        }
+        await Promise.resolve().then(() => listener(...args));
       } catch (error) {
         console.error(`Error in listener for event '${event}':`, error);
       }

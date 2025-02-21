@@ -1035,75 +1035,76 @@ export abstract class StatefulWorkflow<
 
     if (this.params?.startDelay) await workflow.sleep(this.params.startDelay);
 
-    const executeWorkflowLogic = async (resolve: (value: any) => void, reject: (reason?: any) => void) => {
-      try {
-        while (this.iteration <= this.maxIterations) {
-          if (this.pendingIteration) {
-            this.pendingIteration = false;
-          }
-
-          await workflow.condition(
-            () =>
-              (typeof (this as any).condition === 'function' && (this as any).condition()) ||
-              this.pendingIteration ||
-              this.pendingUpdate ||
-              !!this.pendingChanges.length ||
-              this.shouldContinueAsNew ||
-              this.status !== 'running',
-            // @ts-ignore
-            !this.conditionTimeout ? undefined : this.conditionTimeout
-          );
-          this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}:execute`);
-
-          if (this.status === 'paused') {
-            await this.emitAsync('paused');
-            await this.forwardSignalToChildren('pause');
-            await workflow.condition(() => this.status !== 'paused' || this.isInTerminalState());
-          }
-
-          if (this.status === 'cancelled') {
-            break;
-          }
-
-          if (this.shouldLoadData()) {
-            await this.loadDataAndEnqueue();
-          }
-          if (this.pendingUpdate) {
-            this.pendingUpdate = false;
-          }
-
-          if (!this.isInTerminalState()) {
-            this.result = await this.execute();
-          }
-
-          if (this.isInTerminalState()) {
-            return this.status !== 'errored' ? resolve(this.result || this.data) : reject(this.result);
-          }
-
-          if (
-            ++this.iteration >= this.maxIterations ||
-            workflow.workflowInfo().historyLength >= this.maxIterations ||
-            (workflow.workflowInfo().continueAsNewSuggested && workflow.workflowInfo().historySize >= 25000000) ||
-            this.shouldContinueAsNew
-          ) {
-            await this.handleMaxIterations();
-            break;
-          }
-
-          await this.upsertToMemo();
+    try {
+      while (this.iteration <= this.maxIterations) {
+        if (this.pendingIteration) {
+          this.pendingIteration = false;
         }
 
-        resolve(this.result ?? this.data);
-      } catch (err) {
-        if (err instanceof workflow.ContinueAsNew) {
-          reject(err);
-        } else {
-          await this.handleExecutionError(err, reject);
+        await workflow.condition(
+          () =>
+            (typeof (this as any).condition === 'function' && (this as any).condition()) ||
+            this.pendingIteration ||
+            this.pendingUpdate ||
+            !!this.pendingChanges.length ||
+            this.shouldContinueAsNew ||
+            this.status !== 'running',
+          // @ts-ignore
+          !this.conditionTimeout ? undefined : this.conditionTimeout
+        );
+        this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}:execute`);
+
+        if (this.status === 'paused') {
+          await this.emitAsync('paused');
+          await this.forwardSignalToChildren('pause');
+          await workflow.condition(() => this.status !== 'paused' || this.isInTerminalState());
         }
+
+        if (this.status === 'cancelled') {
+          break;
+        }
+
+        if (this.shouldLoadData()) {
+          await this.loadDataAndEnqueue();
+        }
+        if (this.pendingUpdate) {
+          this.pendingUpdate = false;
+        }
+
+        if (!this.isInTerminalState()) {
+          this.result = await this.execute();
+        }
+
+        if (this.isInTerminalState()) {
+          if (this.status !== 'errored') {
+            return this.result || this.data;
+          }
+          throw this.result;
+        }
+
+        if (
+          ++this.iteration >= this.maxIterations ||
+          workflow.workflowInfo().historyLength >= this.maxIterations ||
+          (workflow.workflowInfo().continueAsNewSuggested && workflow.workflowInfo().historySize >= 25000000) ||
+          this.shouldContinueAsNew
+        ) {
+          await this.handleMaxIterations();
+          break;
+        }
+
+        await this.upsertToMemo();
       }
-    };
 
-    return new Promise(executeWorkflowLogic);
+      return this.result ?? this.data;
+    } catch (err) {
+      if (err instanceof workflow.ContinueAsNew) {
+        throw err;
+      }
+      await this.handleExecutionError(err, (error) => {
+        throw error;
+      });
+      throw err;
+    }
   }
 
   /**
@@ -2295,29 +2296,36 @@ export abstract class StatefulWorkflow<
 
       const handle = await workflow.startChild(String(workflowType), startPayload);
       this.handles.set(workflowId, handle);
-      if (this.listenerCount(`child:${entityName}:started`) > 0)
-        await this.emitAsync(`child:${entityName}:started`, { ...config, workflowId, data, handle });
 
-      handle
-        .result()
-        .then(
-          async (result) => await this.emitAsync(`child:${entityName}:completed`, { ...config, workflowId, result })
-        )
+      if (this.listenerCount(`child:${entityName}:started`) > 0) {
+        await this.emitAsync(`child:${entityName}:started`, { ...config, workflowId, data, handle });
+      }
+
+      Promise.resolve()
+        .then(() => handle.result())
+        .then(async (result) => {
+          await this.emitAsync(`child:${entityName}:completed`, { ...config, workflowId, result });
+        })
         .catch(async (error) => {
           this.log.error(
             `[${this.constructor.name}]:${this.entityName}:${this.id} Child workflow error: ${error.message}\n${error.stack}`
           );
+
           if (workflow.isCancellation(error) && this.status !== 'cancelled') {
             this.log.info(
               `[${this.constructor.name}]:${this.entityName}:${this.id} Restarting child workflow due to cancellation.`
             );
-            try {
-              await this.startChildWorkflow(
-                config,
-                this.stateManager.query(String(entityName), compositeId, false),
-                this.state
-              );
-            } catch {}
+
+            // Wrap the restart attempt in Promise.resolve()
+            Promise.resolve()
+              .then(() =>
+                this.startChildWorkflow(config, this.stateManager.query(String(entityName), id, false), this.state)
+              )
+              .catch((retryError) => {
+                this.log.error(
+                  `[${this.constructor.name}]:${this.entityName}:${this.id} Retry failed: ${retryError.message}`
+                );
+              });
           } else {
             await this.emitAsync(`child:${entityName}:errored`, { ...config, workflowId, error });
           }
@@ -2755,7 +2763,8 @@ export abstract class StatefulWorkflow<
         handler.event.replace(/^state:/, ''),
         async (...args: any[]) => {
           if (typeof (this as any)[handler.method] === 'function') {
-            return await (this as any)[handler.method](...args);
+            // Use consistent Promise handling
+            await Promise.resolve().then(() => (this as any)[handler.method](...args));
           }
         }
       );

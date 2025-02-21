@@ -5,8 +5,10 @@ export function Debounce(ms: number): MethodDecorator {
 
   const executeOriginalMethod = async (originalMethod: Function, args: any[], context: any): Promise<any> => {
     return await CancellationScope.nonCancellable(async () => {
-      const result = originalMethod.apply(context, args);
-      return result instanceof Promise ? await result : result;
+      return await Promise.resolve().then(() => {
+        const result = originalMethod.apply(context, args);
+        return result instanceof Promise ? result : result;
+      });
     });
   };
 
@@ -34,7 +36,7 @@ export function Debounce(ms: number): MethodDecorator {
     const originalMethod = descriptor.value;
 
     descriptor.value = async function (...args: any[]) {
-      return await debounceMethod(originalMethod, args, this);
+      return await Promise.resolve().then(() => debounceMethod(originalMethod, args, this));
     };
   };
 }

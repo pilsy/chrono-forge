@@ -299,60 +299,62 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    * @returns {Promise<any>} Result of the workflow processing.
    */
   protected async executeWorkflow(...args: unknown[]): Promise<any> {
-    const executeWorkflowLogic = async (resolve: (value: any) => void, reject: (reason?: any) => void) => {
-      try {
-        while (this.iteration <= this.maxIterations) {
-          await workflow.condition(
-            () =>
-              (typeof (this as any).condition === 'function' && (this as any).condition()) ||
-              this.pendingIteration ||
-              this.pendingUpdate ||
-              this.status !== 'running',
-            // @ts-ignore
-            !this.conditionTimeout ? undefined : this.conditionTimeout
-          );
+    try {
+      while (this.iteration <= this.maxIterations) {
+        await workflow.condition(
+          () =>
+            (typeof (this as any).condition === 'function' && (this as any).condition()) ||
+            this.pendingIteration ||
+            this.pendingUpdate ||
+            this.status !== 'running',
+          // @ts-ignore
+          !this.conditionTimeout ? undefined : this.conditionTimeout
+        );
 
-          if (this.status === 'paused') {
-            await this.emitAsync('paused');
-            await this.forwardSignalToChildren('pause');
-            await workflow.condition(() => this.status !== 'paused');
-          }
-
-          if (this.status === 'cancelled') {
-            break;
-          } else {
-            this.result = await this.execute();
-          }
-
-          if (this.isInTerminalState()) {
-            return this.status !== 'errored' ? resolve(this.result) : reject(this.result);
-          }
-
-          if (
-            ++this.iteration >= this.maxIterations ||
-            (workflow.workflowInfo().continueAsNewSuggested && workflow.workflowInfo().historySize >= 41943040) ||
-            this.shouldContinueAsNew
-          ) {
-            await this.handleMaxIterations();
-            break;
-          }
-
-          if (this.pendingUpdate) {
-            this.pendingUpdate = false;
-          }
-
-          if (this.pendingIteration) {
-            this.pendingIteration = false;
-          }
+        if (this.status === 'paused') {
+          await this.emitAsync('paused');
+          await this.forwardSignalToChildren('pause');
+          await workflow.condition(() => this.status !== 'paused');
         }
 
-        resolve(this.result);
-      } catch (err) {
-        await this.handleExecutionError(err, reject);
-      }
-    };
+        if (this.status === 'cancelled') {
+          break;
+        } else {
+          this.result = await Promise.resolve().then(() => this.execute());
+        }
 
-    return new Promise(executeWorkflowLogic);
+        if (this.isInTerminalState()) {
+          if (this.status !== 'errored') {
+            return this.result;
+          }
+          throw this.result;
+        }
+
+        if (
+          ++this.iteration >= this.maxIterations ||
+          (workflow.workflowInfo().continueAsNewSuggested && workflow.workflowInfo().historySize >= 41943040) ||
+          this.shouldContinueAsNew
+        ) {
+          await this.handleMaxIterations();
+          break;
+        }
+
+        if (this.pendingUpdate) {
+          this.pendingUpdate = false;
+        }
+
+        if (this.pendingIteration) {
+          this.pendingIteration = false;
+        }
+      }
+
+      return this.result;
+    } catch (err) {
+      await this.handleExecutionError(err, (error) => {
+        throw error;
+      });
+      throw err;
+    }
   }
 
   /**
@@ -390,12 +392,14 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       await workflow.CancellationScope.nonCancellable(async () => {
         await Promise.all([
           workflow.condition(() => workflow.allHandlersFinished()),
-          ...Array.from(this.handles.values()).map(async (handle: workflow.ChildWorkflowHandle<any>) => {
-            try {
-              const extHandle = workflow.getExternalWorkflowHandle(handle.workflowId);
-              await extHandle.cancel();
-            } catch (e) {}
-          })
+          ...Array.from(this.handles.values()).map((handle: workflow.ChildWorkflowHandle<any>) =>
+            Promise.resolve().then(async () => {
+              try {
+                const extHandle = workflow.getExternalWorkflowHandle(handle.workflowId);
+                await extHandle.cancel();
+              } catch (e) {}
+            })
+          )
         ]);
         this.status = 'cancelled';
       });
@@ -419,13 +423,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   protected async emitAsync(event: string, ...args: any[]): Promise<boolean> {
     const listeners = this.listeners(event);
 
-    // Execute all listeners sequentially, waiting for async ones
     for (const listener of listeners) {
       try {
-        const result: any = listener(...args);
-        if (result instanceof Promise) {
-          await result;
-        }
+        await Promise.resolve().then(() => listener(...args));
       } catch (error) {
         console.error(`Error in listener for event '${event}':`, error);
       }
@@ -444,11 +444,12 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     try {
       if (typeof this.signalHandlers[signalName] === 'function') {
         // @ts-ignore
-        await this.signalHandlers[signalName](...args);
+        await Promise.resolve().then(() => this.signalHandlers[signalName](...args));
         await this.emitAsync(`signal:${signalName}`, ...args);
       }
     } catch (error: any) {
       this.log.error(error);
+      throw error;
     }
   }
 
@@ -460,15 +461,15 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    * @returns {Promise<any>} Result of the query execution.
    */
   protected async query(queryName: string, ...args: unknown[]): Promise<any> {
-    let result: any;
     try {
       if (typeof this.queryHandlers[queryName] === 'function') {
-        result = await this.queryHandlers[queryName](...args);
+        return await Promise.resolve().then(() => this.queryHandlers[queryName](...args));
       }
+      return undefined;
     } catch (error: any) {
       this.log.error(error);
+      throw error;
     }
-    return result;
   }
 
   /**
@@ -480,7 +481,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   protected async forwardSignalToChildren(signalName: string, ...args: unknown[]): Promise<void> {
     for (const handle of this.handles.values()) {
       try {
-        await handle.signal(signalName, ...args);
+        await Promise.resolve().then(() => handle.signal(signalName, ...args));
       } catch (error: any) {
         this.log.error(`Failed to forward signal '${signalName}' to child workflow:`, error);
       }
@@ -497,8 +498,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       this.on(handler.event, async (...args: any[]) => {
         const method = this[handler.method as keyof this];
         if (typeof method === 'function') {
-          const result = method.apply(this, args);
-          return result instanceof Promise ? result : Promise.resolve(result);
+          await Promise.resolve().then(() => method.apply(this, args));
         }
       });
     });
@@ -540,10 +540,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       for (const beforeHook of before) {
         if (typeof (this as any)[beforeHook] === 'function') {
           this.log.trace(`[HOOK]:before(${methodName})`);
-          const hookResult = (this as any)[beforeHook].call(this, ...args);
-          if (hookResult instanceof Promise) {
-            await hookResult;
-          }
+          await Promise.resolve().then(() => (this as any)[beforeHook].call(this, ...args));
         }
       }
 
@@ -551,8 +548,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       this.log.info(`[HOOK]:${methodName}.call()`);
       let result;
       try {
-        const methodResult = originalMethod.call(this, ...args);
-        result = methodResult instanceof Promise ? await methodResult : methodResult;
+        result = await Promise.resolve().then(() => originalMethod.call(this, ...args));
       } catch (err) {
         throw err instanceof Error ? err : new Error(String(err));
       }
@@ -561,10 +557,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       for (const afterHook of after) {
         if (typeof (this as any)[afterHook] === 'function') {
           this.log.trace(`[HOOK]:after(${methodName})`);
-          const hookResult = (this as any)[afterHook].call(this, ...args);
-          if (hookResult instanceof Promise) {
-            await hookResult;
-          }
+          await Promise.resolve().then(() => (this as any)[afterHook].call(this, ...args));
         }
       }
 
