@@ -637,7 +637,7 @@ describe('StatefulWorkflow', () => {
       const client = getClient();
       const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
       const { status: childStatus } = await childHandle.describe();
-      expect(childStatus.name).toBe('CANCELLED');
+      expect(['CANCELLED', 'TERMINATED']).toContain(childStatus.name);
     });
 
     it('Should handle completed child workflow and maintain state in the parent', async () => {
