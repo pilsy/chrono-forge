@@ -1032,7 +1032,6 @@ export abstract class StatefulWorkflow<
     this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.executeWorkflow`);
 
     if (this.schema) this.configureManagedPaths(this.schema);
-
     if (this.params?.startDelay) await workflow.sleep(this.params.startDelay);
 
     try {
@@ -1442,19 +1441,19 @@ export abstract class StatefulWorkflow<
     };
 
     const flattenedCurrentMemo: any = flatten({
-      status: memo?.status ?? this.status,
+      status: memo?.status,
       state: memo?.state ?? {},
       properties: memo?.properties ?? {}
     });
     const flattenedNewMemo = flatten({
       status: this.status,
       state: this.options?.saveStateToMemo ? this.state : {},
-      properties: this._memoProperties
+      properties: this._memoProperties ?? {}
     });
 
     const updatedMemo: Record<string, any> = {};
 
-    let hasChanges = false;
+    let hasChanges = isEmpty(memo);
     for (const [key, newValue] of Object.entries(flattenedNewMemo)) {
       const currentValue = flattenedCurrentMemo[key];
       if (!isEqual(newValue, currentValue)) {
@@ -1471,7 +1470,6 @@ export abstract class StatefulWorkflow<
 
     if (hasChanges) {
       this.log.info(`[StatefulWorkflow]: Saving state to memo: ${workflow.workflowInfo().workflowId}`);
-
       workflow.upsertMemo({
         ...updatedMemo,
         iteration: this.iteration,
@@ -2284,7 +2282,8 @@ export abstract class StatefulWorkflow<
             entityName,
             subscriptions,
             apiToken: this.apiToken,
-            ancestorWorkflowIds: [...this.ancestorWorkflowIds, workflow.workflowInfo().workflowId]
+            ancestorWorkflowIds: [...this.ancestorWorkflowIds, workflow.workflowInfo().workflowId],
+            startDelay
           }
         ],
         retry

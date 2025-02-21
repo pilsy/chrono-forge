@@ -435,44 +435,6 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   }
 
   /**
-   * Send a signal to the workflow.
-   *
-   * @param signalName - The name of the signal.
-   * @param args - The arguments associated with the signal.
-   */
-  protected async signal(signalName: string, ...args: unknown[]): Promise<void> {
-    try {
-      if (typeof this.signalHandlers[signalName] === 'function') {
-        // @ts-ignore
-        await Promise.resolve().then(() => this.signalHandlers[signalName](...args));
-        await this.emitAsync(`signal:${signalName}`, ...args);
-      }
-    } catch (error: any) {
-      this.log.error(error);
-      throw error;
-    }
-  }
-
-  /**
-   * Execute a query over the workflow.
-   *
-   * @param queryName - Name of the query.
-   * @param args - Arguments for the query.
-   * @returns {Promise<any>} Result of the query execution.
-   */
-  protected async query(queryName: string, ...args: unknown[]): Promise<any> {
-    try {
-      if (typeof this.queryHandlers[queryName] === 'function') {
-        return await Promise.resolve().then(() => this.queryHandlers[queryName](...args));
-      }
-      return undefined;
-    } catch (error: any) {
-      this.log.error(error);
-      throw error;
-    }
-  }
-
-  /**
    * Forward a signal to all child workflows.
    *
    * @param signalName - The name of the signal to be forwarded.
