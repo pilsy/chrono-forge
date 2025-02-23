@@ -2,7 +2,6 @@ import EventEmitter from 'eventemitter3';
 import { EntitiesState, EntityAction, reducer, updateEntity, clearEntities } from '../store/entities';
 import { DetailedDiff, detailedDiff } from 'deep-object-diff';
 import { isEmpty } from 'lodash';
-import { Mutex } from '../decorators';
 import { limitRecursion } from '../utils';
 
 export class StateManager extends EventEmitter {
@@ -75,7 +74,6 @@ export class StateManager extends EventEmitter {
     }
   }
 
-  @Mutex('stateManager')
   async processChanges(actions?: EntityAction[], origins = this.origins): Promise<void> {
     const pendingChanges = actions ?? this._queue;
     const previousState = this._state;
@@ -93,7 +91,7 @@ export class StateManager extends EventEmitter {
       if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
         this._state = newState;
         this.invalidateCache(differences);
-        this.emitStateChangeEvents(differences, previousState, newState, Array.from(origins));
+        await this.emitStateChangeEvents(differences, previousState, newState, Array.from(origins));
       }
     }
 

@@ -13,7 +13,6 @@ import { Tracer } from '@opentelemetry/api';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { Resource } from '@opentelemetry/resources';
 import { logger } from '../utils/logger';
-import schemas from './testSchemas';
 
 jest.setTimeout(60000);
 
@@ -43,7 +42,7 @@ logger.trace = (...args) => logger.verbose(...args);
 Runtime.install({
   telemetryOptions: {
     // metrics: { otel: { url: 'http://localhost:4317/v1/metrics' } },
-    logging: {}
+    // logging: {}
   },
   // @ts-ignore
   logger
@@ -73,7 +72,7 @@ export const setup = async () => {
         makeHTTPRequest: async () => '99'
       },
       workflowsPath: path.resolve(__dirname, './testWorkflows'),
-      debugMode: true,
+      // debugMode: true,
       sinks: {
         // @ts-ignore
         exporter: makeWorkflowExporter(exporter, resource)
@@ -81,7 +80,8 @@ export const setup = async () => {
       interceptors: {
         workflowModules: [require.resolve('./testWorkflows'), require.resolve('../workflows')],
         activityInbound: [(ctx) => new OpenTelemetryActivityInboundInterceptor(ctx)]
-      }
+      },
+      // workflowThreadPoolSize: 1
     })
   );
 
@@ -90,5 +90,6 @@ export const setup = async () => {
     global.worker.shutdown();
     await runPromise;
     await global.testEnv.teardown();
+    await Runtime._instance?.shutdown();
   };
 };

@@ -28,6 +28,6 @@ SchemaManager.parseYAML(`
     user: User
 `);
 
-const { schemas } = SchemaManager;
+export const { schemas } = SchemaManager;
 export const { User, Listing, Photo, Like } = schemas;
 export default schemas;

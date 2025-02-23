@@ -9,7 +9,7 @@ import {
   updateEntity,
   EntityAction
 } from '../store/entities';
-import { DetailedDiff } from 'deep-object-diff';
+import { detailedDiff, DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
 import { isEmpty, isEqual } from 'lodash';
 import { Workflow, TemporalOptions } from './Workflow';
@@ -1027,7 +1027,7 @@ export abstract class StatefulWorkflow<
    * This function logs relevant debug information, including entity details and current
    * execution states, making it suitable for tracing workflow progress through complex stages.
    */
-  @Mutex('executeWorkflow')
+  // @Mutex('executeWorkflow')
   protected async executeWorkflow(): Promise<any> {
     this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.executeWorkflow`);
 
@@ -1318,7 +1318,6 @@ export abstract class StatefulWorkflow<
    * Processes the current state of the entity, ensuring all pending changes are applied
    * when no actions are currently running.
    *
-   * @mutex 'processState'
    * @before 'execute'
    * @protected
    * @async
@@ -1330,9 +1329,10 @@ export abstract class StatefulWorkflow<
    * - Logs a debug message indicating the start of the state processing.
    * - If there are any pending changes, it triggers the `stateManager` to process these changes.
    */
-  @Mutex('processState')
   @Before('execute')
   protected async processState(): Promise<void> {
+    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.processState`);
+
     if (this.actionRunning) {
       this.log.trace(
         `[${this.constructor.name}]:${this.entityName}:${this.id}: Action is running, waiting for all changes to be made before processing...`
@@ -1340,7 +1340,13 @@ export abstract class StatefulWorkflow<
       await workflow.condition(() => !this.actionRunning);
     }
 
-    this.log.debug(`[${this.constructor.name}]:${this.entityName}:${this.id}.processState`);
+    if (this.stateManager.processing) {
+      this.log.trace(
+        `[${this.constructor.name}]:${this.entityName}:${this.id}: State manager is already processing, waiting for it to finish...`
+      );
+      await workflow.condition(() => !this.stateManager.processing);
+    }
+
     if (this.pendingChanges.length) {
       await this.stateManager.processChanges();
     }
@@ -1539,6 +1545,7 @@ export abstract class StatefulWorkflow<
             this.log.trace(
               `[${this.constructor.name}]:${this.entityName}:${this.id}.Sending ${signalName} to workflow: ${workflowId}, Subscription ID: ${subscriptionId}`
             );
+            this.log.trace(JSON.stringify({ updates, deletions }, null, 2));
 
             await handle.signal(signalName, {
               ...(signalName === 'update' ? { updates } : { deletions }),
@@ -2041,7 +2048,7 @@ export abstract class StatefulWorkflow<
 
     if (hasStateChanged || !existingHandle) {
       if (existingHandle && 'result' in existingHandle) {
-        await this.updateChildWorkflow(existingHandle, newItem, newState, config);
+        await this.updateChildWorkflow(existingHandle, previousItem, previousState, newItem, newState, config);
       } else if (!existingHandle && !isEmpty(differences)) {
         await this.startChildWorkflow(config, newItem, newState);
       }
@@ -2381,7 +2388,9 @@ export abstract class StatefulWorkflow<
    */
   protected async updateChildWorkflow(
     handle: workflow.ChildWorkflowHandle<any>,
-    state: any,
+    previousItem: any,
+    previousState: any,
+    newItem: any,
     newState: any,
     config: ManagedPath
   ): Promise<void> {
@@ -2396,16 +2405,9 @@ export abstract class StatefulWorkflow<
         return;
       }
 
-      const { [idAttribute as string]: id } = state;
-
-      // Only get the specific entity data needed for this child workflow
-      const rawData = limitRecursion(id, String(entityName), newState, this.stateManager);
-
-      const data =
-        typeof config.processData === 'function'
-          ? config.processData(rawData, limitRecursion(this.id, this.entityName, newState, this.stateManager))
-          : rawData;
-      const compositeId = Array.isArray(idAttribute) ? getCompositeKey(data, idAttribute) : id;
+      const { [idAttribute as string]: id } = newItem;
+      const rawData = limitRecursion(id, String(entityName), newState);
+      const compositeId = Array.isArray(idAttribute) ? getCompositeKey(rawData, idAttribute) : id;
       const workflowId = includeParentId ? `${entityName}-${compositeId}-${this.id}` : `${entityName}-${compositeId}`;
 
       if (this.ancestorWorkflowIds.includes(workflowId)) {
@@ -2427,22 +2429,70 @@ export abstract class StatefulWorkflow<
         }
       }
 
-      const updateSignalPayload: any = {
-        updates: normalizeEntities(data, SchemaManager.getInstance().getSchema(entityName as string)),
-        entityName: config.entityName,
-        strategy:
-          typeof this.options?.childUpdates?.strategy === 'string' ? this.options.childUpdates.strategy : '$merge',
-        sync: typeof this.options?.childUpdates?.sync === 'boolean' ? this.options.childUpdates.sync : false,
-        changeOrigin: workflow.workflowInfo().workflowId
-      };
+      const oldData = limitRecursion(id, String(entityName), previousState);
 
-      await handle.signal('update', updateSignalPayload);
+      const _oldState = normalizeEntities(oldData, SchemaManager.getInstance().getSchema(entityName as string));
+      const _newState = normalizeEntities(rawData, SchemaManager.getInstance().getSchema(entityName as string));
+
+      const differences = detailedDiff(_oldState, _newState);
+      const { updates, deletions } = this.extractChangesForSelector(differences, '*', _newState, _oldState);
+
+      if (!isEmpty(updates)) {
+        this.log.trace(
+          `[${this.constructor.name}]:${this.entityName}:${this.id}: Signaling update to child workflow: ${workflowId}`
+        );
+        const updateSignalPayload: any = {
+          updates: Object.entries(updates).reduce(
+            (acc, [entityName, entities]) => {
+              acc[entityName] = Object.entries(entities).reduce(
+                (entityAcc, [id, entity]) => {
+                  entityAcc[id] = { id, ...entity }; // Add id back into entity
+                  return entityAcc;
+                },
+                {} as Record<string, any>
+              );
+              return acc;
+            },
+            {} as Record<string, any>
+          ),
+          changeOrigin: workflow.workflowInfo().workflowId
+        };
+
+        if (
+          typeof this.options?.childUpdates?.strategy === 'string' &&
+          this.options.childUpdates.strategy !== '$merge'
+        ) {
+          updateSignalPayload.strategy = this.options.childUpdates.strategy;
+        }
+
+        if (typeof this.options?.childUpdates?.sync === 'boolean') {
+          updateSignalPayload.sync = this.options.childUpdates.sync;
+        }
+
+        await handle.signal('update', updateSignalPayload);
+      }
+
+      if (!isEmpty(deletions)) {
+        this.log.trace(
+          `[${this.constructor.name}]:${this.entityName}:${this.id}: Signaling delete to child workflow: ${workflowId}`
+        );
+        const deleteSignalPayload: any = {
+          deletions,
+          changeOrigin: workflow.workflowInfo().workflowId
+        };
+
+        if (typeof this.options?.childUpdates?.sync === 'boolean') {
+          deleteSignalPayload.sync = this.options.childUpdates.sync;
+        }
+
+        await handle.signal('delete', deleteSignalPayload);
+      }
 
       if (this.listenerCount(`child:${entityName}:updated`) > 0)
         await this.emitAsync(`child:${entityName}:updated`, {
           ...config,
           workflowId: handle.workflowId,
-          data,
+          data: rawData,
           changeOrigin: workflow.workflowInfo().workflowId
         });
     } catch (err) {
@@ -2799,11 +2849,9 @@ export abstract class StatefulWorkflow<
    * ```
    *
    * ## Notes
-   * - The `@Mutex('Action')` decorator is used to ensure that actions are not executed concurrently.
    * - The function is designed for environments where actions are stateful processes synchronized with workflow lifecycles.
    * - Proper error management is critical for ensuring workflow stability, hence meticulous error logging and control flows.
    */
-  @Mutex('Action')
   protected async runAction(methodName: keyof StatefulWorkflow<any, any>, input: any): Promise<any> {
     this.actionRunning = true;
     let result: any;

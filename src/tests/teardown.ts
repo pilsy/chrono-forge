@@ -8,12 +8,12 @@ export const teardown = async () => {
   // // await getExporter('temporal_worker')?.forceFlush();
   // await global.shutdown();
   // try {
-  //   global.workflowCoverage.mergeIntoGlobalCoverage();
+  // global.workflowCoverage.mergeIntoGlobalCoverage();
   // } catch (error) {
   //   // console.error(error);
   // }
   // jest.clearAllTimers();
-  Runtime.instance().shutdown();
+  // Runtime.instance().shutdown();
   process.removeAllListeners();
 };
 

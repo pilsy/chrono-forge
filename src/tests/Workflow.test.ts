@@ -30,6 +30,11 @@ describe('Workflow', () => {
       });
   });
 
+  afterAll(() => {
+    // @ts-ignore
+    global.workflowCoverage.mergeIntoGlobalCoverage();
+  });
+
   describe('SignalWithStart', () => {
     it('Should call the execute() method with provided arguments', async () => {
       const args = [];

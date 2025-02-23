@@ -1,9 +1,6 @@
-import { Temporal } from '../../workflows';
-import { ManagedPaths, StatefulWorkflow } from '../../workflows/StatefulWorkflow';
-import { User, Listing } from '../testSchemas';
-import { trace } from '@opentelemetry/api';
-import { condition, sleep, workflowInfo } from '@temporalio/workflow';
-import { Action, Debounce, On, Property, Signal } from '../../decorators';
+import { Temporal, StatefulWorkflow, ManagedPaths, Action, Debounce, Property, Signal } from '../..';
+import { workflowInfo } from '@temporalio/workflow';
+import { schemas } from '../testSchemas';
 
 export type TestAction = {
   actionId: string;
@@ -14,7 +11,8 @@ export type TestAction = {
 };
 
 @Temporal({
-  schema: User,
+  schemaName: "User",
+  schemas,
   saveStateToMemo: true
 })
 export class ShouldExecuteStateful extends StatefulWorkflow {

@@ -1,5 +1,6 @@
 {
   "configurations": [
+
     {
       "presentation": {
         "hidden": false,
@@ -12,12 +13,6 @@
       "cwd": "${workspaceFolder}",
       "command": "npm run start",
       "envFile": "${workspaceFolder}/.env"
-    }
-  ],
-  "compounds": [
-    {
-      "name": "Workflow",
-      "configurations": ["Workflow"]
     }
   ]
 }
