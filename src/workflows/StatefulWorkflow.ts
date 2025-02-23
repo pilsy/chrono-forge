@@ -258,10 +258,17 @@ export type StatefulWorkflowOptions = {
   saveStateToMemo?: boolean;
   apiUrl?: string;
   workflowType?: string;
-  childUpdatesSync?: boolean;
   childUpdates?: {
-    sync?: boolean;
-    strategy?: '$set' | '$merge';
+    update?: {
+      enabled?: boolean;
+      sync?: boolean;
+      strategy?: '$set' | '$merge';
+    };
+    delete?: {
+      enabled?: boolean;
+      sync?: boolean;
+      strategy?: '$set' | '$merge';
+    };
   };
 };
 
@@ -1417,9 +1424,18 @@ export abstract class StatefulWorkflow<
       }
 
       await this.processChildState(newState, differences, previousState || {}, changeOrigins);
-      if (this.iteration !== 0 || this.pendingUpdate) {
-        await this.processSubscriptions(newState, differences, previousState || {}, changeOrigins);
-      }
+      await this.processSubscriptions(
+        newState,
+        differences,
+        this.iteration !== 0
+          ? previousState || {}
+          : this.params.state
+            ? this.params.state
+            : this.params.data
+              ? normalizeEntities(this.params.data, this.schema)
+              : {},
+        changeOrigins
+      );
 
       this.pendingIteration = true;
     }
@@ -2423,6 +2439,16 @@ export abstract class StatefulWorkflow<
         return;
       }
 
+      const updateConfig = this.options.childUpdates?.update || {};
+      const deleteConfig = this.options.childUpdates?.delete || { enabled: false };
+
+      if (updateConfig.enabled === false && deleteConfig.enabled === false) {
+        this.log.debug(
+          `[${this.constructor.name}]:${this.entityName}:${this.id} Child updates are disabled for workflowId: ${workflowId}. Skipping child workflow update.`
+        );
+        return;
+      }
+
       if (typeof config.condition === 'function') {
         this.log.trace(
           `[${this.constructor.name}]:${this.entityName}:${this.id}: Calling condition function before starting child...`
@@ -2443,7 +2469,7 @@ export abstract class StatefulWorkflow<
       const differences = detailedDiff(_oldState, _newState);
       const { updates, deletions } = this.extractChangesForSelector(differences, '*', _newState, _oldState);
 
-      if (!isEmpty(updates)) {
+      if (!isEmpty(updates) && (updateConfig.enabled || updateConfig.enabled === undefined)) {
         this.log.trace(
           `[${this.constructor.name}]:${this.entityName}:${this.id}: Signaling update to child workflow: ${workflowId}`
         );
@@ -2464,21 +2490,17 @@ export abstract class StatefulWorkflow<
           changeOrigin: workflow.workflowInfo().workflowId
         };
 
-        if (
-          typeof this.options?.childUpdates?.strategy === 'string' &&
-          this.options.childUpdates.strategy !== '$merge'
-        ) {
-          updateSignalPayload.strategy = this.options.childUpdates.strategy;
+        if (typeof updateConfig.strategy === 'string' && updateConfig.strategy !== '$merge') {
+          updateSignalPayload.strategy = updateConfig.strategy;
         }
-
-        if (typeof this.options?.childUpdates?.sync === 'boolean') {
-          updateSignalPayload.sync = this.options.childUpdates.sync;
+        if (typeof updateConfig.sync === 'boolean') {
+          updateSignalPayload.sync = updateConfig.sync;
         }
 
         await handle.signal('update', updateSignalPayload);
       }
 
-      if (!isEmpty(deletions)) {
+      if (!isEmpty(deletions) && (deleteConfig.enabled || deleteConfig.enabled === undefined)) {
         this.log.trace(
           `[${this.constructor.name}]:${this.entityName}:${this.id}: Signaling delete to child workflow: ${workflowId}`
         );
@@ -2487,8 +2509,8 @@ export abstract class StatefulWorkflow<
           changeOrigin: workflow.workflowInfo().workflowId
         };
 
-        if (typeof this.options?.childUpdates?.sync === 'boolean') {
-          deleteSignalPayload.sync = this.options.childUpdates.sync;
+        if (typeof deleteConfig.sync === 'boolean') {
+          deleteSignalPayload.sync = deleteConfig.sync;
         }
 
         await handle.signal('delete', deleteSignalPayload);
