@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc --build",
     "build.watch": "tsc --build --watch",
-    "test": "jest",
+    "test": "jest --forceExit",
     "test:debug": "node --inspect-brk ./node_modules/.bin/jest --runInBand",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
