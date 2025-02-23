@@ -686,14 +686,14 @@ describe('StatefulWorkflow', () => {
     it('Should handle rapid succession of updates correctly', async () => {
       const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Listing' }] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
-      await sleep();
+      await sleep(5000);
 
       for (let i = 0; i < 5; i++) {
         data.listings[0].name = `Update-${i}`;
         await handle.signal('update', { data, entityName: 'User' });
       }
 
-      await sleep(10000);
+      await sleep(5000);
 
       const finalState = await handle.query('state');
       expect(finalState).toEqual(normalizeEntities(data, SchemaManager.getInstance().getSchema('User')));
