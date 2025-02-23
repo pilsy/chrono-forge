@@ -2323,7 +2323,7 @@ export abstract class StatefulWorkflow<
             `[${this.constructor.name}]:${this.entityName}:${this.id} Child workflow error: ${error.message}\n${error.stack}`
           );
 
-          if (workflow.isCancellation(error) && this.status !== 'cancelled') {
+          if (workflow.isCancellation(error) && this.status !== 'cancelled' && this.status !== 'cancelling') {
             this.log.info(
               `[${this.constructor.name}]:${this.entityName}:${this.id} Restarting child workflow due to cancellation.`
             );

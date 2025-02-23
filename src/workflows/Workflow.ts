@@ -390,6 +390,8 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       this.log.debug(`[Workflow]:${this.constructor.name}: Cancelling...`);
 
       await workflow.CancellationScope.nonCancellable(async () => {
+        this.status = 'cancelling';
+
         await Promise.all([
           workflow.condition(() => workflow.allHandlersFinished()),
           ...Array.from(this.handles.values()).map((handle: workflow.ChildWorkflowHandle<any>) =>
