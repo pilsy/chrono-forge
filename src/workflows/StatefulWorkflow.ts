@@ -24,7 +24,6 @@ import {
   ActionOptions,
   On,
   After,
-  Mutex,
   EVENTS_METADATA_KEY
 } from '../decorators';
 import { SchemaManager } from '../store/SchemaManager';
@@ -1005,7 +1004,6 @@ export abstract class StatefulWorkflow<
    * Executes the workflow in a controlled and synchronized manner, ensuring thread safety
    * by using a mutex on the 'executeWorkflow' function.
    *
-   * @mutex 'executeWorkflow'
    * @protected
    * @async
    * @returns {Promise<any>} Resolves with the result of the workflow execution, or with any
@@ -1027,7 +1025,6 @@ export abstract class StatefulWorkflow<
    * This function logs relevant debug information, including entity details and current
    * execution states, making it suitable for tracing workflow progress through complex stages.
    */
-  // @Mutex('executeWorkflow')
   protected async executeWorkflow(): Promise<any> {
     this.log.trace(`[${this.constructor.name}]:${this.entityName}:${this.id}.executeWorkflow`);
 

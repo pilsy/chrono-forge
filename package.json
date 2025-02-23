@@ -150,7 +150,6 @@
   "jest": {
     "preset": "ts-jest",
     "testEnvironment": "node",
-    "globalTeardown": "./src/tests/teardown.ts",
     "setupFiles": [],
     "setupFilesAfterEnv": [
       "./src/tests/jest.setup.ts"
@@ -159,7 +158,7 @@
       "**/*.test.ts"
     ],
     "clearMocks": true,
-    "collectCoverage": true,
+    "collectCoverage": false,
     "coverageDirectory": "coverage",
     "coveragePathIgnorePatterns": [],
     "coverageProvider": "babel"

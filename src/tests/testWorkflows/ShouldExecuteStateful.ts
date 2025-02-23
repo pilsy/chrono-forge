@@ -11,7 +11,7 @@ export type TestAction = {
 };
 
 @Temporal({
-  schemaName: "User",
+  schemaName: 'User',
   schemas,
   saveStateToMemo: true
 })
@@ -63,7 +63,6 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
   public async incrementNumberTest() {
     console.log('incrementNumberTest');
     for (let i = 0; i < 10; i++) {
-      // await sleep(10);
       await this.debounceTest();
     }
   }
@@ -82,30 +81,5 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
 
   async execute(params: any) {
     console.log('execute', this.state);
-    // console.log(this.listings);
-    // // if (this.listings.length < 3) {
-    // //   this.listings.push({
-    // //     id: 'fake',
-    // //     user: this.id,
-    // //     test: true
-    // //   });
-    // // }
-    // if (this.listings.length === 2) {
-    //   this.listings.pop();
-    // }
   }
-
-  // @On('updated')
-  // async onUpdated(update: Record<string, any>, newState: Record<string, any>, previousState: Record<string, any>) {
-  //   this.log.info(JSON.stringify(update));
-  //   this.log.debug(JSON.stringify(newState));
-  //   this.log.debug(JSON.stringify(previousState));
-  // }
-
-  // @On('created')
-  // async onCreated(created: Record<string, any>, newState: Record<string, any>, previousState: Record<string, any>) {
-  //   this.log.info(JSON.stringify(created));
-  //   this.log.debug(JSON.stringify(newState));
-  //   this.log.debug(JSON.stringify(previousState));
-  // }
 }
