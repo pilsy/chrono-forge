@@ -1063,12 +1063,13 @@ export abstract class StatefulWorkflow<
         if (this.shouldLoadData()) {
           await this.loadDataAndEnqueue();
         }
-        if (this.pendingUpdate) {
-          this.pendingUpdate = false;
-        }
 
         if (!this.isInTerminalState()) {
           this.result = await this.execute();
+        }
+
+        if (this.pendingUpdate) {
+          this.pendingUpdate = false;
         }
 
         if (this.isInTerminalState()) {
