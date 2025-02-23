@@ -23,12 +23,13 @@ export const limitRecursion: Function = (
   }
   visited.set(entityKey, depth);
 
+  const cacheKey = `${entityName}::${entityId}`;
+
   // Check StateManager cache if available
   if (proxy instanceof StateManager) {
-    const cacheKey = `${entityName}.${entityId}`;
     const cachedEntry = proxy.cache.get(cacheKey);
-    if (cachedEntry && cachedEntry.lastState === entities) {
-      return cachedEntry.data;
+    if (cachedEntry) {
+      return cachedEntry;
     }
   }
 
@@ -62,8 +63,7 @@ export const limitRecursion: Function = (
 
   // Cache the result in StateManager if available
   if (proxy instanceof StateManager) {
-    const cacheKey = `${entityName}.${entityId}`;
-    proxy.cache.set(cacheKey, { data: result, lastState: entities });
+    proxy.cache.set(cacheKey, result);
   }
 
   return result;

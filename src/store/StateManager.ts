@@ -4,6 +4,11 @@ import { DetailedDiff, detailedDiff } from 'deep-object-diff';
 import { isEmpty } from 'lodash';
 import { limitRecursion } from '../utils';
 
+export type QueueItem = {
+  action: EntityAction;
+  origin?: string;
+};
+
 export class StateManager extends EventEmitter {
   get instanceId() {
     return this._instanceId;
@@ -54,36 +59,38 @@ export class StateManager extends EventEmitter {
     }
   }
 
-  public readonly cache: Map<string, { data: any; lastState: EntitiesState }> = new Map();
-  private readonly _queue: EntityAction[] = [];
+  public readonly cache: Map<string, Record<string, any>> = new Map();
+  private readonly proxyCache: Map<string, { data: any; lastState: EntitiesState }> = new Map();
+  private readonly _queue: QueueItem[] = [];
   get queue() {
     return this._queue;
   }
-  private readonly origins: Set<string> = new Set();
 
-  async dispatch(action: EntityAction, sync = true, origin: string | null = null): Promise<void> {
-    const origins: Set<string> = sync ? new Set() : this.origins;
-    if (origin) {
-      origins.add(origin);
-    }
-
+  async dispatch(action: EntityAction, sync = true, origin?: string): Promise<void> {
     if (sync) {
-      await this.processChanges([action], origins);
+      await this.processChanges([{ action, origin }]);
     } else {
-      this._queue.push(action);
+      this._queue.push({ action, origin });
     }
   }
 
-  async processChanges(actions?: EntityAction[], origins = this.origins): Promise<void> {
-    const pendingChanges = actions ?? this._queue;
+  async processChanges(items?: QueueItem[]): Promise<void> {
+    const origins: Set<string> = new Set();
+    const pendingChanges = items ?? this._queue;
     const previousState = this._state;
 
     this._processing = true;
-    let newState;
 
-    while (pendingChanges.length > 0) {
-      const change = pendingChanges.shift();
-      newState = reducer(newState || this._state, change as EntityAction);
+    let newState;
+    let itemsProcessed = 0;
+
+    while (pendingChanges.length > 0 && itemsProcessed < 10) {
+      const { action, origin }: QueueItem = pendingChanges.shift() as QueueItem;
+      newState = reducer(newState || this._state, action);
+      if (origin) {
+        origins.add(origin);
+      }
+      itemsProcessed++;
     }
 
     if (newState && newState !== this._state) {
@@ -95,7 +102,6 @@ export class StateManager extends EventEmitter {
       }
     }
 
-    origins.clear();
     this._processing = false;
   }
 
@@ -160,15 +166,15 @@ export class StateManager extends EventEmitter {
       return null;
     }
 
-    const cacheKey = `${entityName}.${id}`;
+    const cacheKey = `${entityName}::${id}`;
 
-    if (this.cache.has(cacheKey)) {
-      const cachedEntry = this.cache.get(cacheKey)!;
+    if (this.proxyCache.has(cacheKey)) {
+      const cachedEntry = this.proxyCache.get(cacheKey)!;
       if (cachedEntry.lastState === this._state) {
         return cachedEntry.data;
       } else {
         console.log(`[StateManager]: Cache invalidated for ${cacheKey} due to state change`);
-        this.cache.delete(cacheKey);
+        this.proxyCache.delete(cacheKey);
       }
     }
 
@@ -204,7 +210,7 @@ export class StateManager extends EventEmitter {
         }
       };
       result = new Proxy(denormalized, handler);
-      this.cache.set(cacheKey, { data: result, lastState: this._state });
+      this.proxyCache.set(cacheKey, { data: result, lastState: this._state });
     } else {
       result = entity;
     }
@@ -242,7 +248,7 @@ export class StateManager extends EventEmitter {
   }
 
   private deleteCache(entityName: string, entityId: string) {
-    const cacheKey = `${entityName}.${entityId}`;
+    const cacheKey = `${entityName}::${entityId}`;
     this.cache.delete(cacheKey);
   }
 

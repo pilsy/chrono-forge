@@ -1072,6 +1072,14 @@ export abstract class StatefulWorkflow<
           this.pendingUpdate = false;
         }
 
+        if (this.pendingChanges.length) {
+          this.log.warn(
+            `[${this.constructor.name}]:${this.entityName}:${this.id}: Pending changes after processing: ${this.pendingChanges.length}`
+          );
+          await workflow.sleep(2500);
+          continue;
+        }
+
         if (this.isInTerminalState()) {
           if (this.status !== 'errored') {
             return this.result || this.data;
