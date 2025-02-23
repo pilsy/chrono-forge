@@ -438,12 +438,12 @@ describe('StatefulWorkflow', () => {
       };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
 
-      await sleep();
+      await sleep(2500);
 
       data.listings[1].name = 'Updated Listing Two';
       await handle.signal('update', { data, entityName: 'User' });
 
-      await sleep();
+      await sleep(2500);
 
       const updatedState = await handle.query('state');
       expect(updatedState).toEqual(normalizeEntities(data, SchemaManager.getInstance().getSchema('User')));
@@ -693,7 +693,7 @@ describe('StatefulWorkflow', () => {
         await handle.signal('update', { data, entityName: 'User' });
       }
 
-      await sleep();
+      await sleep(2500);
 
       const finalState = await handle.query('state');
       expect(finalState).toEqual(normalizeEntities(data, SchemaManager.getInstance().getSchema('User')));
