@@ -145,7 +145,7 @@ describe('StatefulWorkflow', () => {
       const data = { id: uuid4() };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
       const expectedInitial = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
-      await sleep();
+      await sleep(2500);
 
       // Initial state verification
       const state = await handle.query('state');
@@ -160,7 +160,7 @@ describe('StatefulWorkflow', () => {
       const expectedUpdated = normalizeEntities(updatedData, SchemaManager.getInstance().getSchema('User'));
 
       await handle.signal('update', { data: updatedData, entityName: 'User' });
-      await sleep();
+      await sleep(2500);
 
       const updatedState = await handle.query('state');
       expect(updatedState).toEqual(expectedUpdated);
@@ -261,11 +261,11 @@ describe('StatefulWorkflow', () => {
         ]
       };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
-      await sleep();
+      await sleep(2500);
 
       const batchUpdate = { listings: data.listings.map((listing) => ({ ...listing, updated: 'batch' })) };
       await handle.signal('update', { data: { ...data, ...batchUpdate }, entityName: 'User' });
-      await sleep();
+      await sleep(2500);
 
       const stateAfterBatchUpdate = await handle.query('state');
       data.listings.forEach((listing) => {
@@ -378,7 +378,7 @@ describe('StatefulWorkflow', () => {
 
       // Ensure the parent User workflow is initialized with the correct normalized state
       const expectedInitialState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
-      await sleep();
+      await sleep(2500);
 
       const state = await handle.query('state');
       expect(state).toEqual(expectedInitialState);
@@ -389,7 +389,6 @@ describe('StatefulWorkflow', () => {
 
       // Ensure each child Listing workflow is initialized with the correct normalized state
       for (const [index, childHandle] of childHandles.entries()) {
-        await sleep();
         const listingState = await childHandle.query('state');
         expect(listingState.Listing).toEqual({
           [listingIds[index]]: { id: listingIds[index], name: `Listing ${listingIds[index]}` }
@@ -397,13 +396,9 @@ describe('StatefulWorkflow', () => {
       }
 
       // Update one of the listings in the User parent workflow
-      const updatedListingData = { id: listingIds[0], name: 'Updated Listing Name' };
-      const updatedData = {
-        ...data,
-        listings: [{ ...updatedListingData }, ...data.listings.slice(1)]
-      };
-      await handle.signal('update', { data: updatedData, entityName: 'User' });
-      await sleep();
+      data.listings[0].name = 'Updated Listing Name';
+      await handle.signal('update', { data, entityName: 'User' });
+      await sleep(2500);
 
       // Verify that the state in the User parent workflow is updated correctly
       const updatedState = await handle.query('state');
@@ -414,14 +409,13 @@ describe('StatefulWorkflow', () => {
       expect(updatedChildState.Listing[listingIds[0]].name).toEqual('Updated Listing Name');
 
       // Update another listing directly in the child workflow and check propagation back to the parent
-      await sleep();
       const newDirectUpdate = { id: listingIds[1], name: 'Direct Child Update' };
       await childHandles[1].signal('update', {
         data: newDirectUpdate,
         entityName: 'Listing',
         strategy: '$merge'
       });
-      await sleep();
+      await sleep(2500);
 
       // Verify the parent was updated!
       const parentUpdatedState = await handle.query('state');
@@ -617,7 +611,7 @@ describe('StatefulWorkflow', () => {
     it('Should cancel children upon parent cancellation', async () => {
       const data = { id: uuid4(), listings: [{ id: uuid4(), name: 'Test Listing' }] };
       const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
-      await sleep();
+      await sleep(2500);
 
       expect(await handle.query('data')).toEqual(data);
       await handle.cancel();
@@ -627,6 +621,46 @@ describe('StatefulWorkflow', () => {
       const childHandle = await client.workflow.getHandle(`Listing-${data.listings[0].id}`);
       const { status: childStatus } = await childHandle.describe();
       expect(['CANCELLED', 'TERMINATED']).toContain(childStatus.name);
+    });
+
+    it('should cancel child workflow when parent updated and child is no longer referenced using data signal', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const listingData = {
+        id: listingId,
+        name: 'Initial Listing'
+      };
+      const data = {
+        id: userId,
+        listings: [listingData]
+      };
+
+      // Start parent workflow with initial data
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: userId,
+        entityName: 'User',
+        data
+      });
+      await sleep(2500);
+
+      // Verify child workflow exists
+      const client = getClient();
+      const childHandle = await client.workflow.getHandle(`Listing-${listingId}`);
+      const { status: initialStatus } = await childHandle.describe();
+      expect(initialStatus.name).toBe('RUNNING');
+
+      // Update parent data to remove the listing
+      data.listings = [];
+      await handle.signal('data', data);
+      await sleep(2500);
+
+      // Verify child workflow is canceled
+      const { status: finalStatus } = await childHandle.describe();
+      expect(['CANCELLED', 'TERMINATED']).toContain(finalStatus.name);
+
+      // Verify parent state no longer contains the listing
+      const parentState = await handle.query('state');
+      expect(parentState.Listing).not.toHaveProperty(listingId);
     });
 
     it('Should handle completed child workflow and maintain state in the parent', async () => {
@@ -855,6 +889,113 @@ describe('StatefulWorkflow', () => {
 
       const compositeKey = getCompositeKey(entity, idAttributes);
       expect(compositeKey).toBe('');
+    });
+  });
+
+  describe('Data Proxy Functionality', () => {
+    it('Should handle data proxy getter and setter correctly', async () => {
+      const userId = uuid4();
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: userId,
+        entityName: 'User',
+        data: { id: userId, someProp: 'initial value' }
+      });
+      await sleep();
+
+      // Test getting value through proxy
+      const initialValue = await handle.query('getDataProxyValue');
+      expect(initialValue).toEqual('initial value');
+
+      // Test setting value through proxy
+      const testValue = 'test value';
+      await handle.signal('setDataProxyValue', testValue);
+      await sleep();
+
+      // Test getting value through proxy
+      const retrievedValue = await handle.query('getDataProxyValue');
+      expect(retrievedValue).toEqual(testValue);
+
+      // Verify state is updated correctly
+      const state = await handle.query('state');
+      expect(state.User[userId].someProp).toEqual(testValue);
+    });
+
+    it('Should handle nested entity getter and setter correctly', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const initialData = {
+        id: userId,
+        listings: [{ id: listingId, name: 'Initial Listing Name' }]
+      };
+
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: userId,
+        entityName: 'User',
+        data: initialData
+      });
+      await sleep();
+
+      // Test getting nested value through proxy
+      const initialName = await handle.query('getNestedListingName', listingId);
+      expect(initialName).toEqual('Initial Listing Name');
+
+      // Test setting nested value through proxy
+      const newName = 'Updated Listing Name';
+      await handle.signal('updateNestedListingName', { listingId, newName });
+      await sleep();
+
+      // Test getting updated nested value
+      const updatedName = await handle.query('getNestedListingName', listingId);
+      expect(updatedName).toEqual(newName);
+
+      // Verify state is updated correctly
+      const state = await handle.query('state');
+      expect(state.Listing[listingId].name).toEqual(newName);
+    });
+
+    it('Should handle deleting a listing from nested array through data proxy', async () => {
+      const userId = uuid4();
+      const listingId1 = uuid4();
+      const listingId2 = uuid4();
+      const initialData = {
+        id: userId,
+        listings: [
+          { id: listingId1, name: 'Listing One' },
+          { id: listingId2, name: 'Listing Two' }
+        ]
+      };
+
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: userId,
+        entityName: 'User',
+        data: initialData
+      });
+      await sleep(2500);
+
+      // Verify initial state
+      const initialState = await handle.query('state');
+      expect(initialState.Listing).toHaveProperty(listingId1);
+      expect(initialState.Listing).toHaveProperty(listingId2);
+
+      // Delete listing through proxy
+      await handle.signal('deleteListing', { listingId: listingId1 });
+      await sleep(2500);
+
+      // Verify listing was removed
+      const updatedState = await handle.query('state');
+      expect(updatedState.Listing).not.toHaveProperty(listingId1);
+      expect(updatedState.Listing).toHaveProperty(listingId2);
+
+      // Verify parent workflow's listings array was updated
+      const parentListings = await handle.query('data');
+      expect(parentListings.listings).toHaveLength(1);
+      expect(parentListings.listings[0].id).toEqual(listingId2);
+
+      // Verify relationships were properly invalidated
+      const client = getClient();
+      const childHandle = await client.workflow.getHandle(`Listing-${listingId1}`);
+      const { status } = await childHandle.describe();
+      expect(['CANCELLED', 'TERMINATED']).toContain(status.name);
     });
   });
 });

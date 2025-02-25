@@ -58,7 +58,8 @@ export function Conditional(condition: (...args: any[]) => boolean | Promise<boo
         if (shouldExecute) {
           return await originalMethod.apply(this, args);
         } else {
-          console.log(`Conditional: Skipping ${String(propertyKey)} as condition not met.`);
+          // @ts-ignore
+          this.log.info(`Conditional: Skipping ${String(propertyKey)} as condition not met.`);
         }
       } catch (error) {
         console.error(`Error executing condition for ${String(propertyKey)}:`, error);

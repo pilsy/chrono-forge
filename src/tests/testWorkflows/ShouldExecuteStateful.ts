@@ -1,4 +1,4 @@
-import { Temporal, StatefulWorkflow, ManagedPaths, Action, Debounce, Property, Signal } from '../..';
+import { Temporal, StatefulWorkflow, ManagedPaths, Action, Debounce, Property, Signal, Query } from '../..';
 import { workflowInfo } from '@temporalio/workflow';
 import { schemas } from '../testSchemas';
 
@@ -44,7 +44,7 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
   protected fromUpdate!: string;
 
   @Property({ path: 'listings' })
-  protected listings: any;
+  protected listings!: any[];
 
   @Action<TestAction, void>()
   protected async testAction(action: TestAction): Promise<void> {
@@ -77,6 +77,42 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
     const rid = JSON.stringify(workflowInfo().firstExecutionRunId ?? undefined);
     this.log.info(`firstExecutionRunId=${rid}`);
     return rid;
+  }
+
+  @Query()
+  public getDataProxyValue() {
+    // @ts-ignore
+    return this.data?.someProp;
+  }
+
+  @Signal()
+  public async setDataProxyValue(value: string) {
+    // @ts-ignore
+    this.data.someProp = value;
+  }
+
+  @Query()
+  public getNestedListingName(listingId: string) {
+    // @ts-ignore
+    return this.data?.listings?.find((listing) => listing.id === listingId)?.name;
+  }
+
+  @Signal()
+  public async updateNestedListingName({ listingId, newName }: { listingId: string; newName: string }) {
+    // @ts-ignore
+    const listing = this.data?.listings?.find((listing) => listing.id === listingId);
+    if (listing) {
+      listing.name = newName;
+    }
+  }
+
+  @Signal()
+  public async deleteListing({ listingId }: { listingId: string }) {
+    // @ts-ignore
+    if (this.data?.listings) {
+      // @ts-ignore
+      this.data.listings = this.data.listings.filter((listing) => listing.id !== listingId);
+    }
   }
 
   async execute(params: any) {

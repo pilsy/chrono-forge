@@ -5,14 +5,25 @@ import { SchemaManager } from '../store/SchemaManager';
 // Types
 export type EntitiesState = Record<string, Record<string, any>>;
 
+export type EntityStrategy =
+  | '$set'
+  | '$merge'
+  | '$unset'
+  | '$push'
+  | '$unshift'
+  | '$splice'
+  | '$apply'
+  | '$toggle'
+  | '$add'
+  | '$remove';
+
 export type EntityAction = {
   type: string;
   entity?: Record<string, any>;
   entities?: Record<string, any>;
   entityId?: string;
   entityName?: string;
-  updates?: Record<string, any>; // Add this line
-  strategy?: '$set' | '$merge' | '$unset' | '$push' | '$unshift' | '$splice' | '$apply';
+  strategy?: EntityStrategy;
   value?: any; // This if any extra value for a specific update operation
 };
 
@@ -53,7 +64,7 @@ export const updateEntities = (entities: any[], entityName: string): EntityActio
 
 export const updateNormalizedEntities = (
   entities: Record<string, unknown>,
-  strategy: '$set' | '$merge' = '$merge'
+  strategy: EntityStrategy = '$merge'
 ): EntityAction => ({
   type: UPDATE_ENTITIES,
   entities,
@@ -63,12 +74,14 @@ export const updateNormalizedEntities = (
 export const updatePartialEntity = (
   entityName: string,
   entityId: string,
-  updates: Record<string, { [key: string]: any }>
+  entities: Record<string, { [key: string]: any }>,
+  strategy: EntityStrategy = '$merge'
 ): EntityAction => ({
   type: PARTIAL_UPDATE,
   entityName,
   entityId,
-  entities: updates
+  entities,
+  strategy
 });
 
 export const deleteEntity = (entityId: string, entityName: string): EntityAction => ({
@@ -120,7 +133,7 @@ export const createUpdateStatement = (state: EntitiesState, normalizedEntities: 
 const applyArrayOperation = (
   stateArray: Record<string, any>,
   entityGroup: Record<string, any>,
-  operation: '$push' | '$unshift'
+  operation: EntityStrategy
 ): Spec<EntitiesState> => {
   const actions = Object.entries(entityGroup).reduce<IndexableSpec<Record<string, any>>>(
     (acc, [key, update]) => {
@@ -184,7 +197,7 @@ const applyApplyStrategy = (entityGroup: Record<string, any>, value: any): Spec<
 export const handleUpdateEntities = (
   state: EntitiesState,
   entities: Record<string, any>,
-  strategy: '$set' | '$merge' | '$unset' | '$push' | '$unshift' | '$splice' | '$apply' = '$merge',
+  strategy: EntityStrategy = '$merge',
   value?: any
 ): Spec<EntitiesState> => {
   return Object.entries(entities).reduce<IndexableSpec<EntitiesState>>((acc, [entityName, entityGroup]) => {
@@ -223,13 +236,51 @@ export const handleUpdateEntities = (
 
 export const handleDeleteEntities = (entities: EntitiesState): Spec<EntitiesState> =>
   Object.fromEntries(
-    Object.entries(entities).map(([entityName, entityIds]) => [
-      entityName,
-      {
-        $unset: Object.keys(entityIds)
-      }
-    ])
+    Object.entries(entities).map(([entityName, entities]) => {
+      const entityIds = Object.keys(entities);
+      return [
+        entityName,
+        {
+          $unset: entityIds
+        }
+      ];
+    })
   );
+
+export const isEntityReferenced = (
+  state: EntitiesState,
+  entityName: string,
+  entityId: string,
+  ignoreReference?: { entityName: string; fieldName: string }
+): boolean => {
+  const entityState = state[entityName];
+  if (!entityState) return false;
+
+  const relationships = SchemaManager.relationshipMap[entityName];
+  if (!relationships?._referencedBy) return false;
+
+  return Object.entries(relationships._referencedBy).some(([referencingEntityName, reference]) => {
+    // Skip the reference we're about to delete
+    if (
+      ignoreReference &&
+      referencingEntityName === ignoreReference.entityName &&
+      reference.fieldName === ignoreReference.fieldName
+    ) {
+      return false;
+    }
+
+    const entities = state[referencingEntityName];
+    if (!entities) return false;
+
+    return Object.values(entities).some((entity: any) => {
+      const value = entity[reference.fieldName];
+      if (Array.isArray(value)) {
+        return value.includes(entityId);
+      }
+      return value === entityId;
+    });
+  });
+};
 
 export function reducer(state: EntitiesState = initialState, action: EntityAction): EntitiesState {
   switch (action.type) {
@@ -246,13 +297,20 @@ export function reducer(state: EntitiesState = initialState, action: EntityActio
       return update(state, handleUpdateEntities(state, action.entities, action.strategy, action.value));
     }
     case PARTIAL_UPDATE: {
-      const { entityName, entityId, updates } = action;
-      if (entityName && entityId && updates?.[entityId]) {
-        return update(state, {
-          [entityName]: {
-            [entityId]: updates[entityId]
-          }
-        });
+      const { entityName, entityId, entities, strategy } = action;
+      if (entityName && entityId && entities?.[entityId]) {
+        return update(
+          state,
+          handleUpdateEntities(
+            state,
+            {
+              [entityName]: {
+                [entityId]: entities[entityId]
+              }
+            },
+            strategy
+          )
+        );
       }
       return state;
     }

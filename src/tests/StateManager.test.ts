@@ -1,6 +1,6 @@
 import { v4 } from 'uuid';
 import { StateManager } from '../store/StateManager';
-import { normalizeEntities, PARTIAL_UPDATE } from '../store/entities';
+import { normalizeEntities, PARTIAL_UPDATE, updatePartialEntity } from '../store/entities';
 import schemas from './testSchemas';
 
 const sleep = async (duration = 1000) =>
@@ -18,15 +18,6 @@ describe('StateManager', () => {
 
   beforeEach(() => {
     stateManager = StateManager.getInstance(`testInstance${++instanceNum}`);
-    stateManager.state = {
-      User: {
-        '1': { id: '1', name: 'John Doe', nested: '100' } // Nested reference via ID
-      },
-      Nested: {
-        '100': { id: '100', list: [10, 20] } // Nested object with a list
-      }
-    };
-    dispatchSpy = jest.spyOn(stateManager, 'dispatch');
   });
 
   afterEach(() => {
@@ -39,38 +30,171 @@ describe('StateManager', () => {
     console.dir(stateManager.state, { depth: 12 });
   }
 
-  it.skip('should append to the nested list using ID reference', async () => {
-    stateManager.state = {
-      User: {
-        '1': { id: '1', name: 'John Doe', nested: '100' }
-      },
-      Nested: {
-        '100': { id: '100', list: [10, 20] }
-      }
-    };
+  describe('Instance Management', () => {
+    it('should create and retrieve the same instance', () => {
+      const instance1 = StateManager.getInstance('test1');
+      const instance2 = StateManager.getInstance('test1');
+      expect(instance1).toBe(instance2);
+    });
 
-    console.dir(stateManager, { depth: 12 }); // Display initial state
+    it('should create different instances for different IDs', () => {
+      const instance1 = StateManager.getInstance('test1');
+      const instance2 = StateManager.getInstance('test2');
+      expect(instance1).not.toBe(instance2);
+    });
+  });
 
-    await sleep(5000);
+  describe('State Management', () => {
+    it('should initialize with empty state', () => {
+      expect(stateManager.state).toEqual({});
+    });
 
-    const nested = stateManager.query('Nested', '100');
-    nested.list.push(21); // Modify list
+    it('should update state correctly', () => {
+      const newState = { User: { '1': { id: '1', name: 'John' } } };
+      stateManager.state = newState;
+      expect(stateManager.state).toEqual(newState);
+    });
+  });
 
-    expect(dispatchSpy).toHaveBeenCalledWith(
-      {
-        type: PARTIAL_UPDATE,
-        entityName: 'Nested',
-        entityId: '100',
-        updates: { '100': { list: { $push: [21] } } }
-      },
-      false,
-      `testInstance${instanceNum}`
-    );
+  describe('Querying Entities', () => {
+    beforeEach(() => {
+      stateManager.state = {
+        User: {
+          '1': { id: '1', name: 'John', nested: '100' }
+        },
+        Nested: {
+          '100': { id: '100', list: [10, 20] }
+        }
+      };
+    });
 
-    await applyAllPendingChanges(stateManager);
-    console.dir(stateManager, { depth: 12 }); // Display initial state
+    it('should return null for non-existent entities', () => {
+      expect(stateManager.query('User', '999')).toBeNull();
+    });
 
-    expect(stateManager.state.Nested['100'].list).toEqual([10, 20, 21]); // Assert final state
+    it('should return raw entity when denormalizeData is false', () => {
+      const user = stateManager.query('User', '1', false);
+      expect(user).toEqual({ id: '1', name: 'John', nested: '100' });
+    });
+
+    it('should return proxied entity when denormalizeData is true', () => {
+      const user = stateManager.query('User', '1');
+      expect(user).toBeDefined();
+      expect(user.name).toBe('John');
+    });
+  });
+
+  describe('Entity Updates', () => {
+    beforeEach(() => {
+      stateManager.state = {
+        User: {
+          '1': { id: '1', name: 'John', nested: '100' }
+        },
+        Nested: {
+          '100': { id: '100', list: [10, 20] }
+        }
+      };
+      dispatchSpy = jest.spyOn(stateManager, 'dispatch');
+    });
+
+    it('should dispatch update for primitive value change', async () => {
+      const user = stateManager.query('User', '1');
+      user.name = 'Jane';
+
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        [updatePartialEntity('User', '1', { '1': { name: 'Jane' } }, '$merge')],
+        false,
+        `testInstance${instanceNum}`
+      );
+    });
+
+    it.skip('should dispatch update for array push operation', async () => {
+      const nested = stateManager.query('Nested', '100');
+      nested.list.push(30);
+      nested.foobar = 'baz';
+
+      // Apply changes to reflect update in state
+      await applyAllPendingChanges(stateManager);
+      await sleep(2500);
+
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        [updatePartialEntity('Nested', '100', { '100': { list: [10, 20, 30] } }, '$set')],
+        false,
+        `testInstance${instanceNum}`
+      );
+    });
+
+    it.skip('should dispatch update for array splice operation', async () => {
+      const nested = stateManager.query('Nested', '100');
+      nested.list.splice(0, 1, 15);
+
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        [updatePartialEntity('Nested', '100', { '100': { list: [15, 20] } }, '$set')],
+        false,
+        `testInstance${instanceNum}`
+      );
+    });
+
+    it.skip('should dispatch update for reference ID change', async () => {
+      const user = stateManager.query('User', '1');
+      user.nested = '101';
+
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        [updatePartialEntity('User', '1', { '1': { nested: '101' } }, '$merge')],
+        false,
+        `testInstance${instanceNum}`
+      );
+    });
+  });
+
+  describe('Complex Scenarios', () => {
+    it.skip('should handle deeply nested entity updates', async () => {
+      const userId = v4();
+      const listingId = v4();
+      const photoId = v4();
+      const likeId = v4();
+
+      const data = {
+        id: userId,
+        listings: [
+          {
+            id: listingId,
+            photos: [
+              {
+                id: photoId,
+                likes: [{ id: likeId }]
+              }
+            ]
+          }
+        ]
+      };
+
+      stateManager.state = normalizeEntities(data, 'User');
+      const user = stateManager.query('User', userId);
+
+      // Modify deeply nested property
+      user.listings[0].photos[0].likes[0].id = 'new-like-id';
+
+      expect(stateManager.state.User[userId].listings[0].photos[0].likes[0]).toBe('new-like-id');
+    });
+
+    it.skip('should handle circular references', () => {
+      const user1Id = v4();
+      const user2Id = v4();
+
+      stateManager.state = {
+        User: {
+          [user1Id]: { id: user1Id, friend: user2Id },
+          [user2Id]: { id: user2Id, friend: user1Id }
+        }
+      };
+
+      const user1 = stateManager.query('User', user1Id);
+      const user2 = stateManager.query('User', user2Id);
+
+      expect(user1.friend).toBe(user2);
+      expect(user2.friend).toBe(user1);
+    });
   });
 
   describe('Proxy Operations', () => {
@@ -138,35 +262,6 @@ describe('StateManager', () => {
           entityName: 'User',
           entityId: '1',
           updates: { '1': { nested: { list: { $splice: [[1, 1, 10]] } } } }
-        },
-        false,
-        `testInstance${instanceNum}`
-      );
-
-      await applyAllPendingChanges(stateManager);
-
-      expect(stateManager.state.User['1'].nested.list).toEqual([1, 10, 3]);
-    });
-
-    it.skip('should handle nested array modifications correctly', async () => {
-      // Initial state setup
-      stateManager.state = {
-        User: {
-          '1': { id: '1', nested: { list: [10, 20] } }
-        }
-      };
-
-      // Query and modify state
-      const user = stateManager.query('User', '1');
-      user.nested.list[0] = 15; // Modify element at index 0
-
-      expect(dispatchSpy).toHaveBeenNthCalledWith(
-        1,
-        {
-          type: PARTIAL_UPDATE,
-          entityName: 'User',
-          entityId: '1',
-          updates: { '1': { nested: { list: { $splice: [[0, 1, 15]] } } } }
         },
         false,
         `testInstance${instanceNum}`

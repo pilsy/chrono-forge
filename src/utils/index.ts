@@ -3,4 +3,3 @@ export * from './getCompositeKey';
 export * from './getMemo';
 export * from './limitRecursion';
 export * from './unflatten';
-export * from './LruHandleCache';

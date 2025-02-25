@@ -12,7 +12,7 @@ import {
   HOOKS_METADATA_KEY
 } from '../decorators';
 import { Duration } from '@temporalio/common';
-import { LRUHandleCache } from '../utils';
+import { LRUCacheWithDelete } from 'mnemonist';
 
 /**
  * Options for configuring a Temporal Workflow.
@@ -122,15 +122,13 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   /**
    * Map to keep track of child workflow handles.
    */
-  protected handles: LRUHandleCache<workflow.ChildWorkflowHandle<any>> = new LRUHandleCache<
-    workflow.ChildWorkflowHandle<any>
-  >(2000);
+  protected handles: LRUCacheWithDelete<string, workflow.ChildWorkflowHandle<any>> = new LRUCacheWithDelete(2000);
 
   /**
    * Internal flags used to determine if certain decorators have been bound to this workflow instance.
    */
-  private _hooksBound = false;
   protected _eventsBound = false;
+  private _hooksBound = false;
   private _signalsBound = false;
   private _queriesBound = false;
   private _propertiesBound = false;
@@ -138,7 +136,18 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   /**
    * Workflow logging instance provided by Temporal.
    */
-  protected log = workflow.log;
+  protected log = {
+    debug: (message: string, ...args: any[]) =>
+      workflow.log.debug(`[${this.constructor.name}]:[${workflow.workflowInfo().workflowId}]: ${message}`, ...args),
+    info: (message: string, ...args: any[]) =>
+      workflow.log.info(`[${this.constructor.name}]:[${workflow.workflowInfo().workflowId}]: ${message}`, ...args),
+    warn: (message: string, ...args: any[]) =>
+      workflow.log.warn(`[${this.constructor.name}]:[${workflow.workflowInfo().workflowId}]: ${message}`, ...args),
+    error: (message: string, ...args: any[]) =>
+      workflow.log.error(`[${this.constructor.name}]:[${workflow.workflowInfo().workflowId}]: ${message}`, ...args),
+    trace: (message: string, ...args: any[]) =>
+      workflow.log.trace(`[${this.constructor.name}]:[${workflow.workflowInfo().workflowId}]: ${message}`, ...args)
+  };
 
   /**
    * Workflow execution result.
@@ -383,26 +392,25 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    * @returns {Promise<void>}
    */
   protected async handleExecutionError(err: any, reject: (err: Error) => void): Promise<void> {
-    this.log.debug(`[Workflow]:${this.constructor.name}:handleExecutionError`);
     this.log.error(`Error encountered: ${err?.message}: ${err?.stack}`);
 
     if (workflow.isCancellation(err)) {
-      this.log.debug(`[Workflow]:${this.constructor.name}: Cancelling...`);
+      this.log.debug(`Cancelling...`);
 
       await workflow.CancellationScope.nonCancellable(async () => {
         this.status = 'cancelling';
-
-        await Promise.all([
-          workflow.condition(() => workflow.allHandlersFinished()),
-          ...Array.from(this.handles.values()).map((handle: workflow.ChildWorkflowHandle<any>) =>
-            Promise.resolve().then(async () => {
+        await Promise.all(
+          Array.from(this.handles.values()).flatMap((handles) =>
+            Object.values(handles).map((handle) => async () => {
               try {
                 const extHandle = workflow.getExternalWorkflowHandle(handle.workflowId);
                 await extHandle.cancel();
-              } catch (e) {}
+              } catch (error) {
+                this.log.error(`Failed to cancel child workflow:`, error);
+              }
             })
           )
-        ]);
+        );
         this.status = 'cancelled';
       });
       reject(err);
@@ -500,16 +508,13 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     return async (...args: any[]) => {
       const { before = [], after = [] } = hookConfig;
 
-      // Execute before hooks sequentially
       for (const beforeHook of before) {
         if (typeof (this as any)[beforeHook] === 'function') {
-          this.log.trace(`[HOOK]:before(${methodName})`);
+          this.log.trace(`[HOOK]:(${beforeHook}):before(${methodName})`);
           await Promise.resolve().then(() => (this as any)[beforeHook].call(this, ...args));
         }
       }
 
-      // Execute main method
-      this.log.info(`[HOOK]:${methodName}.call()`);
       let result;
       try {
         result = await Promise.resolve().then(() => originalMethod.call(this, ...args));
@@ -517,10 +522,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
         throw err instanceof Error ? err : new Error(String(err));
       }
 
-      // Execute after hooks sequentially
       for (const afterHook of after) {
         if (typeof (this as any)[afterHook] === 'function') {
-          this.log.trace(`[HOOK]:after(${methodName})`);
+          this.log.trace(`[HOOK]:(${afterHook}):after(${methodName})`);
           await Promise.resolve().then(() => (this as any)[afterHook].call(this, ...args));
         }
       }

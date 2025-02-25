@@ -6,15 +6,24 @@ export const limitRecursion: Function = (
   entityId: string,
   entityName: string,
   entities: Record<string, any>,
-  proxy: boolean | StateManager = false,
+  stateManager: boolean | StateManager = false,
   visited: Map<string, number> = new Map(),
   depth: number = 0
 ): any => {
+  // Cache schema lookup
+  const schema = SchemaManager.getInstance().getSchema(entityName);
+
   // Early return if no entity found
   const entity = entities[entityName]?.[entityId];
-  if (!entity) return entityId;
 
-  const entityKey = `${entityName}:${entityId}`;
+  const idAttribute = typeof schema.idAttribute === 'function' ? schema.idAttribute(entity) : schema.idAttribute;
+
+  if (!entity) {
+    return entityId;
+    // return { [idAttribute]: entityId };
+  }
+
+  const entityKey = `${entityName}::${entityId}`;
 
   // Check visited state first to prevent infinite recursion
   const visitedDepth = visited.get(entityKey);
@@ -23,20 +32,17 @@ export const limitRecursion: Function = (
   }
   visited.set(entityKey, depth);
 
-  const cacheKey = `${entityName}::${entityId}`;
-
   // Check StateManager cache if available
-  if (proxy instanceof StateManager) {
-    const cachedEntry = proxy.cache.get(cacheKey);
+  if (stateManager instanceof StateManager) {
+    const cachedEntry = stateManager.cache.get(entityKey);
     if (cachedEntry) {
       return cachedEntry;
     }
   }
 
-  // Cache schema lookup
-  const schema = SchemaManager.getInstance().getSchema(entityName);
   // Pre-allocate result with approximate size
   const result: Record<string, any> = Object.create(null);
+
   const schemaDefinition = schema.schema;
 
   // Use for...of instead of for...in for better performance
@@ -51,10 +57,17 @@ export const limitRecursion: Function = (
         const visitedCopy = new Map(visited);
         const relationName = getEntityName(relation);
         result[key] = value.map((childId: string) =>
-          limitRecursion(childId, relationName, entities, proxy, visitedCopy, depth + 1)
+          limitRecursion(childId, relationName, entities, stateManager, visitedCopy, depth + 1)
         );
       } else {
-        result[key] = limitRecursion(value, getEntityName(relation), entities, proxy, new Map(visited), depth + 1);
+        result[key] = limitRecursion(
+          value,
+          getEntityName(relation),
+          entities,
+          stateManager,
+          new Map(visited),
+          depth + 1
+        );
       }
     } else {
       result[key] = value;
@@ -62,10 +75,9 @@ export const limitRecursion: Function = (
   }
 
   // Cache the result in StateManager if available
-  if (proxy instanceof StateManager) {
-    proxy.cache.set(cacheKey, result);
+  if (stateManager instanceof StateManager) {
+    stateManager.cache.set(entityKey, result);
   }
-
   return result;
 };
 
