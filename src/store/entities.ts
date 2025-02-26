@@ -1,6 +1,6 @@
 import update, { Spec } from 'immutability-helper';
 import { normalize, Schema } from 'normalizr';
-import { SchemaManager } from '../store/SchemaManager';
+import { Relationship, SchemaManager } from '../store/SchemaManager';
 
 // Types
 export type EntitiesState = Record<string, Record<string, any>>;
@@ -36,6 +36,7 @@ export const PARTIAL_UPDATE = 'entities.partialUpdate';
 export const DELETE_ENTITY = 'entities.deleteEntity';
 export const DELETE_ENTITIES = 'entities.deleteEntities';
 export const CLEAR_ENTITIES = 'entities.clearEntities';
+export const SET_STATE = 'entities.setState';
 
 function getSchema(entityName: string): Schema {
   const schemas = SchemaManager.getInstance().getSchemas();
@@ -45,6 +46,11 @@ function getSchema(entityName: string): Schema {
   }
   return schema;
 }
+
+export const setState = (entities: EntitiesState = {}): EntityAction => ({
+  type: SET_STATE,
+  entities
+});
 
 export const updateEntity = (entity: any, entityName: string): EntityAction => {
   const schema = getSchema(entityName);
@@ -200,6 +206,66 @@ export const handleUpdateEntities = (
   strategy: EntityStrategy = '$merge',
   value?: any
 ): Spec<EntitiesState> => {
+  // Build reference map for the entities being updated
+  if (['$set', '$merge', '$push', '$unshift'].includes(strategy)) {
+    const referenceMap: Record<string, Record<string, Set<string>>> = {};
+
+    Object.entries(entities).forEach(([entityName, entityGroup]) => {
+      const relationships = SchemaManager.relationshipMap[entityName];
+      if (!relationships) return;
+
+      // Process each entity in the group
+      Object.entries(entityGroup as Record<string, any>).forEach(([entityId, entityData]) => {
+        // Check each field that might reference other entities
+        Object.entries(relationships).forEach(([fieldName, relation]) => {
+          if (fieldName === '_referencedBy') return; // Skip metadata
+
+          const relationship = relation as Relationship;
+          if (!relationship?.relatedEntityName) return;
+
+          const referencedEntityName = relationship.relatedEntityName;
+          const fieldValue = entityData[fieldName];
+          if (!fieldValue) return;
+
+          // Handle array of references or single reference
+          const references = relationship.isMany && Array.isArray(fieldValue) ? fieldValue : [fieldValue];
+
+          references.forEach((refId) => {
+            if (typeof refId !== 'string' && typeof refId !== 'number') return;
+
+            // Initialize reference tracking structures if needed
+            if (!referenceMap[referencedEntityName]) {
+              referenceMap[referencedEntityName] = {};
+            }
+
+            if (!referenceMap[referencedEntityName][refId]) {
+              referenceMap[referencedEntityName][refId] = new Set();
+            }
+
+            // Add reference in format: sourceEntityName:sourceEntityId:fieldName
+            const referenceKey = `${entityName}:${entityId}:${fieldName}`;
+            referenceMap[referencedEntityName][refId].add(referenceKey);
+          });
+        });
+      });
+    });
+
+    // Update the reference map in SchemaManager
+    if (Object.keys(referenceMap).length > 0) {
+      SchemaManager.updateReferenceMap(referenceMap);
+    }
+  }
+
+  // Handle reference removal for delete operations
+  if (strategy === '$unset') {
+    Object.entries(entities).forEach(([entityName, entityGroup]) => {
+      Object.keys(entityGroup as Record<string, any>).forEach((entityId) => {
+        SchemaManager.removeReferences(entityName, entityId);
+      });
+    });
+  }
+
+  // Original entity update logic
   return Object.entries(entities).reduce<IndexableSpec<EntitiesState>>((acc, [entityName, entityGroup]) => {
     if (!state[entityName]) {
       acc[entityName] = { $set: entityGroup };
@@ -318,6 +384,10 @@ export function reducer(state: EntitiesState = initialState, action: EntityActio
       if (!action.entityName || !action.entityId) {
         return state;
       }
+
+      // Remove references before deleting the entity
+      SchemaManager.removeReferences(action.entityName, action.entityId);
+
       return update(
         state,
         handleDeleteEntities({
@@ -333,17 +403,88 @@ export function reducer(state: EntitiesState = initialState, action: EntityActio
       if (!action.entities) {
         return state;
       }
+
+      // Remove references for all entities being deleted
+      Object.entries(action.entities).forEach(([entityName, entityGroup]) => {
+        Object.keys(entityGroup).forEach((entityId) => {
+          SchemaManager.removeReferences(entityName, entityId);
+        });
+      });
+
       return update(state, handleDeleteEntities(action.entities));
     }
     case CLEAR_ENTITIES: {
+      // Clear all references when clearing entities
+      SchemaManager.clearReferenceMap();
+
       return update(state, {
         $set: { ...defaultState }
       });
+    }
+    case SET_STATE: {
+      // Rebuild the entire reference map when setting state
+      return rebuildReferenceMap(action.entities ?? {});
     }
     default: {
       return state;
     }
   }
+}
+
+// Helper function to rebuild the entire reference map
+function rebuildReferenceMap(state: EntitiesState): EntitiesState {
+  // Clear existing references
+  SchemaManager.clearReferenceMap();
+
+  // Create a new reference map
+  const referenceMap: Record<string, Record<string, Set<string>>> = {};
+
+  // Process each entity type
+  Object.entries(state).forEach(([entityName, entityGroup]) => {
+    const relationships = SchemaManager.relationshipMap[entityName];
+    if (!relationships) return;
+
+    // Process each entity in the group
+    Object.entries(entityGroup).forEach(([entityId, entityData]) => {
+      // Check each relationship field
+      Object.entries(relationships).forEach(([fieldName, relation]) => {
+        if (fieldName === '_referencedBy') return;
+
+        const relationship = relation as Relationship;
+        if (!relationship?.relatedEntityName) return;
+
+        const referencedEntityName = relationship.relatedEntityName;
+        const fieldValue = entityData[fieldName];
+
+        if (!fieldValue) return;
+
+        // Handle array of references or single reference
+        const references = relationship.isMany && Array.isArray(fieldValue) ? fieldValue : [fieldValue];
+
+        references.forEach((refId) => {
+          if (typeof refId !== 'string' && typeof refId !== 'number') return;
+
+          // Initialize reference tracking structures if needed
+          if (!referenceMap[referencedEntityName]) {
+            referenceMap[referencedEntityName] = {};
+          }
+
+          if (!referenceMap[referencedEntityName][refId]) {
+            referenceMap[referencedEntityName][refId] = new Set<string>();
+          }
+
+          // Add reference in format: sourceEntityName:sourceEntityId:fieldName
+          const referenceKey = `${entityName}:${entityId}:${fieldName}`;
+          referenceMap[referencedEntityName][refId].add(referenceKey);
+        });
+      });
+    });
+  });
+
+  // Update the reference map in SchemaManager
+  SchemaManager.updateReferenceMap(referenceMap);
+
+  return state;
 }
 
 export default reducer;
