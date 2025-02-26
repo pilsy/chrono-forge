@@ -11,16 +11,12 @@ export const limitRecursion: Function = (
   depth: number = 0
 ): any => {
   // Cache schema lookup
-  const schema = SchemaManager.getInstance().getSchema(entityName);
-
-  // Early return if no entity found
+  const schema = SchemaManager.schemas[entityName];
   const entity = entities[entityName]?.[entityId];
 
-  const idAttribute = typeof schema.idAttribute === 'function' ? schema.idAttribute(entity) : schema.idAttribute;
-
+  // Early return if no entity found
   if (!entity) {
     return entityId;
-    // return { [idAttribute]: entityId };
   }
 
   const entityKey = `${entityName}::${entityId}`;
@@ -33,48 +29,33 @@ export const limitRecursion: Function = (
   visited.set(entityKey, depth);
 
   // Check StateManager cache if available
-  if (stateManager instanceof StateManager) {
-    const cachedEntry = stateManager.cache.get(entityKey);
-    if (cachedEntry) {
-      return cachedEntry;
-    }
+  if (stateManager instanceof StateManager && stateManager.cache.has(entityKey)) {
+    return stateManager.cache.get(entityKey);
   }
 
-  // Pre-allocate result with approximate size
   const result: Record<string, any> = Object.create(null);
+  const schemaRelations = schema.schema;
 
-  const schemaDefinition = schema.schema;
-
-  // Use for...of instead of for...in for better performance
   for (const key of Object.keys(entity)) {
     const value = entity[key];
-    // @ts-ignore
-    const relation = schemaDefinition[key];
+    const relation = schemaRelations[key];
 
     if (relation) {
+      const relationName = getEntityName(relation);
+
       if (Array.isArray(value)) {
-        // Avoid creating new Map for each array item
-        const visitedCopy = new Map(visited);
-        const relationName = getEntityName(relation);
+        // Create new Map for each array item to track separate paths
         result[key] = value.map((childId: string) =>
-          limitRecursion(childId, relationName, entities, stateManager, visitedCopy, depth + 1)
+          limitRecursion(childId, relationName, entities, stateManager, new Map(visited), depth + 1)
         );
       } else {
-        result[key] = limitRecursion(
-          value,
-          getEntityName(relation),
-          entities,
-          stateManager,
-          new Map(visited),
-          depth + 1
-        );
+        result[key] = limitRecursion(value, relationName, entities, stateManager, new Map(visited), depth + 1);
       }
     } else {
       result[key] = value;
     }
   }
 
-  // Cache the result in StateManager if available
   if (stateManager instanceof StateManager) {
     stateManager.cache.set(entityKey, result);
   }
