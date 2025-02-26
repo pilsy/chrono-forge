@@ -134,26 +134,10 @@ export type ManagedPaths = {
 };
 
 /**
- * Represents the configuration of a subscription within a workflow system.
+ * Subscription configuration for workflow state changes.
  *
- * This type outlines the structure and options for defining subscriptions, enabling workflows
- * to react to specific signals and conditions based on entity and state parameters.
- *
- * ## Properties
- * - `workflowId`: A string uniquely identifying the workflow to which this subscription applies.
- * - `signalName`: The name of the signal to subscribe to, determining the type of event to react to.
- * - `selector`: A string used to filter or select events, often used for targeting specific data
- *   or conditions within a workflow.
- * - `parent` (optional): A string identifying the parent entity or workflow in a hierarchical structure.
- * - `child` (optional): A string identifying the child entity or workflow related to the subscription.
- * - `ancestorWorkflowIds` (optional): An array of strings capturing workflow IDs of ancestor workflows,
- *   useful for tracking lineage in nested workflow systems.
- * - `condition` (optional): A function that receives the current state and returns a boolean, determining
- *   if the subscription should react based on custom logic.
- * - `entityName` (optional): The name of the entity involved in the subscription, aiding in contextual
- *   identification and processing.
- * - `subscriptionId` (optional): A unique identifier for the subscription itself, used to manage or
- *   reference the subscription within systems.
+ * Defines how a workflow subscribes to state changes from another workflow,
+ * specifying what signals to receive and under what conditions.
  *
  * ## Usage Example
  * ```typescript
@@ -171,6 +155,17 @@ export type ManagedPaths = {
  *   such as `signalName` and `selector` to fine-tune reactions.
  * - Optional fields provide flexibility for hierarchical and condition-based designs, enhancing adaptability in various workflows.
  * - Proper subscription management ensures responsive and efficient workflows, enabling precise event handling and state transitions.
+ *
+ * @property {string} workflowId - The ID of the workflow being subscribed to.
+ * @property {string} subscriptionId - Unique identifier for this subscription.
+ * @property {'update' | 'delete'} signalName - The type of signal to subscribe to.
+ * @property {string} selector - Path selector pattern to filter state changes.
+ * @property {string} [parent] - Optional parent entity identifier.
+ * @property {string} [child] - Optional child entity identifier.
+ * @property {string[]} [ancestorWorkflowIds] - IDs of ancestor workflows to prevent circular updates.
+ * @property {(state: any) => boolean} [condition] - Optional function to further filter changes.
+ * @property {boolean} [sync] - Whether updates should be processed synchronously.
+ * @property {'$set' | '$merge'} [strategy] - Strategy for applying updates to state.
  */
 type Subscription = {
   workflowId: string;
@@ -381,6 +376,13 @@ export abstract class StatefulWorkflow<
 
   private readonly selectorPatternCache = new Map<string, RegExp>();
 
+  /**
+   * Converts a selector string into a regular expression pattern for matching paths.
+   *
+   * @private
+   * @param {string} selector - The selector string to convert.
+   * @returns {RegExp} A regular expression that matches paths according to the selector pattern.
+   */
   private getSelectorPattern(selector: string): RegExp {
     let pattern = this.selectorPatternCache.get(selector);
     if (!pattern) {
@@ -1588,14 +1590,16 @@ export abstract class StatefulWorkflow<
   }
 
   /**
-   * Determines whether the changes should be propagated to the subscription.
-   * @param newState - The new state after changes.
-   * @param differences - The DetailedDiff object containing changes.
-   * @param selector - The selector string to match changes against.
-   * @param condition - An optional condition function to further filter updates.
-   * @param changeOrigins - Origins of the changes.
-   * @param ancestorWorkflowIds - Ancestor workflow IDs to prevent circular dependencies.
-   * @returns True if the changes should be propagated, false otherwise.
+   * Determines whether changes should be propagated to subscriptions based on selectors and conditions.
+   *
+   * @private
+   * @param {EntitiesState} newState - The new state after changes.
+   * @param {DetailedDiff} differences - The detailed differences between states.
+   * @param {string} selector - The selector pattern to match against changes.
+   * @param {Function} [condition] - Optional function to further filter changes.
+   * @param {string[]} [changeOrigins] - Origins of the changes to prevent circular updates.
+   * @param {string[]} [ancestorWorkflowIds=[]] - IDs of ancestor workflows to prevent circular dependencies.
+   * @returns {boolean} True if changes should be propagated, false otherwise.
    */
   private shouldPropagate(
     newState: EntitiesState,
@@ -1681,11 +1685,14 @@ export abstract class StatefulWorkflow<
   }
 
   /**
-   * Extracts only the changed entities that match the given selector.
-   * @param differences - The DetailedDiff object containing changes.
-   * @param selector - The selector string to match changes against.
-   * @param newState - The new state after changes.
-   * @returns A subset of EntitiesState containing only the relevant changes.
+   * Extracts changes that match a specific selector from the differences between states.
+   *
+   * @private
+   * @param {DetailedDiff} differences - The detailed differences between states.
+   * @param {string} selector - The selector pattern to match against changes.
+   * @param {EntitiesState} newState - The new state after changes.
+   * @param {EntitiesState} previousState - The previous state before changes.
+   * @returns {{ updates: EntitiesState; deletions: EntitiesState }} Object containing filtered updates and deletions.
    */
   private extractChangesForSelector(
     differences: DetailedDiff,
@@ -2053,37 +2060,20 @@ export abstract class StatefulWorkflow<
   /**
    * Processes a single entity item, managing workflows based on its state changes.
    *
-   * This function oversees the handling of a specific item within the entity state,
+   * This method oversees the handling of a specific item within the entity state,
    * determining if workflow actions are required due to state changes or workflow presence.
    *
-   * ## Parameters
-   * - `newState`: The state object reflecting current entity data after applying updates.
-   * - `itemId`: The identifier for the item being processed, which may be part of a composite key.
-   * - `config`: Configuration details specific to this entity's path, guiding processing actions.
-   * - `differences`: Object encapsulating differences between the new and previous states to aid decision-making.
-   * - `previousState`: The state of the entity before recent changes were applied.
-   * - `changeOrigins`: A list of identifiers representing the origin of changes to avoid recursive updates.
-   *
-   * ## Return
-   * - A `Promise<void>` indicating when the processing of the single item is complete.
-   *
-   * ## Method Details
-   * - Constructs a `workflowId` to uniquely identify and manage associated workflows, using flags from `config` to
-   *   include parent entity identifiers if necessary.
-   * - Logs tracing information for monitoring the process and debugging purposes, especially focusing on recursive skips.
-   * - Checks if the same workflow process has already been initiated to avoid duplicated processes using `workflowId`.
-   * - Determines if the item has changed by comparing its previous and current states.
-   * - If changes are detected, or if the workflow does not exist, it updates an existing workflow using
-   *   `updateChildWorkflow` or starts a new one with `startChildWorkflow`.
-   *
-   * ## Usage Example
-   * ```typescript
-   * await processSingleItem(updatedState, 'uniqueItemId', pathConfig, stateDiffs, priorState, origins);
-   * ```
-   *
-   * ## Notes
-   * - This method is critical for managing lifecycle and workflow of individual items when entity states are modified.
-   * - Requires an understanding of the configuration setup in `ManagedPath` for accurately processing items.
+   * @protected
+   * @async
+   * @param {ManagedPath} config - Configuration details specific to this entity's path, guiding processing actions.
+   * @param {string} itemId - The identifier for the item being processed, which may be part of a composite key.
+   * @param {EntitiesState} newState - The state object reflecting current entity data after applying updates.
+   * @param {EntitiesState} previousState - The state of the entity before recent changes were applied.
+   * @param {DetailedDiff} differences - Object encapsulating differences between the new and previous states to aid decision-making.
+   * @param {string[]} changeOrigins - A list of identifiers representing the origin of changes to avoid recursive updates.
+   * @param {any} newItem - The current state of the item being processed.
+   * @param {any} previousItem - The previous state of the item being processed.
+   * @returns {Promise<void>} A promise indicating when the processing of the single item is complete.
    */
   protected async processSingleItem(
     config: ManagedPath,
@@ -2446,6 +2436,17 @@ export abstract class StatefulWorkflow<
    * - This function assumes that lifecycle strategies, such as `$merge` for merging state data, are compatible with intended updates.
    * - Extensively logs actions and decision points, providing detail for events throughout the update process.
    * - Designed for controlled child workflow management in complex state-driven architectures.
+   *
+   * @protected
+   * @async
+   * @param {workflow.ChildWorkflowHandle<any>} handle - The handle to the child workflow to update.
+   * @param {any} previousItem - The previous state of the item.
+   * @param {any} previousState - The previous overall state.
+   * @param {any} newItem - The new state of the item.
+   * @param {any} newState - The new overall state.
+   * @param {DetailedDiff} differences - The detailed differences between states.
+   * @param {ManagedPath} config - Configuration for the managed path.
+   * @returns {Promise<void>} A promise that resolves when the update is complete.
    */
   protected async updateChildWorkflow(
     handle: workflow.ChildWorkflowHandle<any>,
@@ -2690,6 +2691,10 @@ export abstract class StatefulWorkflow<
    * - It uses type assertions and ignores (via `@ts-ignore`) to circumvent TypeScript checks when accessing instance properties and methods.
    * - Suitable error handling and verification should be implemented within `loadData` to ensure data integrity and consistency.
    * - This method aims to integrate with a state management system that can handle normalized entity updates.
+   *
+   * @protected
+   * @async
+   * @returns {Promise<void>} A promise that resolves when handling is complete.
    */
   protected async loadDataAndEnqueue(): Promise<void> {
     // @ts-ignore
