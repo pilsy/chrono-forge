@@ -3,7 +3,6 @@ import {
   EntitiesState,
   EntityAction,
   reducer,
-  updateEntity,
   clearEntities,
   updatePartialEntity,
   EntityStrategy,
@@ -281,7 +280,7 @@ export class StateManager extends EventEmitter {
           }
 
           const val = target[key];
-          if (typeof val === 'string') {
+          if (typeof val === 'string' || typeof val === 'number') {
             return val;
           }
 
@@ -330,7 +329,7 @@ export class StateManager extends EventEmitter {
 
               // Convert array of entities to array of IDs
               value = value.map((item: any) => {
-                if (typeof item === 'string') {
+                if (typeof item === 'string' || typeof item === 'number') {
                   return item; // Already an ID
                 }
                 return typeof idAttribute === 'function' ? idAttribute(item) : item[idAttribute];
@@ -402,17 +401,18 @@ export class StateManager extends EventEmitter {
           }
 
           const val = target[prop];
-          if (typeof val === 'string') {
+          if (typeof val === 'string' || typeof val === 'number') {
             return val;
           }
+
+          const relation = SchemaManager.schemas[currentEntityName].schema[prop as string];
 
           if (Array.isArray(val)) {
             return new Proxy(
               val.map((item: any) => {
-                if (typeof item === 'string') {
+                if (typeof item === 'string' || typeof item === 'number') {
                   return item;
                 }
-                const relation = SchemaManager.schemas[currentEntityName].schema[prop as string];
                 if (relation) {
                   const nestedEntityName = getEntityName(relation);
                   const idAttribute = SchemaManager.schemas[nestedEntityName].idAttribute;
@@ -425,12 +425,11 @@ export class StateManager extends EventEmitter {
                 }
                 return item;
               }),
-              createPropagationHandler(target, prop)
+              createHandler(currentEntityName, currentEntityId)
             );
           }
 
           if (typeof val === 'object' && val !== null) {
-            const relation = SchemaManager.schemas[currentEntityName].schema[prop as string];
             if (relation) {
               const nestedEntityName = getEntityName(relation);
               const idAttribute = SchemaManager.schemas[nestedEntityName].idAttribute;
