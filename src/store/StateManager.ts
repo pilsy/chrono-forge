@@ -1,18 +1,12 @@
 import EventEmitter from 'eventemitter3';
-import {
-  EntitiesState,
-  EntityAction,
-  reducer,
-  clearEntities,
-  updatePartialEntity,
-  EntityStrategy,
-  deleteEntity
-} from '../store/entities';
+import { EntitiesState, EntityAction, reducer, clearEntities } from '../store/entities';
 import { DetailedDiff, detailedDiff } from 'deep-object-diff';
 import { isEmpty } from 'lodash';
-import { getEntityName, limitRecursion } from '../utils';
+import { limitRecursion } from '../utils';
 import { LRUCacheWithDelete } from 'mnemonist';
 import { Relationship, SchemaManager } from './SchemaManager';
+import { GraphManager } from './GraphManager';
+import { EntityDataProxy } from './EntityDataProxy';
 
 /**
  * Represents a queue item containing an entity action and optional origin
@@ -43,6 +37,7 @@ export class StateManager extends EventEmitter {
     super();
     this._instanceId = _instanceId;
     this._state = {};
+    this.graphManager = new GraphManager();
   }
 
   /**
@@ -96,6 +91,10 @@ export class StateManager extends EventEmitter {
       this._state = newState;
       this.proxyCache.clear();
       this.invalidateCache(differences);
+
+      // Update the graph with the new state
+      this.graphManager.buildFromState(newState);
+
       await this.emitStateChangeEvents(differences, previousState, newState, Array.from(origins));
     }
   }
@@ -236,221 +235,25 @@ export class StateManager extends EventEmitter {
       return null;
     }
 
-    const cacheKey = `${entityName}::${id}`;
-
-    if (this.proxyCache.has(cacheKey)) {
-      const cachedEntry = this.proxyCache.get(cacheKey)!;
-      if (cachedEntry.lastState === this._state) {
-        return cachedEntry.data;
-      } else {
-        this.proxyCache.delete(cacheKey);
-      }
-    }
-
     const entity = this._state[entityName]?.[id];
     if (!entity) {
       return null;
     }
 
-    let result: any;
-    if (denormalizeData) {
-      const denormalized = limitRecursion(id, entityName, this._state, this);
-
-      const createPropagationHandler = (parentProxy: any, prop: string | symbol): ProxyHandler<any> => ({
-        set: (target: any, key: string | symbol, value: any): boolean => {
-          if (target[key] === value) {
-            return true;
-          }
-
-          if (Object.isFrozen(target)) {
-            return false;
-          }
-
-          // Update the local target
-          target[key] = value;
-
-          // Trigger the parent proxy's set trap
-          parentProxy[prop] = target;
-
-          return true;
-        },
-        get: (target: any, key: string | symbol): any => {
-          if (key === 'toJSON') {
-            return () => JSON.parse(JSON.stringify(target));
-          }
-
-          const val = target[key];
-          if (typeof val === 'string' || typeof val === 'number') {
-            return val;
-          }
-
-          if (Array.isArray(val) || (typeof val === 'object' && val !== null)) {
-            // Recursively wrap nested objects/arrays in propagation handlers
-            return new Proxy(val, createPropagationHandler(target, key));
-          }
-
-          return val;
-        }
-      });
-
-      const createHandler = (currentEntityName: string, currentEntityId: string): ProxyHandler<any> => ({
-        set: (target: any, prop: string | symbol, value: any): boolean => {
-          const oldValue = target[prop];
-          if (oldValue === value) {
-            return true;
-          }
-
-          if (Object.isFrozen(target)) {
-            return false;
-          }
-
-          // Update the proxy's local state
-          target[prop] = value;
-
-          // Handle removals (both array and object)
-          const relation = SchemaManager.schemas[currentEntityName].schema[prop as string];
-
-          let removedEntityIds: string[] = [];
-
-          if (relation) {
-            const nestedEntityName = getEntityName(relation);
-            const idAttribute = SchemaManager.schemas[nestedEntityName].idAttribute;
-
-            if (Array.isArray(value)) {
-              if (Array.isArray(oldValue)) {
-                const oldIds = oldValue.map((item: any) =>
-                  typeof idAttribute === 'function' ? idAttribute(item) : item[idAttribute]
-                );
-                const newIds = value.map((item: any) =>
-                  typeof idAttribute === 'function' ? idAttribute(item) : item[idAttribute]
-                );
-                removedEntityIds = oldIds.filter((id: string) => !newIds.includes(id));
-              }
-
-              // Convert array of entities to array of IDs
-              value = value.map((item: any) => {
-                if (typeof item === 'string' || typeof item === 'number') {
-                  return item; // Already an ID
-                }
-                return typeof idAttribute === 'function' ? idAttribute(item) : item[idAttribute];
-              });
-            } else if (value && typeof value === 'object') {
-              if (oldValue && typeof oldValue === 'object') {
-                const oldId = typeof idAttribute === 'function' ? idAttribute(oldValue) : oldValue[idAttribute];
-                const newId = typeof idAttribute === 'function' ? idAttribute(value) : value[idAttribute];
-
-                if (oldId && oldId !== newId) {
-                  removedEntityIds.push(oldId);
-                }
-              }
-
-              // Convert single entity reference to ID
-              value = typeof idAttribute === 'function' ? idAttribute(value) : value[idAttribute];
-            }
-          }
-
-          // Determine the appropriate strategy based on the property type
-          let strategy: EntityStrategy = '$merge';
-          if (Array.isArray(target[prop])) {
-            if (Array.isArray(value)) {
-              strategy = '$set';
-            } else {
-              strategy = '$push';
-            }
-          } else if (value === null || value === undefined) {
-            strategy = '$unset';
-          }
-
-          // Create actions array
-          const actions: EntityAction[] = [
-            updatePartialEntity(
-              currentEntityName,
-              currentEntityId,
-              {
-                [currentEntityId]: {
-                  [prop]: relation ? value : JSON.parse(JSON.stringify(value))
-                }
-              },
-              strategy
-            )
-          ];
-
-          // Add deleteEntity actions if needed
-          if (removedEntityIds.length > 0 && relation) {
-            const nestedEntityName = getEntityName(relation);
-            removedEntityIds.forEach((entityId: string) => {
-              if (
-                !this.isEntityReferenced(nestedEntityName, entityId, {
-                  entityName: currentEntityName,
-                  fieldName: prop as string
-                })
-              ) {
-                actions.push(deleteEntity(entityId, nestedEntityName));
-              }
-            });
-          }
-
-          // Dispatch all actions at once
-          this.dispatch(actions, false, this.instanceId);
-
-          return true;
-        },
-        get: (target: any, prop: string | symbol): any => {
-          if (prop === 'toJSON') {
-            return () => JSON.parse(JSON.stringify(target));
-          }
-
-          const val = target[prop];
-          if (typeof val === 'string' || typeof val === 'number') {
-            return val;
-          }
-
-          const relation = SchemaManager.schemas[currentEntityName].schema[prop as string];
-
-          if (Array.isArray(val)) {
-            return new Proxy(
-              val.map((item: any) => {
-                if (typeof item === 'string' || typeof item === 'number') {
-                  return item;
-                }
-                if (relation) {
-                  const nestedEntityName = getEntityName(relation);
-                  const idAttribute = SchemaManager.schemas[nestedEntityName].idAttribute;
-                  const id = typeof idAttribute === 'function' ? idAttribute(item) : item[idAttribute];
-                  return new Proxy(item, createHandler(nestedEntityName, id));
-                }
-                // For non-relationship arrays, wrap in propagation handler
-                if (typeof item === 'object' && item !== null) {
-                  return new Proxy(item, createPropagationHandler(target, prop));
-                }
-                return item;
-              }),
-              createHandler(currentEntityName, currentEntityId)
-            );
-          }
-
-          if (typeof val === 'object' && val !== null) {
-            if (relation) {
-              const nestedEntityName = getEntityName(relation);
-              const idAttribute = SchemaManager.schemas[nestedEntityName].idAttribute;
-              const id = typeof idAttribute === 'function' ? idAttribute(val) : val[idAttribute];
-              return new Proxy(val, createHandler(nestedEntityName, id));
-            }
-            // For non-relationship objects, wrap in propagation handler
-            return new Proxy(val, createPropagationHandler(target, prop));
-          }
-
-          return val;
-        }
-      });
-
-      result = new Proxy(denormalized, createHandler(entityName, id));
-      this.proxyCache.set(cacheKey, { data: result, lastState: this._state });
-    } else {
-      result = entity;
+    if (!denormalizeData) {
+      return entity;
     }
 
-    return result;
+    // Denormalize the entity data
+    const denormalized = limitRecursion(id, entityName, this._state, this);
+
+    // If denormalization didn't happen (returned just the ID), return the raw entity
+    if (denormalized === id) {
+      return entity;
+    }
+
+    // Create and return a proxy for the denormalized entity
+    return EntityDataProxy.create(entityName, id, denormalized, this);
   }
 
   /**
@@ -576,9 +379,9 @@ export class StateManager extends EventEmitter {
     if (this.cache.has(cacheKey)) {
       this.cache.delete(cacheKey);
     }
-    if (this.proxyCache.has(cacheKey)) {
-      this.proxyCache.delete(cacheKey);
-    }
+
+    // Also clear from EntityDataProxy cache
+    EntityDataProxy.removeFromCache(entityName, entityId);
   }
 
   /**
@@ -608,40 +411,41 @@ export class StateManager extends EventEmitter {
     return listeners.length > 0;
   }
 
-  // Add this helper method to check if an entity is still referenced
-  private isEntityReferenced(
+  // Helper method to check if an entity is still referenced
+  public isEntityReferenced(
     entityName: string,
     entityId: string,
     ignoreReference?: { entityName: string; fieldName: string }
   ): boolean {
-    const entityState = this.state[entityName];
-    if (!entityState) return false;
+    if (!ignoreReference) {
+      return this.graphManager.getInboundReferences(entityName, entityId).length > 0;
+    }
 
-    const relationships = SchemaManager.relationshipMap[entityName];
-    if (!relationships?._referencedBy) return false;
+    // Find the entity ID that's referencing this entity
+    const entities = this.state[ignoreReference.entityName];
+    if (!entities) return false;
 
-    return Object.entries(relationships._referencedBy).some(([referencingEntityName, reference]) => {
-      // Skip the reference we're about to delete
-      if (
-        ignoreReference &&
-        referencingEntityName === ignoreReference.entityName &&
-        reference.fieldName === ignoreReference.fieldName
-      ) {
-        return false;
+    let referencingId: string | undefined;
+
+    for (const [id, entity] of Object.entries(entities)) {
+      const value = entity[ignoreReference.fieldName];
+
+      // Check both array inclusion and direct equality in one condition
+      if ((Array.isArray(value) && value.includes(entityId)) || value === entityId) {
+        referencingId = id;
+        break;
       }
+    }
 
-      const entities = this.state[referencingEntityName];
-      if (!entities) return false;
+    if (!referencingId) return false;
 
-      return Object.values(entities).some((entity: any) => {
-        const value = entity[reference.fieldName];
-        if (Array.isArray(value)) {
-          return value.includes(entityId);
-        }
-        return value === entityId;
-      });
+    return this.graphManager.isEntityReferenced(entityName, entityId, {
+      entityName: ignoreReference.entityName,
+      id: referencingId
     });
   }
+
+  private readonly graphManager = new GraphManager();
 }
 
 export default StateManager;

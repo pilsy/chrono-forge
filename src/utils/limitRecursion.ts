@@ -44,12 +44,28 @@ export const limitRecursion: Function = (
       const relationName = getEntityName(relation);
 
       if (Array.isArray(value)) {
-        // Create new Map for each array item to track separate paths
-        result[key] = value.map((childId: string) =>
-          limitRecursion(childId, relationName, entities, stateManager, new Map(visited), depth + 1)
-        );
+        result[key] = value.map((childId: any) => {
+          let valueId;
+          if (typeof childId === 'string' || typeof childId === 'number') {
+            valueId = childId;
+          } else if ('idAttribute' in relation && typeof relation.idAttribute === 'function') {
+            valueId = childId[relation.idAttribute(childId)];
+          } else {
+            valueId = childId.id;
+          }
+          return limitRecursion(valueId, relationName, entities, stateManager, new Map(visited), depth + 1);
+        });
       } else {
-        result[key] = limitRecursion(value, relationName, entities, stateManager, new Map(visited), depth + 1);
+        let valueId;
+        if (typeof value === 'string' || typeof value === 'number') {
+          valueId = value;
+        } else if ('idAttribute' in relation && typeof relation.idAttribute === 'function') {
+          valueId = value[relation.idAttribute(value)];
+        } else {
+          valueId = value.id;
+        }
+
+        result[key] = limitRecursion(valueId, relationName, entities, stateManager, new Map(visited), depth + 1);
       }
     } else {
       result[key] = value;
@@ -69,7 +85,10 @@ export const getEntityName = (relation: any): string => {
     return relation.key;
   } else if (typeof relation === 'string') {
     return relation;
+  } else if (relation && typeof relation === 'object' && 'relatedEntityName' in relation) {
+    return relation.relatedEntityName;
   } else {
+    console.error(relation);
     throw new Error('Unknown schema relation type');
   }
 };
