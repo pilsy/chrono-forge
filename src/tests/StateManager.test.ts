@@ -8,9 +8,8 @@ import {
   updatePartialEntity
 } from '../store/entities';
 import schemas from './testSchemas';
-import hugeState from './testData/hugeState.json';
-import hugeData from './testData/hugeData.json';
 import { limitRecursion } from '../utils';
+import { readFileSync } from 'fs';
 
 const sleep = async (duration = 1000) =>
   new Promise((resolve) => {
@@ -69,6 +68,8 @@ describe('StateManager', () => {
     });
 
     it.skip('should handle very large states', async () => {
+      const hugeState = JSON.parse(readFileSync('./src/tests/testData/hugeState.json', 'utf8'));
+      const hugeData = JSON.parse(readFileSync('./src/tests/testData/hugeData.json', 'utf8'));
       console.time('limitRecursion');
       const data = limitRecursion('1', 'Website', hugeState);
       console.timeEnd('limitRecursion');
