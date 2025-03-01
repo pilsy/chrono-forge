@@ -210,50 +210,8 @@ export const handleUpdateEntities = (
   strategy: EntityStrategy = '$merge',
   value?: any
 ): Spec<EntitiesState> => {
-  // Update the graph for entities being added or modified
-  if (['$set', '$merge', '$push', '$unshift'].includes(strategy)) {
-    Object.entries(entities).forEach(([entityName, entityGroup]) => {
-      const relationships = SchemaManager.relationshipMap[entityName];
-      if (!relationships) return;
-
-      // Process each entity in the group
-      Object.entries(entityGroup as Record<string, any>).forEach(([entityId, entityData]) => {
-        // Add the entity node to the graph
-        graphManager.addEntityNode(entityName, entityId);
-
-        // Check each field that might reference other entities
-        Object.entries(relationships).forEach(([fieldName, relation]) => {
-          if (fieldName === '_referencedBy') return; // Skip metadata
-
-          const relationship = relation as Relationship;
-          if (!relationship?.relatedEntityName) return;
-
-          const referencedEntityName = relationship.relatedEntityName;
-          const fieldValue = entityData[fieldName];
-          if (!fieldValue) return;
-
-          // Handle array of references or single reference
-          const references = relationship.isMany && Array.isArray(fieldValue) ? fieldValue : [fieldValue];
-
-          references.forEach((refId) => {
-            if (typeof refId !== 'string' && typeof refId !== 'number') return;
-
-            // Add reference to the graph
-            graphManager.addReference(entityName, entityId, referencedEntityName, refId.toString());
-          });
-        });
-      });
-    });
-  }
-
-  // Handle reference removal for delete operations
-  if (strategy === '$unset') {
-    Object.entries(entities).forEach(([entityName, entityGroup]) => {
-      Object.keys(entityGroup as Record<string, any>).forEach((entityId) => {
-        graphManager.removeEntityNode(entityName, entityId);
-      });
-    });
-  }
+  // Extract the graph update logic to a separate function
+  updateEntityGraph(entities, strategy);
 
   // Original entity update logic
   return Object.entries(entities).reduce<IndexableSpec<EntitiesState>>((acc, [entityName, entityGroup]) => {
@@ -288,6 +246,70 @@ export const handleUpdateEntities = (
 
     return acc;
   }, {} as IndexableSpec<EntitiesState>);
+};
+
+// New function to handle graph updates separately
+const updateEntityGraph = (entities: Record<string, any>, strategy: EntityStrategy): void => {
+  if (['$set', '$merge', '$push', '$unshift'].includes(strategy)) {
+    Object.entries(entities).forEach(([entityName, entityGroup]) => {
+      const relationships = SchemaManager.relationshipMap[entityName];
+      if (!relationships) return;
+
+      processEntityGroup(entityName, entityGroup as Record<string, any>, relationships);
+    });
+  }
+
+  // Handle reference removal for delete operations
+  if (strategy === '$unset') {
+    Object.entries(entities).forEach(([entityName, entityGroup]) => {
+      Object.keys(entityGroup as Record<string, any>).forEach((entityId) => {
+        graphManager.removeEntityNode(entityName, entityId);
+      });
+    });
+  }
+};
+
+// Helper function to process each entity group
+const processEntityGroup = (
+  entityName: string,
+  entityGroup: Record<string, any>,
+  relationships: Record<string, any>
+): void => {
+  Object.entries(entityGroup).forEach(([entityId, entityData]) => {
+    // Add the entity node to the graph
+    graphManager.addEntityNode(entityName, entityId);
+
+    processEntityRelationships(entityName, entityId, entityData, relationships);
+  });
+};
+
+// Helper function to process entity relationships
+const processEntityRelationships = (
+  entityName: string,
+  entityId: string,
+  entityData: any,
+  relationships: Record<string, any>
+): void => {
+  Object.entries(relationships).forEach(([fieldName, relation]) => {
+    if (fieldName === '_referencedBy') return; // Skip metadata
+
+    const relationship = relation as Relationship;
+    if (!relationship?.relatedEntityName) return;
+
+    const referencedEntityName = relationship.relatedEntityName;
+    const fieldValue = entityData[fieldName];
+    if (!fieldValue) return;
+
+    // Handle array of references or single reference
+    const references = relationship.isMany && Array.isArray(fieldValue) ? fieldValue : [fieldValue];
+
+    references.forEach((refId) => {
+      if (typeof refId !== 'string' && typeof refId !== 'number') return;
+
+      // Add reference to the graph
+      graphManager.addReference(entityName, entityId, referencedEntityName, refId.toString());
+    });
+  });
 };
 
 export const handleDeleteEntities = (entities: EntitiesState): Spec<EntitiesState> =>

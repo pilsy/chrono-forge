@@ -173,9 +173,6 @@ export class EntityDataProxy {
           const method = Array.prototype[prop as any];
 
           return (...args: any[]) => {
-            // Make a copy of the array before modification
-            const oldArray = [...array];
-
             // For relationship arrays, we need to extract IDs from entities
             if (relation && prop === 'push') {
               const relatedEntityName = getEntityName(relation);
@@ -256,12 +253,11 @@ export class EntityDataProxy {
             this.updateEntityField(propName, target);
           }
 
-          return true;
+          return Reflect.set(target, prop, target[prop as any]);
         }
 
         // Handle other property assignments
-        target[prop as any] = value;
-        return true;
+        return Reflect.set(target, prop, value);
       }
     });
   }
@@ -293,7 +289,7 @@ export class EntityDataProxy {
     return new Proxy(obj, {
       set: (target, key, value) => {
         if (target[key] === value) {
-          return true;
+          return Reflect.set(target, key, value);
         }
 
         // Update the local object
@@ -302,7 +298,7 @@ export class EntityDataProxy {
         // Update the parent entity
         this.updateEntityField(propName, obj);
 
-        return true;
+        return Reflect.set(target, key, value);
       },
       get: (target, key) => {
         const value = target[key];
@@ -312,7 +308,7 @@ export class EntityDataProxy {
           return new Proxy(value, {
             set: (nestedTarget, nestedKey, nestedValue) => {
               if (nestedTarget[nestedKey] === nestedValue) {
-                return true;
+                return Reflect.set(nestedTarget, nestedKey, nestedValue);
               }
 
               // Update the local object
@@ -321,7 +317,7 @@ export class EntityDataProxy {
               // Update the parent entity
               this.updateEntityField(propName, obj);
 
-              return true;
+              return Reflect.set(nestedTarget, nestedKey, nestedValue);
             }
           });
         }
@@ -339,7 +335,7 @@ export class EntityDataProxy {
 
     // No change, return early
     if (oldValue === value) {
-      return true;
+      return Reflect.set(target, prop, value);
     }
 
     // Get relationship information
@@ -359,13 +355,13 @@ export class EntityDataProxy {
         // Handle array relationships
         if (Array.isArray(oldValue)) {
           // Track removed entities
-          const oldIds = oldValue.map((item: any) =>
-            typeof item === 'string' || typeof item === 'number'
-              ? item.toString()
-              : typeof idAttribute === 'function'
-                ? idAttribute(item)
-                : item[idAttribute]
-          );
+          const oldIds = oldValue.map((item: any) => {
+            // Extract ID from item, handling different item types
+            if (typeof item === 'string' || typeof item === 'number') {
+              return item.toString();
+            }
+            return typeof idAttribute === 'function' ? idAttribute(item) : item[idAttribute];
+          });
 
           // Process new values and track added entities
           const newIds: string[] = [];
@@ -399,12 +395,12 @@ export class EntityDataProxy {
       } else if (value && typeof value === 'object') {
         // Handle single entity relationships
         if (oldValue && typeof oldValue !== 'undefined') {
-          const oldId =
-            typeof oldValue === 'string' || typeof oldValue === 'number'
-              ? oldValue.toString()
-              : typeof idAttribute === 'function'
-                ? idAttribute(oldValue)
-                : oldValue[idAttribute];
+          let oldId;
+          if (typeof oldValue === 'string' || typeof oldValue === 'number') {
+            oldId = oldValue.toString();
+          } else {
+            oldId = typeof idAttribute === 'function' ? idAttribute(oldValue) : oldValue[idAttribute];
+          }
 
           const newId = typeof idAttribute === 'function' ? idAttribute(value) : value[idAttribute];
 
@@ -485,7 +481,7 @@ export class EntityDataProxy {
     // Dispatch all actions
     this.stateManager.dispatch(actions, false, this.stateManager.instanceId);
 
-    return true;
+    return Reflect.set(target, prop, value);
   }
 
   /**

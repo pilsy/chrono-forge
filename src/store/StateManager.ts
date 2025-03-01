@@ -265,89 +265,6 @@ export class StateManager extends EventEmitter {
   }
 
   /**
-   * Invalidates forward relationships for an entity
-   * @param relationships - The entity's relationships
-   * @param entityChanges - Changes to the entity
-   * @param entityId - ID of the entity
-   */
-  private invalidateForwardRelationships(relationships: any, entityChanges: any, entityId: string) {
-    if (!relationships) return;
-
-    Object.entries(relationships).forEach(([fieldName, relation]) => {
-      if (fieldName === '_referencedBy') return;
-
-      const { relatedEntityName, isMany } = relation as Relationship;
-      const relatedIds = entityChanges[entityId]?.[fieldName];
-
-      if (relatedIds) {
-        // Handle array-like objects (from DetailedDiff)
-        const idsToInvalidate = isMany
-          ? Object.values(relatedIds) // Convert array-like object to array
-          : [relatedIds]; // Single value, wrap in array
-
-        idsToInvalidate.forEach((id: string) => {
-          if (id) {
-            // Ensure id is not null/undefined
-            this.deleteCache(relatedEntityName, id);
-          }
-        });
-      }
-    });
-  }
-
-  /**
-   * Invalidates reverse relationships for an entity
-   * @param relationships - The entity's relationships
-   * @param entityId - ID of the entity
-   */
-  private invalidateReverseRelationships(relationships: any, entityId: string) {
-    if (!relationships._referencedBy) return;
-
-    Object.entries(relationships._referencedBy).forEach(([referencingEntityName, relation]) => {
-      const { fieldName, isMany } = relation as { fieldName: string; isMany: boolean };
-      this.invalidateReferencingEntities(referencingEntityName, fieldName, isMany, entityId);
-    });
-  }
-
-  /**
-   * Invalidates entities that reference the given entity
-   * @param referencingEntityName - Name of the referencing entity type
-   * @param fieldName - Field name that references the entity
-   * @param isMany - Whether the relationship is one-to-many
-   * @param entityId - ID of the referenced entity
-   */
-  private invalidateReferencingEntities(
-    referencingEntityName: string,
-    fieldName: string,
-    isMany: boolean,
-    entityId: string
-  ) {
-    const referencingEntities = this._state[referencingEntityName];
-    if (!referencingEntities) return;
-
-    Object.entries(referencingEntities).forEach(([id, entity]) => {
-      if (this.entityReferencesTarget(entity, fieldName, isMany, entityId)) {
-        this.deleteCache(referencingEntityName, id);
-      }
-    });
-  }
-
-  /**
-   * Checks if an entity references the target entity
-   * @param entity - The entity to check
-   * @param fieldName - Field name that references the target
-   * @param isMany - Whether the relationship is one-to-many
-   * @param entityId - ID of the target entity
-   * @returns True if the entity references the target
-   */
-  private entityReferencesTarget(entity: any, fieldName: string, isMany: boolean, entityId: string): boolean {
-    return (
-      entity[fieldName] === entityId ||
-      (isMany && Array.isArray(entity[fieldName]) && entity[fieldName].includes(entityId))
-    );
-  }
-
-  /**
    * Invalidates cache entries based on state changes
    * @param differences - Detailed diff of state changes
    */
@@ -363,15 +280,6 @@ export class StateManager extends EventEmitter {
 
         Object.keys(entityChanges).forEach((entityId) => {
           this.deleteCache(entityName, entityId);
-
-          const relationships = SchemaManager.relationshipMap[entityName];
-          if (!relationships) return;
-
-          if (changeType !== 'deleted') {
-            this.invalidateForwardRelationships(relationships, entityChanges, entityId);
-          }
-
-          this.invalidateReverseRelationships(relationships, entityId);
         });
       });
     });
@@ -387,9 +295,6 @@ export class StateManager extends EventEmitter {
     if (this.cache.has(cacheKey)) {
       this.cache.delete(cacheKey);
     }
-
-    // Also clear from EntityDataProxy cache
-    EntityDataProxy.removeFromCache(entityName, entityId);
   }
 
   /**

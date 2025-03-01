@@ -318,29 +318,81 @@ export class GraphManager {
     });
 
     // Second pass: add all references based on schema relationships
+    this.addReferencesFromState(state);
+  }
+
+  /**
+   * Helper method to add references from entity state
+   * Extracted to reduce nesting depth
+   *
+   * @param state - The current entity state containing all entities
+   * @private
+   */
+  private addReferencesFromState(state: EntitiesState): void {
     Object.entries(state).forEach(([entityName, entities]) => {
       const relationships = SchemaManager.relationshipMap[entityName];
       if (!relationships) return;
 
       Object.entries(entities).forEach(([id, entity]) => {
-        // Process each relationship field
-        Object.entries(relationships).forEach(([fieldName, relation]) => {
-          if (fieldName === '_referencedBy') return;
-
-          const { relatedEntityName, isMany } = relation as Relationship;
-          const value = entity[fieldName];
-
-          if (isMany && Array.isArray(value)) {
-            // Handle array of references
-            value.forEach((targetId: string) => {
-              this.addReference(entityName, id, relatedEntityName, targetId);
-            });
-          } else if (value) {
-            // Handle single reference
-            this.addReference(entityName, id, relatedEntityName, value);
-          }
-        });
+        this.processEntityRelationships(entityName, id, entity, relationships);
       });
+    });
+  }
+
+  /**
+   * Process relationships for a single entity
+   *
+   * @param entityName - Name of the entity type
+   * @param id - ID of the entity
+   * @param entity - The entity object
+   * @param relationships - Relationship definitions
+   * @private
+   */
+  private processEntityRelationships(
+    entityName: string,
+    id: string,
+    entity: any,
+    relationships: Record<string, any>
+  ): void {
+    Object.entries(relationships).forEach(([fieldName, relation]) => {
+      if (fieldName === '_referencedBy') return;
+
+      const { relatedEntityName, isMany } = relation as Relationship;
+      const value = entity[fieldName];
+
+      if (isMany && Array.isArray(value)) {
+        this.addManyReferences(entityName, id, relatedEntityName, value);
+      } else if (value) {
+        this.addSingleReference(entityName, id, relatedEntityName, value);
+      }
+    });
+  }
+
+  /**
+   * Add a single reference
+   *
+   * @param entityName - Source entity name
+   * @param id - Source entity ID
+   * @param relatedEntityName - Target entity name
+   * @param targetId - Target entity ID
+   * @private
+   */
+  private addSingleReference(entityName: string, id: string, relatedEntityName: string, targetId: string): void {
+    this.addReference(entityName, id, relatedEntityName, targetId);
+  }
+
+  /**
+   * Add multiple references from an array of IDs
+   *
+   * @param entityName - Source entity name
+   * @param id - Source entity ID
+   * @param relatedEntityName - Target entity name
+   * @param targetIds - Array of target entity IDs
+   * @private
+   */
+  private addManyReferences(entityName: string, id: string, relatedEntityName: string, targetIds: string[]): void {
+    targetIds.forEach((targetId: string) => {
+      this.addReference(entityName, id, relatedEntityName, targetId);
     });
   }
 
