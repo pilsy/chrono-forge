@@ -7,3 +7,4 @@ chrono-forge-old
 /coverage
 src/workflows/prototypes/*
 keys/*
+src/tests/testData/*

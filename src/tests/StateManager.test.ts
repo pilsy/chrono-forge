@@ -8,6 +8,9 @@ import {
   updatePartialEntity
 } from '../store/entities';
 import schemas from './testSchemas';
+import hugeState from './testData/hugeState.json';
+import hugeData from './testData/hugeData.json';
+import { limitRecursion } from '../utils';
 
 const sleep = async (duration = 1000) =>
   new Promise((resolve) => {
@@ -49,6 +52,12 @@ describe('StateManager', () => {
   });
 
   describe('State Management', () => {
+    beforeEach(async () => {
+      stateManager.dispatch(clearEntities());
+      await applyAllPendingChanges(stateManager);
+      dispatchSpy = jest.spyOn(stateManager, 'dispatch');
+    });
+
     it('should initialize with empty state', () => {
       expect(stateManager.state).toEqual({});
     });
@@ -57,6 +66,23 @@ describe('StateManager', () => {
       const newState = { User: { '1': { id: '1', name: 'John' } } };
       await stateManager.setState(newState);
       expect(stateManager.state).toEqual(newState);
+    });
+
+    it.skip('should handle very large states', async () => {
+      console.time('limitRecursion');
+      const data = limitRecursion('1', 'Website', hugeState);
+      console.timeEnd('limitRecursion');
+
+      const startTime = Date.now();
+      await stateManager.setState(hugeState);
+      const endTime = Date.now();
+      console.log(`Time taken to set state: ${endTime - startTime}ms`);
+
+      expect(stateManager.state).toEqual(hugeState);
+      expect(limitRecursion('1', 'Website', stateManager.state)).toEqual(data);
+
+      const website = stateManager.query('Website', '1');
+      expect(website.toJSON()).toEqual(hugeData);
     });
   });
 

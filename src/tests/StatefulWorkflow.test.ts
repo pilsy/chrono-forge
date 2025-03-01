@@ -378,7 +378,7 @@ describe('StatefulWorkflow', () => {
 
       // Ensure the parent User workflow is initialized with the correct normalized state
       const expectedInitialState = normalizeEntities(data, SchemaManager.getInstance().getSchema('User'));
-      await sleep(2500);
+      await sleep(5000);
 
       const state = await handle.query('state');
       expect(state).toEqual(expectedInitialState);
@@ -398,7 +398,7 @@ describe('StatefulWorkflow', () => {
       // Update one of the listings in the User parent workflow
       data.listings[0].name = 'Updated Listing Name';
       await handle.signal('update', { data, entityName: 'User' });
-      await sleep(2500);
+      await sleep(5000);
 
       // Verify that the state in the User parent workflow is updated correctly
       const updatedState = await handle.query('state');

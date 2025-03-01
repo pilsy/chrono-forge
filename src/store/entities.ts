@@ -211,7 +211,7 @@ export const handleUpdateEntities = (
   value?: any
 ): Spec<EntitiesState> => {
   // Extract the graph update logic to a separate function
-  updateEntityGraph(entities, strategy);
+  updateEntityGraph(entities, strategy, state);
 
   // Original entity update logic
   return Object.entries(entities).reduce<IndexableSpec<EntitiesState>>((acc, [entityName, entityGroup]) => {
@@ -249,13 +249,13 @@ export const handleUpdateEntities = (
 };
 
 // New function to handle graph updates separately
-const updateEntityGraph = (entities: Record<string, any>, strategy: EntityStrategy): void => {
+const updateEntityGraph = (entities: Record<string, any>, strategy: EntityStrategy, state?: EntitiesState): void => {
   if (['$set', '$merge', '$push', '$unshift'].includes(strategy)) {
     Object.entries(entities).forEach(([entityName, entityGroup]) => {
       const relationships = SchemaManager.relationshipMap[entityName];
       if (!relationships) return;
 
-      processEntityGroup(entityName, entityGroup as Record<string, any>, relationships);
+      processEntityGroup(entityName, entityGroup as Record<string, any>, relationships, state);
     });
   }
 
@@ -273,13 +273,14 @@ const updateEntityGraph = (entities: Record<string, any>, strategy: EntityStrate
 const processEntityGroup = (
   entityName: string,
   entityGroup: Record<string, any>,
-  relationships: Record<string, any>
+  relationships: Record<string, any>,
+  state?: EntitiesState
 ): void => {
   Object.entries(entityGroup).forEach(([entityId, entityData]) => {
     // Add the entity node to the graph
     graphManager.addEntityNode(entityName, entityId);
 
-    processEntityRelationships(entityName, entityId, entityData, relationships);
+    processEntityRelationships(entityName, entityId, entityData, relationships, state);
   });
 };
 
@@ -288,7 +289,8 @@ const processEntityRelationships = (
   entityName: string,
   entityId: string,
   entityData: any,
-  relationships: Record<string, any>
+  relationships: Record<string, any>,
+  state?: EntitiesState
 ): void => {
   Object.entries(relationships).forEach(([fieldName, relation]) => {
     if (fieldName === '_referencedBy') return; // Skip metadata
@@ -298,17 +300,48 @@ const processEntityRelationships = (
 
     const referencedEntityName = relationship.relatedEntityName;
     const fieldValue = entityData[fieldName];
-    if (!fieldValue) return;
 
-    // Handle array of references or single reference
-    const references = relationship.isMany && Array.isArray(fieldValue) ? fieldValue : [fieldValue];
+    // Get previous references to compare with new ones
+    const previousEntity = state?.[entityName]?.[entityId];
+    const previousFieldValue = previousEntity?.[fieldName];
 
-    references.forEach((refId) => {
-      if (typeof refId !== 'string' && typeof refId !== 'number') return;
+    // Remove previous references if they exist and are different from current
+    if (previousFieldValue && previousEntity) {
+      const previousRefs =
+        relationship.isMany && Array.isArray(previousFieldValue) ? previousFieldValue : [previousFieldValue];
 
-      // Add reference to the graph
-      graphManager.addReference(entityName, entityId, referencedEntityName, refId.toString());
-    });
+      // Only process if the field exists in the current update
+      if (fieldName in entityData) {
+        previousRefs.forEach((refId) => {
+          if (typeof refId !== 'string' && typeof refId !== 'number') return;
+
+          // Check if this reference is no longer present in the new data
+          const newRefs = relationship.isMany && Array.isArray(fieldValue) ? fieldValue : [fieldValue];
+          const refIdStr = refId.toString();
+          const stillExists = newRefs.some(
+            (newRef) => (typeof newRef === 'string' || typeof newRef === 'number') && newRef.toString() === refIdStr
+          );
+
+          if (!stillExists) {
+            // Remove the reference that no longer exists
+            graphManager.removeReference(entityName, entityId, referencedEntityName, refIdStr);
+          }
+        });
+      }
+    }
+
+    // Add new references
+    if (fieldValue) {
+      // Handle array of references or single reference
+      const references = relationship.isMany && Array.isArray(fieldValue) ? fieldValue : [fieldValue];
+
+      references.forEach((refId) => {
+        if (typeof refId !== 'string' && typeof refId !== 'number') return;
+
+        // Add reference to the graph
+        graphManager.addReference(entityName, entityId, referencedEntityName, refId.toString());
+      });
+    }
   });
 };
 

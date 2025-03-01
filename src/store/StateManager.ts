@@ -103,7 +103,7 @@ export class StateManager extends EventEmitter {
     if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
       this._state = newState;
       EntityDataProxy.clearCache();
-      this.invalidateCache(differences);
+      this.cache.clear();
 
       await this.emitStateChangeEvents(differences, previousState, newState, Array.from(origins));
     }
@@ -114,7 +114,7 @@ export class StateManager extends EventEmitter {
     await this.dispatch(setState(newState), true, this.instanceId);
   }
 
-  public readonly cache: LRUCacheWithDelete<string, Record<string, any>> = new LRUCacheWithDelete(1000);
+  public readonly cache: LRUCacheWithDelete<string, Record<string, any>> = new LRUCacheWithDelete(100);
 
   private readonly _queue: QueueItem[] = [];
   get queue() {
@@ -262,39 +262,6 @@ export class StateManager extends EventEmitter {
 
     // Create and return a proxy for the denormalized entity
     return EntityDataProxy.create(entityName, id, denormalized, this);
-  }
-
-  /**
-   * Invalidates cache entries based on state changes
-   * @param differences - Detailed diff of state changes
-   */
-  private invalidateCache(differences: DetailedDiff) {
-    const changedPaths = ['added', 'updated', 'deleted'] as const;
-
-    changedPaths.forEach((changeType) => {
-      const entities = (differences as EntitiesStateDetailedDiff)[changeType];
-      if (!entities || typeof entities !== 'object') return;
-
-      Object.entries(entities).forEach(([entityName, entityChanges]) => {
-        if (!entityChanges || typeof entityChanges !== 'object') return;
-
-        Object.keys(entityChanges).forEach((entityId) => {
-          this.deleteCache(entityName, entityId);
-        });
-      });
-    });
-  }
-
-  /**
-   * Deletes cache entries for a specific entity
-   * @param entityName - Name of the entity type
-   * @param entityId - ID of the entity
-   */
-  private deleteCache(entityName: string, entityId: string) {
-    const cacheKey = `${entityName}::${entityId}`;
-    if (this.cache.has(cacheKey)) {
-      this.cache.delete(cacheKey);
-    }
   }
 
   /**
