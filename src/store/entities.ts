@@ -3,9 +3,6 @@ import { normalize, Schema } from 'normalizr';
 import { Relationship, SchemaManager } from '../store/SchemaManager';
 import { GraphManager } from '../store/GraphManager';
 
-// Initialize a singleton GraphManager
-const graphManager = new GraphManager();
-
 // Types
 export type EntitiesState = Record<string, Record<string, any>>;
 
@@ -204,6 +201,9 @@ const applyApplyStrategy = (entityGroup: Record<string, any>, value: any): Spec<
   );
 };
 
+// Get a reference to the GraphManager singleton once
+const graphManager = GraphManager.getInstance();
+
 export const handleUpdateEntities = (
   state: EntitiesState,
   entities: Record<string, any>,
@@ -302,42 +302,6 @@ export const handleDeleteEntities = (entities: EntitiesState): Spec<EntitiesStat
       ];
     })
   );
-
-export const isEntityReferenced = (
-  state: EntitiesState,
-  entityName: string,
-  entityId: string,
-  ignoreReference?: { entityName: string; fieldName: string }
-): boolean => {
-  // If no ignore reference, just check if there are any inbound references
-  if (!ignoreReference) {
-    return graphManager.getInboundReferences(entityName, entityId).length > 0;
-  }
-
-  // Find the entity ID that's referencing this entity
-  const entities = state[ignoreReference.entityName];
-  if (!entities) return false;
-
-  let referencingId: string | undefined;
-
-  for (const [id, entity] of Object.entries(entities)) {
-    const value = entity[ignoreReference.fieldName];
-
-    // Check both array inclusion and direct equality in one condition
-    if ((Array.isArray(value) && value.includes(entityId)) || value === entityId) {
-      referencingId = id;
-      break;
-    }
-  }
-
-  if (!referencingId) return false;
-
-  // Use GraphManager to check if the entity is referenced by others
-  return graphManager.isEntityReferenced(entityName, entityId, {
-    entityName: ignoreReference.entityName,
-    id: referencingId
-  });
-};
 
 export function reducer(state: EntitiesState = initialState, action: EntityAction): EntitiesState {
   switch (action.type) {

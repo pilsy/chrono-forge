@@ -1,11 +1,12 @@
 import { schema as normalizrSchema } from 'normalizr';
 import { SchemaManager } from '../store/SchemaManager';
 import { StateManager } from '../store/StateManager';
+import { EntitiesState } from '../store';
 
 export const limitRecursion: Function = (
   entityId: string,
   entityName: string,
-  entities: Record<string, any>,
+  entities: EntitiesState,
   stateManager: boolean | StateManager = false,
   visited: Map<string, number> = new Map(),
   depth: number = 0
@@ -29,7 +30,7 @@ export const limitRecursion: Function = (
   visited.set(entityKey, depth);
 
   // Check StateManager cache if available
-  if (stateManager instanceof StateManager && stateManager.cache.has(entityKey)) {
+  if (stateManager instanceof StateManager && depth === 0 && stateManager.cache.has(entityKey)) {
     return stateManager.cache.get(entityKey);
   }
 
@@ -44,35 +45,88 @@ export const limitRecursion: Function = (
       const relationName = getEntityName(relation);
 
       if (Array.isArray(value)) {
-        result[key] = value.map((childId: any) => {
-          let valueId;
-          if (typeof childId === 'string' || typeof childId === 'number') {
-            valueId = childId;
-          } else if ('idAttribute' in relation && typeof relation.idAttribute === 'function') {
-            valueId = childId[relation.idAttribute(childId)];
-          } else {
-            valueId = childId.id;
-          }
-          return limitRecursion(valueId, relationName, entities, stateManager, new Map(visited), depth + 1);
-        });
-      } else {
-        let valueId;
-        if (typeof value === 'string' || typeof value === 'number') {
-          valueId = value;
-        } else if ('idAttribute' in relation && typeof relation.idAttribute === 'function') {
-          valueId = value[relation.idAttribute(value)];
-        } else {
-          valueId = value.id;
-        }
+        // Create a lazy-loaded array proxy
+        const lazyArray = [...value]; // Create a copy to avoid modifying the original
 
-        result[key] = limitRecursion(valueId, relationName, entities, stateManager, new Map(visited), depth + 1);
+        // Define a custom property descriptor for each array item
+        value.forEach((childId: any, index: number) => {
+          Object.defineProperty(lazyArray, index, {
+            enumerable: true,
+            get: function () {
+              let valueId;
+              if (typeof childId === 'string' || typeof childId === 'number') {
+                valueId = childId;
+              } else if ('idAttribute' in relation && typeof relation.idAttribute === 'function') {
+                valueId = childId[relation.idAttribute(childId)];
+              } else {
+                valueId = childId.id;
+              }
+
+              // Replace the getter with the actual value after first access
+              const resolvedValue = limitRecursion(
+                valueId,
+                relationName,
+                entities,
+                stateManager,
+                new Map(visited),
+                depth + 1
+              );
+              Object.defineProperty(lazyArray, index, {
+                enumerable: true,
+                value: resolvedValue,
+                writable: true,
+                configurable: true
+              });
+
+              return resolvedValue;
+            },
+            configurable: true
+          });
+        });
+
+        result[key] = lazyArray;
+      } else {
+        // Create a lazy-loaded property for the single relation
+        Object.defineProperty(result, key, {
+          enumerable: true,
+          get: function () {
+            let valueId;
+            if (typeof value === 'string' || typeof value === 'number') {
+              valueId = value;
+            } else if ('idAttribute' in relation && typeof relation.idAttribute === 'function') {
+              valueId = value[relation.idAttribute(value)];
+            } else {
+              valueId = value.id;
+            }
+
+            // Replace the getter with the actual value after first access
+            const resolvedValue = limitRecursion(
+              valueId,
+              relationName,
+              entities,
+              stateManager,
+              new Map(visited),
+              depth + 1
+            );
+            Object.defineProperty(result, key, {
+              enumerable: true,
+              value: resolvedValue,
+              writable: true,
+              configurable: true
+            });
+
+            return resolvedValue;
+          },
+          configurable: true
+        });
       }
     } else {
       result[key] = value;
     }
   }
 
-  if (stateManager instanceof StateManager) {
+  // Store in cache only at depth 0
+  if (stateManager instanceof StateManager && depth === 0) {
     stateManager.cache.set(entityKey, result);
   }
   return result;

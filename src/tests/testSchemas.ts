@@ -7,6 +7,7 @@ SchemaManager.parseYAML(`
     likes: [Like]
     photos: [Photo]
     nested: Nested
+    friends: [User]
   
   Listing:
     idAttribute: id

@@ -1,7 +1,7 @@
 import { StateManager } from './StateManager';
 import { SchemaManager } from './SchemaManager';
 import { getEntityName } from '../utils';
-import { EntityAction, EntityStrategy, updatePartialEntity, deleteEntity } from './entities';
+import { EntityAction, EntityStrategy, updatePartialEntity, deleteEntity, updateEntity } from './entities';
 
 /**
  * EntityDataProxy provides a reactive interface to entity data with automatic state updates
@@ -145,10 +145,15 @@ export class EntityDataProxy {
 
           // If this is a relationship array, handle ID references
           if (relation && index >= 0 && index < target.length) {
-            const itemId = target[index];
-            if (typeof itemId === 'string' || typeof itemId === 'number') {
-              const relatedEntityName = getEntityName(relation);
-              return this.stateManager.query(relatedEntityName, itemId.toString(), true);
+            const item = target[index];
+            const relatedEntityName = getEntityName(relation);
+            if (typeof item === 'string' || typeof item === 'number') {
+              return item;
+            } else {
+              // Extract the ID from the item using the schema's idAttribute
+              const idAttribute = SchemaManager.schemas[relatedEntityName].idAttribute;
+              const itemId = typeof idAttribute === 'function' ? idAttribute(item) : item[idAttribute];
+              return EntityDataProxy.create(relatedEntityName, itemId, item, this.stateManager);
             }
           }
 
@@ -271,17 +276,17 @@ export class EntityDataProxy {
       const idAttribute = SchemaManager.schemas[relatedEntityName].idAttribute;
 
       // Get the ID of the related entity
-      let relatedId: string;
       if (typeof obj === 'string' || typeof obj === 'number') {
-        relatedId = obj.toString();
-      } else if (typeof idAttribute === 'function') {
-        relatedId = idAttribute(obj);
+        return obj;
       } else {
-        relatedId = obj[idAttribute];
+        // Return a proxy for the related entity
+        return EntityDataProxy.create(
+          relatedEntityName,
+          typeof idAttribute === 'function' ? idAttribute(obj) : obj[idAttribute],
+          obj,
+          this.stateManager
+        );
       }
-
-      // Return a proxy for the related entity
-      return this.stateManager.query(relatedEntityName, relatedId, true);
     }
 
     // For non-relationship objects, return a nested proxy
@@ -344,6 +349,7 @@ export class EntityDataProxy {
     // Process the value based on relationship type
     let processedValue = value;
     let removedEntityIds: string[] = [];
+    let addedEntities: any[] = [];
 
     if (relation) {
       const relatedEntityName = getEntityName(relation);
@@ -361,15 +367,26 @@ export class EntityDataProxy {
                 : item[idAttribute]
           );
 
-          const newIds = value.map((item: any) =>
-            typeof item === 'string' || typeof item === 'number'
-              ? item.toString()
-              : typeof idAttribute === 'function'
-                ? idAttribute(item)
-                : item[idAttribute]
-          );
+          // Process new values and track added entities
+          const newIds: string[] = [];
+          addedEntities = value.filter((item: any) => {
+            // Skip if it's just an ID reference
+            if (typeof item === 'string' || typeof item === 'number') {
+              const id = item.toString();
+              newIds.push(id);
+              return !oldIds.includes(id);
+            }
+
+            // It's an entity object
+            const id = typeof idAttribute === 'function' ? idAttribute(item) : item[idAttribute];
+            newIds.push(id);
+            return !oldIds.includes(id) && typeof item === 'object';
+          });
 
           removedEntityIds = oldIds.filter((id: string) => !newIds.includes(id));
+        } else {
+          // If oldValue wasn't an array, all entities are new
+          addedEntities = value.filter((item: any) => typeof item === 'object' && item !== null);
         }
 
         // Convert array of entities to array of IDs
@@ -381,7 +398,7 @@ export class EntityDataProxy {
         });
       } else if (value && typeof value === 'object') {
         // Handle single entity relationships
-        if (oldValue && typeof oldValue === 'object') {
+        if (oldValue && typeof oldValue !== 'undefined') {
           const oldId =
             typeof oldValue === 'string' || typeof oldValue === 'number'
               ? oldValue.toString()
@@ -393,7 +410,11 @@ export class EntityDataProxy {
 
           if (oldId && oldId !== newId) {
             removedEntityIds.push(oldId);
+            addedEntities.push(value);
           }
+        } else {
+          // If there was no previous value, this is a new entity
+          addedEntities.push(value);
         }
 
         // Convert single entity reference to ID
@@ -402,7 +423,7 @@ export class EntityDataProxy {
     }
 
     // Update the local data
-    target[prop] = processedValue;
+    target[prop] = value;
 
     // Determine update strategy
     let strategy: EntityStrategy = '$merge';
@@ -413,7 +434,26 @@ export class EntityDataProxy {
     }
 
     // Create actions
-    const actions: EntityAction[] = [
+    const actions: EntityAction[] = [];
+
+    // Add actions for added entities
+    if (addedEntities.length > 0 && relation) {
+      const relatedEntityName = getEntityName(relation);
+
+      addedEntities.forEach((entity: any) => {
+        // Only add if it's a valid entity object
+        if (entity && typeof entity === 'object') {
+          const idAttribute = SchemaManager.schemas[relatedEntityName].idAttribute;
+          const entityId = typeof idAttribute === 'function' ? idAttribute(entity) : entity[idAttribute];
+
+          if (entityId) {
+            actions.push(updateEntity(entity, relatedEntityName));
+          }
+        }
+      });
+    }
+
+    actions.push(
       updatePartialEntity(
         this.entityName,
         this.entityId,
@@ -424,7 +464,7 @@ export class EntityDataProxy {
         },
         strategy
       )
-    ];
+    );
 
     // Add deleteEntity actions for removed entities if they're no longer referenced
     if (removedEntityIds.length > 0 && relation) {

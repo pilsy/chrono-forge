@@ -1,5 +1,5 @@
 import EventEmitter from 'eventemitter3';
-import { EntitiesState, EntityAction, reducer, clearEntities } from '../store/entities';
+import { EntitiesState, EntityAction, reducer, clearEntities, setState } from '../store/entities';
 import { DetailedDiff, detailedDiff } from 'deep-object-diff';
 import { isEmpty } from 'lodash';
 import { limitRecursion } from '../utils';
@@ -7,6 +7,15 @@ import { LRUCacheWithDelete } from 'mnemonist';
 import { Relationship, SchemaManager } from './SchemaManager';
 import { GraphManager } from './GraphManager';
 import { EntityDataProxy } from './EntityDataProxy';
+
+/**
+ * Represents the detailed diff structure for EntitiesState
+ */
+export type EntitiesStateDetailedDiff = {
+  added: EntitiesState;
+  updated: EntitiesState;
+  deleted: EntitiesState;
+};
 
 /**
  * Represents a queue item containing an entity action and optional origin
@@ -22,6 +31,8 @@ export type QueueItem = {
  * Extends EventEmitter to provide state change notifications.
  */
 export class StateManager extends EventEmitter {
+  private readonly graphManager: GraphManager;
+
   /**
    * Gets the instance ID of this StateManager
    */
@@ -37,7 +48,7 @@ export class StateManager extends EventEmitter {
     super();
     this._instanceId = _instanceId;
     this._state = {};
-    this.graphManager = new GraphManager();
+    this.graphManager = GraphManager.getInstance();
   }
 
   /**
@@ -84,16 +95,15 @@ export class StateManager extends EventEmitter {
   /**
    * Updates the state and emits change events if necessary
    * @param newState - The new state to set
+   * @param previousState - Previous state before changes
+   * @param origins - Set of origin identifiers for the changes
    */
   private async handleStateChange(newState: EntitiesState, previousState: EntitiesState, origins: Set<string>) {
     const differences = detailedDiff(previousState, newState);
     if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
       this._state = newState;
-      this.proxyCache.clear();
+      EntityDataProxy.clearCache();
       this.invalidateCache(differences);
-
-      // Update the graph with the new state
-      this.graphManager.buildFromState(newState);
 
       await this.emitStateChangeEvents(differences, previousState, newState, Array.from(origins));
     }
@@ -101,13 +111,11 @@ export class StateManager extends EventEmitter {
 
   async setState(newState: EntitiesState) {
     if (this._state === newState) return;
-    const previousState = this._state;
-    await this.handleStateChange(newState, previousState, new Set([this.instanceId]));
+    await this.dispatch(setState(newState), true, this.instanceId);
   }
 
-  public readonly cache: LRUCacheWithDelete<string, Record<string, any>> = new LRUCacheWithDelete(10000);
+  public readonly cache: LRUCacheWithDelete<string, Record<string, any>> = new LRUCacheWithDelete(1000);
 
-  private readonly proxyCache: Map<string, { data: any; lastState: EntitiesState }> = new Map();
   private readonly _queue: QueueItem[] = [];
   get queue() {
     return this._queue;
@@ -200,7 +208,7 @@ export class StateManager extends EventEmitter {
     };
 
     for (const changeType of changedPaths) {
-      const entities = differences[changeType];
+      const entities = (differences as EntitiesStateDetailedDiff)[changeType];
       if (!entities || typeof entities !== 'object') continue;
 
       for (const [entityName, entityChanges] of Object.entries(entities)) {
@@ -347,7 +355,7 @@ export class StateManager extends EventEmitter {
     const changedPaths = ['added', 'updated', 'deleted'] as const;
 
     changedPaths.forEach((changeType) => {
-      const entities = differences[changeType];
+      const entities = (differences as EntitiesStateDetailedDiff)[changeType];
       if (!entities || typeof entities !== 'object') return;
 
       Object.entries(entities).forEach(([entityName, entityChanges]) => {
@@ -444,8 +452,6 @@ export class StateManager extends EventEmitter {
       id: referencingId
     });
   }
-
-  private readonly graphManager = new GraphManager();
 }
 
 export default StateManager;
