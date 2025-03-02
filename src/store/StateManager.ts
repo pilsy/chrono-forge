@@ -4,9 +4,8 @@ import { DetailedDiff, detailedDiff } from 'deep-object-diff';
 import { isEmpty } from 'lodash';
 import { limitRecursion } from '../utils';
 import { LRUCacheWithDelete } from 'mnemonist';
-import { Relationship, SchemaManager } from './SchemaManager';
-import { GraphManager } from './GraphManager';
 import { EntityProxyManager } from './EntityProxyManager';
+import { SchemaManager } from './SchemaManager';
 
 /**
  * Represents the detailed diff structure for EntitiesState
@@ -31,8 +30,6 @@ export type QueueItem = {
  * Extends EventEmitter to provide state change notifications.
  */
 export class StateManager extends EventEmitter {
-  private readonly graphManager: GraphManager;
-
   /**
    * Gets the instance ID of this StateManager
    */
@@ -48,7 +45,6 @@ export class StateManager extends EventEmitter {
     super();
     this._instanceId = _instanceId;
     this._state = {};
-    this.graphManager = GraphManager.getInstance();
 
     // Initialize EntityProxyManager if it hasn't been initialized yet
     if (!EntityProxyManager['proxyStateTree']) {
@@ -304,37 +300,39 @@ export class StateManager extends EventEmitter {
     return listeners.length > 0;
   }
 
-  // Helper method to check if an entity is still referenced
   public isEntityReferenced(
     entityName: string,
     entityId: string,
     ignoreReference?: { entityName: string; fieldName: string }
   ): boolean {
-    if (!ignoreReference) {
-      return this.graphManager.getInboundReferences(entityName, entityId).length > 0;
-    }
+    const referenceMap = SchemaManager.relationshipMap[entityName]?._referencedBy;
+    if (!referenceMap) return false;
 
-    // Find the entity ID that's referencing this entity
-    const entities = this.state[ignoreReference.entityName];
-    if (!entities) return false;
-
-    let referencingId: string | undefined;
-
-    for (const [id, entity] of Object.entries(entities)) {
-      const value = entity[ignoreReference.fieldName];
-
-      // Check both array inclusion and direct equality in one condition
-      if ((Array.isArray(value) && value.includes(entityId)) || value === entityId) {
-        referencingId = id;
-        break;
+    return Object.entries(referenceMap).some(([referencingEntityName, referencingEntity]) => {
+      // Skip if this is the reference we want to ignore
+      if (
+        ignoreReference &&
+        ignoreReference.entityName === referencingEntityName &&
+        ignoreReference.fieldName === referencingEntity.fieldName
+      ) {
+        return false;
       }
-    }
 
-    if (!referencingId) return false;
+      const entities = this.state[referencingEntityName];
+      if (!entities) return false;
 
-    return this.graphManager.isEntityReferenced(entityName, entityId, {
-      entityName: ignoreReference.entityName,
-      id: referencingId
+      // Find any entity that references our target entity
+      return Object.keys(entities).some((id) => {
+        const entity = entities[id];
+        if (!entity || entity[referencingEntity.fieldName] === undefined) return false;
+
+        if (referencingEntity.isMany) {
+          return (
+            Array.isArray(entity[referencingEntity.fieldName]) && entity[referencingEntity.fieldName].includes(entityId)
+          );
+        }
+        return entity[referencingEntity.fieldName] === entityId;
+      });
     });
   }
 }

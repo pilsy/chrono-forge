@@ -1,12 +1,13 @@
 import update, { Spec } from 'immutability-helper';
 import { normalize, Schema } from 'normalizr';
-import { Relationship, SchemaManager } from '../store/SchemaManager';
-import { GraphManager } from '../store/GraphManager';
+import { SchemaManager } from '../store/SchemaManager';
 
-// Types
-export type EntitiesState = Record<string, Record<string, any>>;
-
+type IndexableSpec<T> = Spec<T> & {
+  [key: string]: any;
+};
+export type EntitiesState = Record<string, Record<string | number, any>>;
 export type EntityStrategy =
+  | '$replace'
   | '$set'
   | '$merge'
   | '$unset'
@@ -20,8 +21,8 @@ export type EntityStrategy =
 
 export type EntityAction = {
   type: string;
-  entity?: Record<string, any>;
-  entities?: Record<string, any>;
+  entity?: Record<string | number, any>;
+  entities?: EntitiesState;
   entityId?: string;
   entityName?: string;
   strategy?: EntityStrategy;
@@ -48,29 +49,32 @@ function getSchema(entityName: string): Schema {
   return schema;
 }
 
+export const normalizeEntities = <T>(data: T | T[], entitySchema: Schema | string): EntitiesState => {
+  const schema = typeof entitySchema === 'string' ? getSchema(entitySchema) : entitySchema;
+  const { entities } = normalize(data, Array.isArray(data) ? [schema] : schema);
+
+  return entities as EntitiesState;
+};
+
 export const setState = (entities: EntitiesState = {}): EntityAction => ({
   type: SET_STATE,
   entities
 });
 
-export const updateEntity = (entity: any, entityName: string): EntityAction => {
-  const schema = getSchema(entityName);
-  return updateNormalizedEntities(normalize(entity, schema).entities);
-};
+export const updateEntity = (entity: Record<string | number, any>, entityName: string): EntityAction =>
+  updateNormalizedEntities(normalize(entity, getSchema(entityName)).entities as EntitiesState);
 
-export const updateNormalizedEntity = (entity: Record<string, any>, entityName: string): EntityAction => ({
+export const updateNormalizedEntity = (entity: Record<string | number, any>, entityName: string): EntityAction => ({
   type: UPDATE_ENTITY,
   entity,
   entityName
 });
 
-export const updateEntities = (entities: any[], entityName: string): EntityAction => {
-  const schema = getSchema(entityName);
-  return updateNormalizedEntities(normalize(entities, schema).entities);
-};
+export const updateEntities = (entities: any[], entityName: string): EntityAction =>
+  updateNormalizedEntities(normalize(entities, getSchema(entityName)).entities as EntitiesState);
 
 export const updateNormalizedEntities = (
-  entities: Record<string, unknown>,
+  entities: EntitiesState,
   strategy: EntityStrategy = '$merge'
 ): EntityAction => ({
   type: UPDATE_ENTITIES,
@@ -81,7 +85,7 @@ export const updateNormalizedEntities = (
 export const updatePartialEntity = (
   entityName: string,
   entityId: string,
-  entities: Record<string, { [key: string]: any }>,
+  entities: EntitiesState,
   strategy: EntityStrategy = '$merge'
 ): EntityAction => ({
   type: PARTIAL_UPDATE,
@@ -111,17 +115,6 @@ export const clearEntities = (): EntityAction => ({
   type: CLEAR_ENTITIES
 });
 
-export const normalizeEntities = <T>(data: T | T[], entitySchema: Schema | string): EntitiesState => {
-  const schema = typeof entitySchema === 'string' ? getSchema(entitySchema) : entitySchema;
-  const { entities } = normalize(data, Array.isArray(data) ? [schema] : schema);
-
-  return entities as EntitiesState;
-};
-
-type IndexableSpec<T> = Spec<T> & {
-  [key: string]: any;
-};
-
 export const createUpdateStatement = (state: EntitiesState, normalizedEntities: EntitiesState): Spec<EntitiesState> => {
   return Object.entries(normalizedEntities).reduce<IndexableSpec<EntitiesState>>((acc, [entityName, entityGroup]) => {
     acc[entityName] = state[entityName]
@@ -137,92 +130,24 @@ export const createUpdateStatement = (state: EntitiesState, normalizedEntities: 
   }, {} as IndexableSpec<EntitiesState>);
 };
 
-const applyArrayOperation = (
-  stateArray: Record<string, any>,
-  entityGroup: Record<string, any>,
-  operation: EntityStrategy
-): Spec<EntitiesState> => {
-  const actions = Object.entries(entityGroup).reduce<IndexableSpec<Record<string, any>>>(
-    (acc, [key, update]) => {
-      // Iterate through properties of the update object
-      Object.entries(update).forEach(([propKey, arrayValues]) => {
-        // Initialize array if it doesn't exist
-        const currentArray = stateArray[key][propKey] ?? []; // Defaults to an empty array if it doesn't already exist
-
-        if (!Array.isArray(currentArray)) {
-          throw new Error(`Expected array for ${operation} operation on key '${key}.${propKey}'`);
-        }
-
-        acc[key] = acc[key] || {};
-        acc[key][propKey] = { [operation]: Array.isArray(arrayValues) ? arrayValues : [arrayValues] };
-      });
-
-      return acc;
-    },
-    {} as IndexableSpec<Record<string, any>>
-  );
-
-  return actions;
-};
-
-// Define separate functions for each strategy to minimize nesting
-
-const applySetStrategy = (entityGroup: Record<string, any>): Spec<EntitiesState> => {
-  return { $set: entityGroup };
-};
-
-const applyMergeStrategy = (
-  state: EntitiesState,
-  entityName: string,
-  entityGroup: Record<string, any>
-): Spec<EntitiesState> => {
-  return {
-    ...(createUpdateStatement(state, { [entityName]: entityGroup }) as IndexableSpec<EntitiesState>)[entityName]
-  };
-};
-
-const applyUnsetStrategy = (entityGroup: Record<string, any>): Spec<EntitiesState> => {
-  return { $unset: Object.keys(entityGroup) };
-};
-
-const applySpliceStrategy = (entityGroup: Record<string, any>, value: any): Spec<EntitiesState> => {
-  return Object.keys(entityGroup).reduce(
-    (actions, key) => {
-      actions[key] = { items: { $splice: value[key] || [] } };
-      return actions;
-    },
-    {} as IndexableSpec<Record<string, any>>
-  );
-};
-
-const applyApplyStrategy = (entityGroup: Record<string, any>, value: any): Spec<EntitiesState> => {
-  return Object.fromEntries(
-    Object.entries(entityGroup).map(([key, _]) => [key, { $apply: (original: any) => value(original) }])
-  );
-};
-
-// Get a reference to the GraphManager singleton once
-const graphManager = GraphManager.getInstance();
-
 export const handleUpdateEntities = (
   state: EntitiesState,
   entities: Record<string, any>,
   strategy: EntityStrategy = '$merge',
   value?: any
-): Spec<EntitiesState> => {
-  // Extract the graph update logic to a separate function
-  updateEntityGraph(entities, strategy, state);
-
-  // Original entity update logic
-  return Object.entries(entities).reduce<IndexableSpec<EntitiesState>>((acc, [entityName, entityGroup]) => {
+): Spec<EntitiesState> =>
+  Object.entries(entities).reduce<IndexableSpec<EntitiesState>>((acc, [entityName, entityGroup]) => {
     if (!state[entityName]) {
       acc[entityName] = { $set: entityGroup };
       return acc;
     }
 
     switch (strategy) {
+      case '$replace':
+        acc[entityName] = applyReplaceStrategy(entityGroup);
+        break;
       case '$set':
-        acc[entityName] = applySetStrategy(entityGroup);
+        acc[entityName] = applySetStrategy(entityGroup, state[entityName]);
         break;
       case '$merge':
         acc[entityName] = applyMergeStrategy(state, entityName, entityGroup);
@@ -246,109 +171,121 @@ export const handleUpdateEntities = (
 
     return acc;
   }, {} as IndexableSpec<EntitiesState>);
-};
 
-// New function to handle graph updates separately
-const updateEntityGraph = (entities: Record<string, any>, strategy: EntityStrategy, state?: EntitiesState): void => {
-  if (['$set', '$merge', '$push', '$unshift'].includes(strategy)) {
-    Object.entries(entities).forEach(([entityName, entityGroup]) => {
-      const relationships = SchemaManager.relationshipMap[entityName];
-      if (!relationships) return;
+const applyReplaceStrategy = (entityGroup: Record<string | number, any>): Spec<EntitiesState> =>
+  Object.entries(entityGroup).reduce<IndexableSpec<Record<string, any>>>(
+    (acc, [entityId, entityData]) => {
+      acc[entityId] = { $set: entityData };
+      return acc;
+    },
+    {} as IndexableSpec<Record<string, any>>
+  );
 
-      processEntityGroup(entityName, entityGroup as Record<string, any>, relationships, state);
-    });
+const applySetStrategy = (
+  entityGroup: Record<string | number, any>,
+  stateArray?: Record<string | number, any>
+): Spec<EntitiesState> => {
+  if (!stateArray) {
+    return { $set: entityGroup };
   }
 
-  // Handle reference removal for delete operations
-  if (strategy === '$unset') {
-    Object.entries(entities).forEach(([entityName, entityGroup]) => {
-      Object.keys(entityGroup as Record<string, any>).forEach((entityId) => {
-        graphManager.removeEntityNode(entityName, entityId);
+  return Object.entries(entityGroup).reduce<IndexableSpec<Record<string, any>>>(
+    (acc, [entityId, entityData]) => {
+      acc[entityId] = acc[entityId] || {};
+
+      Object.entries(entityData as Record<string, any>).forEach(([fieldName, fieldValue]) => {
+        acc[entityId][fieldName] = { $set: fieldValue };
       });
-    });
-  }
+
+      return acc;
+    },
+    {} as IndexableSpec<Record<string, any>>
+  );
 };
 
-// Helper function to process each entity group
-const processEntityGroup = (
+const applyMergeStrategy = (
+  state: EntitiesState,
   entityName: string,
-  entityGroup: Record<string, any>,
-  relationships: Record<string, any>,
-  state?: EntitiesState
-): void => {
-  Object.entries(entityGroup).forEach(([entityId, entityData]) => {
-    // Add the entity node to the graph
-    graphManager.addEntityNode(entityName, entityId);
-
-    processEntityRelationships(entityName, entityId, entityData, relationships, state);
-  });
+  entityGroup: Record<string | number, any>
+): Spec<EntitiesState> => {
+  return {
+    ...(createUpdateStatement(state, { [entityName]: entityGroup }) as IndexableSpec<EntitiesState>)[entityName]
+  };
 };
 
-// Helper function to process entity relationships
-const processEntityRelationships = (
-  entityName: string,
-  entityId: string,
-  entityData: any,
-  relationships: Record<string, any>,
-  state?: EntitiesState
-): void => {
-  Object.entries(relationships).forEach(([fieldName, relation]) => {
-    if (fieldName === '_referencedBy') return; // Skip metadata
+const applyUnsetStrategy = (entityGroup: Record<string | number, any>): Spec<EntitiesState> => {
+  // Handle unsetting individual fields within entities
+  return Object.entries(entityGroup).reduce<IndexableSpec<Record<string, any>>>(
+    (acc, [entityId, entityData]) => {
+      acc[entityId] = acc[entityId] || {};
+      acc[entityId].$unset = acc[entityId].$unset || [];
+      acc[entityId].$unset = [...acc[entityId].$unset, ...Object.keys(entityData)];
 
-    const relationship = relation as Relationship;
-    if (!relationship?.relatedEntityName) return;
+      return acc;
+    },
+    {} as IndexableSpec<Record<string, any>>
+  );
+};
 
-    const referencedEntityName = relationship.relatedEntityName;
-    const fieldValue = entityData[fieldName];
+const applyArrayOperation = (
+  stateArray: Record<string | number, any>,
+  entityGroup: Record<string | number, any>,
+  operation: EntityStrategy
+): Spec<EntitiesState> => {
+  const actions = Object.entries(entityGroup).reduce<IndexableSpec<Record<string, any>>>(
+    (acc, [key, update]) => {
+      Object.entries(update).forEach(([propKey, arrayValues]) => {
+        const currentArray = stateArray[key][propKey] ?? [];
 
-    // Get previous references to compare with new ones
-    const previousEntity = state?.[entityName]?.[entityId];
-    const previousFieldValue = previousEntity?.[fieldName];
+        if (!Array.isArray(currentArray)) {
+          throw new Error(`Expected array for ${operation} operation on key '${key}.${propKey}'`);
+        }
 
-    // Remove previous references if they exist and are different from current
-    if (previousFieldValue && previousEntity) {
-      const previousRefs =
-        relationship.isMany && Array.isArray(previousFieldValue) ? previousFieldValue : [previousFieldValue];
-
-      // Only process if the field exists in the current update
-      if (fieldName in entityData) {
-        previousRefs.forEach((refId) => {
-          if (typeof refId !== 'string' && typeof refId !== 'number') return;
-
-          // Check if this reference is no longer present in the new data
-          const newRefs = relationship.isMany && Array.isArray(fieldValue) ? fieldValue : [fieldValue];
-          const refIdStr = refId.toString();
-          const stillExists = newRefs.some(
-            (newRef) => (typeof newRef === 'string' || typeof newRef === 'number') && newRef.toString() === refIdStr
-          );
-
-          if (!stillExists) {
-            // Remove the reference that no longer exists
-            graphManager.removeReference(entityName, entityId, referencedEntityName, refIdStr);
-          }
-        });
-      }
-    }
-
-    // Add new references
-    if (fieldValue) {
-      // Handle array of references or single reference
-      const references = relationship.isMany && Array.isArray(fieldValue) ? fieldValue : [fieldValue];
-
-      references.forEach((refId) => {
-        if (typeof refId !== 'string' && typeof refId !== 'number') return;
-
-        // Add reference to the graph
-        graphManager.addReference(entityName, entityId, referencedEntityName, refId.toString());
+        acc[key] = acc[key] || {};
+        acc[key][propKey] = { [operation]: Array.isArray(arrayValues) ? arrayValues : [arrayValues] };
       });
-    }
-  });
+
+      return acc;
+    },
+    {} as IndexableSpec<Record<string, any>>
+  );
+
+  return actions;
+};
+
+const applySpliceStrategy = (entityGroup: Record<string | number, any>, value: any): Spec<EntitiesState> => {
+  return Object.entries(entityGroup).reduce<IndexableSpec<Record<string, any>>>(
+    (acc, [entityId, entityData]) => {
+      acc[entityId] = acc[entityId] || {};
+
+      // Process each field in the entity that needs to be spliced
+      Object.entries(entityData as Record<string, any>).forEach(([fieldName, _]) => {
+        // Check if we have splice operations for this entity and field
+        if (value && value[entityId] && Array.isArray(value[entityId])) {
+          acc[entityId][fieldName] = { $splice: value[entityId] };
+        } else {
+          // If no specific splice operations provided, use an empty array
+          acc[entityId][fieldName] = { $splice: [] };
+        }
+      });
+
+      return acc;
+    },
+    {} as IndexableSpec<Record<string, any>>
+  );
+};
+
+const applyApplyStrategy = (entityGroup: Record<string | number, any>, value: any): Spec<EntitiesState> => {
+  return Object.fromEntries(
+    Object.entries(entityGroup).map(([key, _]) => [key, { $apply: (original: any) => value(original) }])
+  );
 };
 
 export const handleDeleteEntities = (entities: EntitiesState): Spec<EntitiesState> =>
   Object.fromEntries(
-    Object.entries(entities).map(([entityName, entities]) => {
-      const entityIds = Object.keys(entities);
+    Object.entries(entities).map(([entityName, entityGroup]) => {
+      const entityIds = Object.keys(entityGroup);
+
       return [
         entityName,
         {
@@ -395,9 +332,6 @@ export function reducer(state: EntitiesState = initialState, action: EntityActio
         return state;
       }
 
-      // Remove the entity node from the graph
-      graphManager.removeEntityNode(action.entityName, action.entityId);
-
       return update(
         state,
         handleDeleteEntities({
@@ -414,28 +348,15 @@ export function reducer(state: EntitiesState = initialState, action: EntityActio
         return state;
       }
 
-      // Remove entity nodes from the graph
-      Object.entries(action.entities).forEach(([entityName, entityGroup]) => {
-        Object.keys(entityGroup).forEach((entityId) => {
-          graphManager.removeEntityNode(entityName, entityId);
-        });
-      });
-
       return update(state, handleDeleteEntities(action.entities));
     }
     case CLEAR_ENTITIES: {
-      // Clear the graph
-      graphManager.clear();
-
       return update(state, {
         $set: { ...defaultState }
       });
     }
     case SET_STATE: {
-      // Rebuild the entire graph
-      const newState = action.entities ?? {};
-      graphManager.buildFromState(newState);
-      return newState;
+      return action.entities ?? {};
     }
     default: {
       return state;

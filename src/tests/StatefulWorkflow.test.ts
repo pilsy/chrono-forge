@@ -293,7 +293,7 @@ describe('StatefulWorkflow', () => {
 
       // Update using $set strategy
       const updatedDataReplace = { id: userId, newField: 'Replaced' };
-      await handle.signal('update', { data: updatedDataReplace, entityName: 'User', strategy: '$set' });
+      await handle.signal('update', { data: updatedDataReplace, entityName: 'User', strategy: '$replace' });
       await sleep();
       const replacedState = await handle.query('state');
       expect(replacedState.User[userId]).not.toHaveProperty('name');

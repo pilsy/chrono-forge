@@ -7,7 +7,8 @@ import {
   updateNormalizedEntities,
   deleteNormalizedEntities,
   updateEntity,
-  EntityAction
+  EntityAction,
+  EntityStrategy
 } from '../store/entities';
 import { detailedDiff, DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
@@ -298,7 +299,7 @@ export type PendingChange = {
   updates?: Record<string, any>;
   deletions?: Record<string, any>;
   entityName: string;
-  strategy?: '$set' | '$merge';
+  strategy?: EntityStrategy;
   changeOrigin?: string;
   sync?: boolean;
   action?: EntityAction;

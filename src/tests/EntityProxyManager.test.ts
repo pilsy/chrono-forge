@@ -698,7 +698,7 @@ describe('EntityProxyManager', () => {
             entities: { '456': { tags: ['personal', 'professional', 'academic'] } },
             entityId: '456',
             entityName: 'Profile',
-            strategy: '$merge',
+            strategy: '$set',
             type: 'entities.partialUpdate'
           }
         ],
@@ -738,7 +738,7 @@ describe('EntityProxyManager', () => {
             entities: { '789': { tags: ['draft', 'private', 'featured'] } },
             entityId: '789',
             entityName: 'Post',
-            strategy: '$merge',
+            strategy: '$set',
             type: 'entities.partialUpdate'
           }
         ],

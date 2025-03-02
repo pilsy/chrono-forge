@@ -185,8 +185,10 @@ describe('Entities', () => {
     it('should create a spec to update entities with $splice strategy', () => {
       // Define the entities to perform the $splice operation
       const entities = {
-        '1': { items: [] }, // The items field will be spliced, so its initial definition doesn't matter much aside from existing
-        '2': { items: [] }
+        User: {
+          '1': { items: [] }, // The items field will be spliced
+          '2': { items: [] } // The items field will be spliced
+        }
       };
 
       const value = {
@@ -201,7 +203,7 @@ describe('Entities', () => {
         }
       };
 
-      const updateSpec = handleUpdateEntities(state, { User: { ...entities } }, '$splice', value);
+      const updateSpec = handleUpdateEntities(state, entities, '$splice', value);
       expect(updateSpec).toEqual(expectedSpec);
     });
 
@@ -348,15 +350,155 @@ describe('Entities', () => {
         }
       });
     });
+
+    it('should correctly handle $set strategy with arrays', () => {
+      const state = {
+        User: {
+          '1': { id: '1', items: [1, 2, 3], name: 'OldName' },
+          '2': { id: '2', items: [4, 5, 6], name: 'OtherName' }
+        }
+      };
+
+      const entities = {
+        User: {
+          '1': { items: [7, 8, 9] },
+          '2': { items: [] }
+        }
+      };
+
+      const expectedSpec = {
+        User: {
+          '1': { items: { $set: [7, 8, 9] } },
+          '2': { items: { $set: [] } }
+        }
+      };
+
+      const updateSpec = handleUpdateEntities(state, entities, '$set');
+      expect(updateSpec).toEqual(expectedSpec);
+
+      const resultState = update(state, updateSpec);
+      expect(resultState).toEqual({
+        User: {
+          '1': { id: '1', items: [7, 8, 9], name: 'OldName' },
+          '2': { id: '2', items: [], name: 'OtherName' }
+        }
+      });
+    });
+
+    it('should correctly handle $unset strategy for individual fields', () => {
+      const state = {
+        User: {
+          '1': { id: '1', items: [1, 2, 3], name: 'OldName', optional: 'value' },
+          '2': { id: '2', items: [4, 5, 6], name: 'OtherName', optional: 'value' }
+        }
+      };
+
+      const entities = {
+        User: {
+          '1': { optional: 'value' }, // Field to unset
+          '2': { items: [4, 5, 6] } // Field to unset
+        }
+      };
+
+      const expectedSpec = {
+        User: {
+          '1': { $unset: ['optional'] },
+          '2': { $unset: ['items'] }
+        }
+      };
+
+      const updateSpec = handleUpdateEntities(state, entities, '$unset');
+      expect(updateSpec).toEqual(expectedSpec);
+
+      // Let's manually verify the behavior by applying the update
+      // and checking specific fields rather than the entire object
+      const resultState = update(state, updateSpec);
+
+      // Check that the specific fields were unset
+      expect(resultState.User['1'].optional).toBeUndefined();
+      expect(resultState.User['2'].items).toBeUndefined();
+
+      // Check that other fields remain
+      expect(resultState.User['1'].id).toBe('1');
+      expect(resultState.User['1'].name).toBe('OldName');
+      expect(resultState.User['1'].items).toEqual([1, 2, 3]);
+
+      expect(resultState.User['2'].id).toBe('2');
+      expect(resultState.User['2'].name).toBe('OtherName');
+      expect(resultState.User['2'].optional).toBe('value');
+    });
+
+    it('should create a spec to update entities with $splice strategy for multiple fields', () => {
+      // Define the entities to perform the $splice operation
+      const entities = {
+        User: {
+          '1': { items: [], tags: [] }, // Test multiple fields
+          '2': { customArray: [] } // Test different field name
+        }
+      };
+
+      const value = {
+        '1': [[2, 0, 99]], // For entity '1', splice in 99 at index 2
+        '2': [[1, 1]] // For entity '2', remove one element at index 1
+      };
+
+      const expectedSpec = {
+        User: {
+          '1': {
+            items: { $splice: [[2, 0, 99]] },
+            tags: { $splice: [[2, 0, 99]] }
+          },
+          '2': {
+            customArray: { $splice: [[1, 1]] }
+          }
+        }
+      };
+
+      const updateSpec = handleUpdateEntities(state, entities, '$splice', value);
+      expect(updateSpec).toEqual(expectedSpec);
+    });
   });
 
   describe('handleDeleteEntities', () => {
     it('should create a spec to delete entities', () => {
-      const entities = { User: { '1': { id: '1' }, '2': { id: '2' } } };
-      const expectedSpec = {
-        User: { $unset: ['1', '2'] }
+      const entities = {
+        User: { '1': { id: '1' }, '2': { id: '2' } },
+        Task: { '3': { id: '3' }, '4': { id: '4' } }
       };
-      expect(handleDeleteEntities(entities)).toEqual(expectedSpec);
+
+      const expectedSpec = {
+        User: { $unset: ['1', '2'] },
+        Task: { $unset: ['3', '4'] }
+      };
+
+      const deleteSpec = handleDeleteEntities(entities);
+      expect(deleteSpec).toEqual(expectedSpec);
+
+      // Test applying the spec
+      const state = {
+        User: {
+          '1': { id: '1', name: 'User 1' },
+          '2': { id: '2', name: 'User 2' },
+          '5': { id: '5', name: 'User 5' }
+        },
+        Task: {
+          '3': { id: '3', title: 'Task 3' },
+          '4': { id: '4', title: 'Task 4' },
+          '6': { id: '6', title: 'Task 6' }
+        }
+      };
+
+      const resultState = update(state, deleteSpec);
+
+      // Verify entities were deleted
+      expect(resultState.User['1']).toBeUndefined();
+      expect(resultState.User['2']).toBeUndefined();
+      expect(resultState.Task['3']).toBeUndefined();
+      expect(resultState.Task['4']).toBeUndefined();
+
+      // Verify other entities remain
+      expect(resultState.User['5']).toEqual({ id: '5', name: 'User 5' });
+      expect(resultState.Task['6']).toEqual({ id: '6', title: 'Task 6' });
     });
   });
 

@@ -275,16 +275,16 @@ export class EntityProxyManager {
 
           // Create a deep copy of the array
           newValue = JSON.parse(JSON.stringify(currentArray));
-          strategy = '$merge';
+          strategy = '$set';
         } else if (mutation.method === 'push' && Array.isArray(entity[fieldName])) {
           // If we can't get the array from the mutation tree but we know it's a push operation
           // Create a new array with the pushed item
           newValue = [...entity[fieldName], ...mutation.args];
-          strategy = '$merge';
+          strategy = '$set';
         } else {
           // Fallback to the mutation args
           newValue = mutation.args[0];
-          strategy = '$merge';
+          strategy = '$set';
         }
       } else {
         // For direct property assignment
