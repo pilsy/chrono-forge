@@ -6,8 +6,8 @@ import {
   normalizeEntities,
   PARTIAL_UPDATE,
   updateNormalizedEntities,
-  updatePartialEntity
-} from '../store/entities';
+  partialUpdateEntity
+} from '../store';
 import schemas from './testSchemas';
 import { limitRecursion } from '../utils';
 import { readFileSync, writeFileSync } from 'fs';
@@ -166,7 +166,7 @@ describe('StateManager', () => {
       user.name = 'Jane';
 
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [updatePartialEntity('User', '1', { '1': { name: 'Jane' } }, '$merge')],
+        [partialUpdateEntity('User', '1', { '1': { name: 'Jane' } }, '$merge')],
         false,
         `testInstance${instanceNum}`
       );
@@ -182,7 +182,7 @@ describe('StateManager', () => {
 
       expect(dispatchSpy).toHaveBeenCalledTimes(1);
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [updatePartialEntity('Nested', '100', { '100': { list: [10, 20, 30, 40] } }, '$set')],
+        [partialUpdateEntity('Nested', '100', { '100': { list: [10, 20, 30, 40] } }, '$set')],
         false,
         `testInstance${instanceNum}`
       );
@@ -197,7 +197,7 @@ describe('StateManager', () => {
       await sleep();
 
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [updatePartialEntity('Nested', '100', { '100': { list: [10, 20] } }, '$set')],
+        [partialUpdateEntity('Nested', '100', { '100': { list: [10, 20] } }, '$set')],
         false,
         `testInstance${instanceNum}`
       );
@@ -212,7 +212,7 @@ describe('StateManager', () => {
       await sleep();
 
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [updatePartialEntity('Nested', '100', { '100': { list: [10] } }, '$set')],
+        [partialUpdateEntity('Nested', '100', { '100': { list: [10] } }, '$set')],
         false,
         `testInstance${instanceNum}`
       );
@@ -227,7 +227,7 @@ describe('StateManager', () => {
       await sleep();
 
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [updatePartialEntity('Nested', '100', { '100': { list: [15, 20, 30] } }, '$set')],
+        [partialUpdateEntity('Nested', '100', { '100': { list: [15, 20, 30] } }, '$set')],
         false,
         `testInstance${instanceNum}`
       );
@@ -242,7 +242,7 @@ describe('StateManager', () => {
       await sleep();
 
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [updatePartialEntity('Nested', '100', { '100': { list: [] } }, '$set')],
+        [partialUpdateEntity('Nested', '100', { '100': { list: [] } }, '$set')],
         false,
         `testInstance${instanceNum}`
       );
@@ -257,7 +257,7 @@ describe('StateManager', () => {
       await sleep();
 
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [updatePartialEntity('Nested', '100', { '100': { list: [10, 20, 30, null] } }, '$set')],
+        [partialUpdateEntity('Nested', '100', { '100': { list: [10, 20, 30, null] } }, '$set')],
         false,
         `testInstance${instanceNum}`
       );

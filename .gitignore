@@ -8,3 +8,4 @@ chrono-forge-old
 src/workflows/prototypes/*
 keys/*
 src/tests/testData/*
+tsconfig.tsbuildinfo

@@ -2,7 +2,7 @@ import { ProxyStateTree } from 'proxy-state-tree';
 import { StateManager } from './StateManager';
 import { SchemaManager, Relationship } from './SchemaManager';
 import { getEntityName } from '../utils';
-import { EntityAction, EntityStrategy, updatePartialEntity, deleteEntity, updateEntity } from './entities';
+import { EntityAction, EntityStrategy, partialUpdateEntity, deleteEntity, updateEntity } from './entities';
 
 /**
  * Interface for proxy-state-tree mutation object
@@ -298,7 +298,7 @@ export class EntityProxyManager {
 
       // Update the entity
       stateManager.dispatch(
-        [updatePartialEntity(entityName, entityId, { [entityId]: { [fieldName]: newValue } }, strategy)],
+        [partialUpdateEntity(entityName, entityId, { [entityId]: { [fieldName]: newValue } }, strategy)],
         false,
         stateManager.instanceId
       );
@@ -416,7 +416,7 @@ export class EntityProxyManager {
 
       // Update just this field
       stateManager.dispatch(
-        [updatePartialEntity(entityName, entityId, { [entityId]: { [fieldName]: updatedValue } }, strategy)],
+        [partialUpdateEntity(entityName, entityId, { [entityId]: { [fieldName]: updatedValue } }, strategy)],
         false,
         stateManager.instanceId
       );
@@ -572,7 +572,7 @@ export class EntityProxyManager {
 
     // Add update action for this entity
     actions.push(
-      updatePartialEntity(
+      partialUpdateEntity(
         entityName,
         entityId,
         {
@@ -625,7 +625,7 @@ export class EntityProxyManager {
     }
 
     // Create the update action
-    const action = updatePartialEntity(
+    const action = partialUpdateEntity(
       entityName,
       entityId,
       {

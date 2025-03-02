@@ -6,7 +6,7 @@ import { StatefulWorkflowParams } from '../index';
 import { v4 as uuid4 } from 'uuid';
 import { SchemaManager } from '../store/SchemaManager';
 import * as workflows from './testWorkflows';
-import { normalizeEntities } from '../store/entities';
+import { normalizeEntities } from '../store';
 import { getCompositeKey, getMemo, limitRecursion } from '../utils';
 import { TestAction } from './testWorkflows/ShouldExecuteStateful';
 import { omit } from 'lodash';

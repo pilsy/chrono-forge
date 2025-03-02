@@ -1,5 +1,5 @@
 import { SchemaManager, SchemasDefinition } from '../store/SchemaManager';
-import { EntitiesState, updateNormalizedEntity, deleteNormalizedEntity } from '../store/entities';
+import { EntitiesState, updateNormalizedEntity, deleteNormalizedEntity } from '../store';
 import { cloneDeep } from 'lodash';
 import StateManager from '../store/StateManager';
 

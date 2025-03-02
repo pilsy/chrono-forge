@@ -1,119 +1,19 @@
 import update, { Spec } from 'immutability-helper';
-import { normalize, Schema } from 'normalizr';
-import { SchemaManager } from '../store/SchemaManager';
+import {
+  UPDATE_ENTITY,
+  UPDATE_ENTITIES,
+  PARTIAL_UPDATE,
+  DELETE_ENTITY,
+  DELETE_ENTITIES,
+  CLEAR_ENTITIES,
+  SET_STATE
+} from './actions';
+import type { EntityAction, EntityStrategy } from './actions';
 
-type IndexableSpec<T> = Spec<T> & {
-  [key: string]: any;
-};
 export type EntitiesState = Record<string, Record<string | number, any>>;
-export type EntityStrategy =
-  | '$replace'
-  | '$set'
-  | '$merge'
-  | '$unset'
-  | '$push'
-  | '$unshift'
-  | '$splice'
-  | '$apply'
-  | '$toggle'
-  | '$add'
-  | '$remove';
-
-export type EntityAction = {
-  type: string;
-  entity?: Record<string | number, any>;
-  entities?: EntitiesState;
-  entityId?: string;
-  entityName?: string;
-  strategy?: EntityStrategy;
-  value?: any; // This if any extra value for a specific update operation
-};
 
 export const defaultState: EntitiesState = {};
 export const initialState: EntitiesState = {};
-
-export const UPDATE_ENTITY = 'entities.upsertEntity';
-export const UPDATE_ENTITIES = 'entities.upsertEntities';
-export const PARTIAL_UPDATE = 'entities.partialUpdate';
-export const DELETE_ENTITY = 'entities.deleteEntity';
-export const DELETE_ENTITIES = 'entities.deleteEntities';
-export const CLEAR_ENTITIES = 'entities.clearEntities';
-export const SET_STATE = 'entities.setState';
-
-function getSchema(entityName: string): Schema {
-  const schemas = SchemaManager.getInstance().getSchemas();
-  const schema = schemas[entityName];
-  if (!schema) {
-    throw new Error(`Schema for ${entityName} not found.`);
-  }
-  return schema;
-}
-
-export const normalizeEntities = <T>(data: T | T[], entitySchema: Schema | string): EntitiesState => {
-  const schema = typeof entitySchema === 'string' ? getSchema(entitySchema) : entitySchema;
-  const { entities } = normalize(data, Array.isArray(data) ? [schema] : schema);
-
-  return entities as EntitiesState;
-};
-
-export const setState = (entities: EntitiesState = {}): EntityAction => ({
-  type: SET_STATE,
-  entities
-});
-
-export const updateEntity = (entity: Record<string | number, any>, entityName: string): EntityAction =>
-  updateNormalizedEntities(normalize(entity, getSchema(entityName)).entities as EntitiesState);
-
-export const updateNormalizedEntity = (entity: Record<string | number, any>, entityName: string): EntityAction => ({
-  type: UPDATE_ENTITY,
-  entity,
-  entityName
-});
-
-export const updateEntities = (entities: any[], entityName: string): EntityAction =>
-  updateNormalizedEntities(normalize(entities, getSchema(entityName)).entities as EntitiesState);
-
-export const updateNormalizedEntities = (
-  entities: EntitiesState,
-  strategy: EntityStrategy = '$merge'
-): EntityAction => ({
-  type: UPDATE_ENTITIES,
-  entities,
-  strategy
-});
-
-export const updatePartialEntity = (
-  entityName: string,
-  entityId: string,
-  entities: EntitiesState,
-  strategy: EntityStrategy = '$merge'
-): EntityAction => ({
-  type: PARTIAL_UPDATE,
-  entityName,
-  entityId,
-  entities,
-  strategy
-});
-
-export const deleteEntity = (entityId: string, entityName: string): EntityAction => ({
-  type: DELETE_ENTITY,
-  entityId,
-  entityName
-});
-
-export const deleteNormalizedEntity = deleteEntity;
-
-export const deleteEntities = (entities: EntitiesState, entityName: string): EntityAction =>
-  deleteNormalizedEntities(normalizeEntities(entities, entityName));
-
-export const deleteNormalizedEntities = (entities: EntitiesState): EntityAction => ({
-  type: DELETE_ENTITIES,
-  entities
-});
-
-export const clearEntities = (): EntityAction => ({
-  type: CLEAR_ENTITIES
-});
 
 export const createUpdateStatement = (state: EntitiesState, normalizedEntities: EntitiesState): Spec<EntitiesState> => {
   return Object.entries(normalizedEntities).reduce<IndexableSpec<EntitiesState>>((acc, [entityName, entityGroup]) => {
@@ -171,6 +71,20 @@ export const handleUpdateEntities = (
 
     return acc;
   }, {} as IndexableSpec<EntitiesState>);
+
+export const handleDeleteEntities = (entities: EntitiesState): Spec<EntitiesState> =>
+  Object.fromEntries(
+    Object.entries(entities).map(([entityName, entityGroup]) => {
+      const entityIds = Object.keys(entityGroup);
+
+      return [
+        entityName,
+        {
+          $unset: entityIds
+        }
+      ];
+    })
+  );
 
 const applyReplaceStrategy = (entityGroup: Record<string | number, any>): Spec<EntitiesState> =>
   Object.entries(entityGroup).reduce<IndexableSpec<Record<string, any>>>(
@@ -281,20 +195,6 @@ const applyApplyStrategy = (entityGroup: Record<string | number, any>, value: an
   );
 };
 
-export const handleDeleteEntities = (entities: EntitiesState): Spec<EntitiesState> =>
-  Object.fromEntries(
-    Object.entries(entities).map(([entityName, entityGroup]) => {
-      const entityIds = Object.keys(entityGroup);
-
-      return [
-        entityName,
-        {
-          $unset: entityIds
-        }
-      ];
-    })
-  );
-
 export function reducer(state: EntitiesState = initialState, action: EntityAction): EntitiesState {
   switch (action.type) {
     case UPDATE_ENTITY: {
@@ -363,5 +263,9 @@ export function reducer(state: EntitiesState = initialState, action: EntityActio
     }
   }
 }
+
+export type IndexableSpec<T> = Spec<T> & {
+  [key: string]: any;
+};
 
 export default reducer;

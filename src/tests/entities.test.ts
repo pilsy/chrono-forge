@@ -5,7 +5,8 @@
 
 import update, { Spec } from 'immutability-helper';
 import { normalize } from 'normalizr';
-import reducer, {
+import {
+  reducer,
   updateNormalizedEntity,
   updateNormalizedEntities,
   deleteNormalizedEntity,
@@ -21,9 +22,9 @@ import reducer, {
   initialState,
   handleUpdateEntities,
   handleDeleteEntities
-} from '../store/entities';
+} from '../store';
 
-import type { EntitiesState } from '../store/entities';
+import type { EntitiesState } from '../store';
 import schemas from './testSchemas';
 
 describe('Entities', () => {

@@ -1,9 +1,47 @@
 {
   "name": "chrono-forge",
-  "version": "1.5.16",
+  "version": "1.5.17",
   "description": "A comprehensive framework for building resilient Temporal workflows, advanced state management, and real-time streaming activities in TypeScript. Designed for a seamless developer experience with powerful abstractions, dynamic orchestration, and full control over distributed systems.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./store": {
+      "types": "./dist/store/index.d.ts",
+      "default": "./dist/store/index.js"
+    },
+    "./utils": {
+      "types": "./dist/utils/index.d.ts",
+      "default": "./dist/utils/index.js"
+    },
+    "./workflows": {
+      "types": "./dist/workflows/index.d.ts",
+      "default": "./dist/workflows/index.js"
+    },
+    "./decorators": {
+      "types": "./dist/decorators/index.d.ts",
+      "default": "./dist/decorators/index.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "store": [
+        "./dist/store/index.d.ts"
+      ],
+      "utils": [
+        "./dist/utils/index.d.ts"
+      ],
+      "workflows": [
+        "./dist/workflows/index.d.ts"
+      ],
+      "decorators": [
+        "./dist/decorators/index.d.ts"
+      ]
+    }
+  },
   "scripts": {
     "build": "tsc --build",
     "build.watch": "tsc --build --watch",
@@ -85,7 +123,6 @@
     "deep-object-diff": "^1.1.9",
     "dottie": "^2.0.6",
     "eventemitter3": "^5.0.1",
-    "eventemitter3-graphology": "^0.27.0",
     "immutability-helper": "^3.1.1",
     "js-yaml": "^4.1.0",
     "lodash": "^4.17.x",
@@ -113,14 +150,13 @@
     "@temporalio/nyc-test-coverage": "^1.11.7",
     "@temporalio/testing": "^1.11.7",
     "@temporalio/worker": "^1.11.7",
-    "@tsconfig/node18": "^18.2.0",
+    "@tsconfig/node22": "^22.0.0",
     "@types/dottie": "^2.0.7",
     "@types/jest": "^28.1.0",
     "@types/js-yaml": "^4.0.9",
     "@types/lodash": "^4.17.x",
-    "@types/node": "^18.x",
+    "@types/node": "^22.x",
     "@types/uuid": "^9.0.2",
-    "@types/ws": "^8.5.12",
     "@typescript-eslint/eslint-plugin": "^8.23.0",
     "@typescript-eslint/parser": "^8.23.0",
     "babel-jest": "^28.x.x",
@@ -138,7 +174,7 @@
     "source-map-support": "^0.5.21",
     "ts-jest": "^28.x.x",
     "ts-node": "^10.9.1",
-    "typescript": "^5.0.0",
+    "typescript": "^5.5.x",
     "uuid": "^11.0.5",
     "winston": "^3.14.2"
   },

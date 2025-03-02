@@ -9,7 +9,7 @@ import {
   updateEntity,
   EntityAction,
   EntityStrategy
-} from '../store/entities';
+} from '../store';
 import { detailedDiff, DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
 import { isEmpty, isEqual, isObject } from 'lodash';
