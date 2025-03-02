@@ -1,5 +1,6 @@
 import EventEmitter from 'eventemitter3';
-import { EntitiesState, EntityAction, reducer, clearEntities, setState } from '../store';
+import { reducer, EntitiesState } from './entities';
+import { EntityAction, clearEntities, setState } from './actions';
 import { DetailedDiff, detailedDiff } from 'deep-object-diff';
 import { isEmpty } from 'lodash';
 import { limitRecursion } from '../utils';

@@ -2,7 +2,7 @@ import { ProxyStateTree } from 'proxy-state-tree';
 import { StateManager } from './StateManager';
 import { SchemaManager, Relationship } from './SchemaManager';
 import { getEntityName } from '../utils';
-import { EntityAction, EntityStrategy, partialUpdateEntity, deleteEntity, updateEntity } from './entities';
+import { EntityAction, EntityStrategy, partialUpdateEntity, deleteEntity, updateEntity } from './actions';
 
 /**
  * Interface for proxy-state-tree mutation object
