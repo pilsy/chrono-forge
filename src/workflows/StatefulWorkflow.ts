@@ -2032,7 +2032,8 @@ export abstract class StatefulWorkflow<
   ): Promise<void> {
     this.log.trace(`processArrayItems`);
 
-    for (const newItem of items) {
+    for (let i = 0; i < items.length; i++) {
+      const newItem = items[i];
       const itemId = Array.isArray(config.idAttribute)
         ? getCompositeKey(newItem, config.idAttribute)
         : newItem[config.idAttribute as string];
@@ -2054,6 +2055,12 @@ export abstract class StatefulWorkflow<
         newItem,
         previousItem
       );
+
+      // Add a sleep after every 100 items to prevent overwhelming the system
+      if ((i + 1) % 100 === 0 && i < items.length - 1) {
+        this.log.debug(`Processed 100 items, pausing for 1 second before continuing...`);
+        await workflow.sleep(2500);
+      }
     }
   }
 

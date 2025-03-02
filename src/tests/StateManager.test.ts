@@ -2,6 +2,9 @@ import { v4 } from 'uuid';
 import { StateManager } from '../store/StateManager';
 import {
   clearEntities,
+  deleteEntities,
+  deleteEntity,
+  deleteNormalizedEntities,
   normalizeEntities,
   PARTIAL_UPDATE,
   updateNormalizedEntities,
@@ -9,7 +12,7 @@ import {
 } from '../store/entities';
 import schemas from './testSchemas';
 import { limitRecursion } from '../utils';
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 
 const sleep = async (duration = 1000) =>
   new Promise((resolve) => {
@@ -68,22 +71,46 @@ describe('StateManager', () => {
     });
 
     it.skip('should handle very large states', async () => {
-      const hugeState = JSON.parse(readFileSync('./src/tests/testData/hugeState.json', 'utf8'));
-      const hugeData = JSON.parse(readFileSync('./src/tests/testData/hugeData.json', 'utf8'));
+      const website_1 = JSON.parse(readFileSync('./src/tests/testData/Website_1.json', 'utf8'));
+      const website_1_state = JSON.parse(readFileSync('./src/tests/testData/Website_1_normalised.json', 'utf8'));
+
+      // website_1.products = [];
+      // for (const vendor of website_1.vendors) {
+      //   vendor.website = '1';
+      //   for (const product of vendor.products) {
+      //     product.vendor = vendor.name;
+      //     product.website = '1';
+      //     website_1.products.push(product.id);
+      //   }
+      // }
+      // writeFileSync('./src/tests/testData/Website_1.json', JSON.stringify(website_1, null, 2));
+      // writeFileSync(
+      //   './src/tests/testData/Website_1_normalised.json',
+      //   JSON.stringify(normalizeEntities(website_1, 'Website'), null, 2)
+      // );
+
+      // const hugeState = JSON.parse(readFileSync('./src/tests/testData/hugeState.json', 'utf8'));
+      // const hugeData = JSON.parse(readFileSync('./src/tests/testData/hugeData.json', 'utf8'));
       console.time('limitRecursion');
-      const data = limitRecursion('1', 'Website', hugeState);
+      const data = limitRecursion('1', 'Website', website_1_state);
       console.timeEnd('limitRecursion');
 
       const startTime = Date.now();
-      await stateManager.setState(hugeState);
+      await stateManager.setState(website_1_state);
       const endTime = Date.now();
       console.log(`Time taken to set state: ${endTime - startTime}ms`);
 
-      expect(stateManager.state).toEqual(hugeState);
+      expect(stateManager.state).toEqual(website_1_state);
       expect(limitRecursion('1', 'Website', stateManager.state)).toEqual(data);
 
       const website = stateManager.query('Website', '1');
-      expect(website.toJSON()).toEqual(hugeData);
+      expect(website.toJSON()).toEqual(website_1);
+
+      stateManager.dispatch(deleteNormalizedEntities({ Vendor: stateManager.state.Vendor }));
+      await applyAllPendingChanges(stateManager);
+
+      // website.vendors.length = website.vendors.length - 1;
+      console.log(stateManager.queue);
     });
   });
 
@@ -126,7 +153,7 @@ describe('StateManager', () => {
               '1': { id: '1', name: 'John', nested: '100' }
             },
             Nested: {
-              '100': { id: '100', list: [10, 20] }
+              '100': { id: '100', list: [10, 20, 30] }
             }
           },
           '$merge'
@@ -147,42 +174,167 @@ describe('StateManager', () => {
       );
     });
 
-    it.skip('should dispatch update for array push operation', async () => {
+    it('should dispatch update for array push operation', async () => {
       const nested = stateManager.query('Nested', '100');
-      nested.list.push(30);
-      nested.foobar = 'baz';
+      nested.list.push(40);
 
       // Apply changes to reflect update in state
       await applyAllPendingChanges(stateManager);
-      await sleep(2500);
+      await sleep();
 
+      expect(dispatchSpy).toHaveBeenCalledTimes(1);
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [updatePartialEntity('Nested', '100', { '100': { list: [10, 20, 30] } }, '$set')],
+        [updatePartialEntity('Nested', '100', { '100': { list: [10, 20, 30, 40] } }, '$set')],
         false,
         `testInstance${instanceNum}`
       );
     });
 
-    it.skip('should dispatch update for array splice operation', async () => {
+    it('should dispatch update for array push operation', async () => {
       const nested = stateManager.query('Nested', '100');
-      nested.list.splice(0, 1, 15);
+      nested.list.pop();
+
+      // Apply changes to reflect update in state
+      await applyAllPendingChanges(stateManager);
+      await sleep();
 
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [updatePartialEntity('Nested', '100', { '100': { list: [15, 20] } }, '$set')],
+        [updatePartialEntity('Nested', '100', { '100': { list: [10, 20] } }, '$set')],
         false,
         `testInstance${instanceNum}`
       );
     });
 
-    it.skip('should dispatch update for reference ID change', async () => {
-      const user = stateManager.query('User', '1');
-      user.nested = '101';
+    it('should dispatch update for array splice operation', async () => {
+      const nested = stateManager.query('Nested', '100');
+      nested.list.splice(1);
+
+      // Apply changes to reflect update in state
+      await applyAllPendingChanges(stateManager);
+      await sleep();
 
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [updatePartialEntity('User', '1', { '1': { nested: '101' } }, '$merge')],
+        [updatePartialEntity('Nested', '100', { '100': { list: [10] } }, '$set')],
         false,
         `testInstance${instanceNum}`
       );
+    });
+
+    it('should dispatch update for updating the value of an array element', async () => {
+      const nested = stateManager.query('Nested', '100');
+      nested.list[0] = 15;
+
+      // Apply changes to reflect update in state
+      await applyAllPendingChanges(stateManager);
+      await sleep();
+
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        [updatePartialEntity('Nested', '100', { '100': { list: [15, 20, 30] } }, '$set')],
+        false,
+        `testInstance${instanceNum}`
+      );
+    });
+
+    it('should dispatch update for decreasing array length', async () => {
+      const nested = stateManager.query('Nested', '100');
+      nested.list.length = 0;
+
+      // Apply changes to reflect update in state
+      await applyAllPendingChanges(stateManager);
+      await sleep();
+
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        [updatePartialEntity('Nested', '100', { '100': { list: [] } }, '$set')],
+        false,
+        `testInstance${instanceNum}`
+      );
+    });
+
+    it('should dispatch update for increasing array length', async () => {
+      const nested = stateManager.query('Nested', '100');
+      nested.list.length = 4;
+
+      // Apply changes to reflect update in state
+      await applyAllPendingChanges(stateManager);
+      await sleep();
+
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        [updatePartialEntity('Nested', '100', { '100': { list: [10, 20, 30, null] } }, '$set')],
+        false,
+        `testInstance${instanceNum}`
+      );
+    });
+
+    it('should dispatch update for updating reference to an entity', async () => {
+      const user = stateManager.query('User', '1');
+      user.nested = { id: '101', list: [30, 40] };
+
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        [
+          {
+            type: 'entities.upsertEntities',
+            entities: {
+              Nested: {
+                '101': {
+                  id: '101',
+                  list: [30, 40]
+                }
+              }
+            },
+            strategy: '$merge'
+          },
+          {
+            type: 'entities.partialUpdate',
+            entityName: 'User',
+            entityId: '1',
+            entities: {
+              '1': {
+                nested: '101'
+              }
+            },
+            strategy: '$merge'
+          },
+          {
+            type: 'entities.deleteEntity',
+            entityId: '100',
+            entityName: 'Nested'
+          }
+        ],
+        false,
+        `testInstance${instanceNum}`
+      );
+    });
+
+    it('should dispatch update for removing reference to an entity', async () => {
+      const user = stateManager.query('User', '1');
+      user.nested = null;
+
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        [
+          {
+            type: 'entities.partialUpdate',
+            entityName: 'User',
+            entityId: '1',
+            entities: {
+              '1': {
+                nested: null
+              }
+            },
+            strategy: '$set'
+          },
+          {
+            type: 'entities.deleteEntity',
+            entityId: '100',
+            entityName: 'Nested'
+          }
+        ],
+        false,
+        `testInstance${instanceNum}`
+      );
+
+      await applyAllPendingChanges(stateManager);
+
+      expect(stateManager.state.User['1'].nested).toBeNull();
     });
   });
 

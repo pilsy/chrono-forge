@@ -151,8 +151,10 @@ export class StateManager extends EventEmitter {
 
     let newState;
     let itemsProcessed = 0;
+    const startTime = Date.now();
+    const MAX_PROCESSING_TIME = 30000; // 30 seconds in milliseconds
 
-    while (pendingChanges.length > 0 && itemsProcessed < 25) {
+    while (pendingChanges.length > 0 && itemsProcessed < 100 && Date.now() - startTime < MAX_PROCESSING_TIME) {
       const { action, origin }: QueueItem = pendingChanges.shift() as QueueItem;
       newState = reducer(newState || this._state, action);
       if (origin) {

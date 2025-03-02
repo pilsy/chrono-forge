@@ -920,7 +920,7 @@ describe('StatefulWorkflow', () => {
       expect(state.User[userId].someProp).toEqual(testValue);
     });
 
-    it.skip('Should handle nested entity getter and setter correctly', async () => {
+    it('Should handle nested entity getter and setter correctly', async () => {
       const userId = uuid4();
       const listingId = uuid4();
       const initialData = {
@@ -933,7 +933,7 @@ describe('StatefulWorkflow', () => {
         entityName: 'User',
         data: initialData
       });
-      await sleep(5000);
+      await sleep(2500);
 
       // Test getting nested value through proxy
       const initialName = await handle.query('getNestedListingName', listingId);
@@ -942,7 +942,7 @@ describe('StatefulWorkflow', () => {
       // Test setting nested value through proxy
       const newName = 'Updated Listing Name';
       await handle.signal('updateNestedListingName', { listingId, newName });
-      await sleep(5000);
+      await sleep(2500);
 
       // Test getting updated nested value
       const updatedName = await handle.query('getNestedListingName', listingId);

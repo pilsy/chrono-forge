@@ -234,6 +234,15 @@ export class EntityDataProxy {
       },
 
       set: (target, prop, value) => {
+        // I need to handle array length changes
+        if (prop === 'length') {
+          if (Reflect.set(target, prop, value)) {
+            this.updateEntityField(propName, target);
+            return true;
+          }
+          return false;
+        }
+
         // Handle array element assignments (e.g., arr[0] = 'value')
         if (typeof prop === 'number' || !isNaN(Number(prop))) {
           const oldValue = target[prop as any];
@@ -415,6 +424,23 @@ export class EntityDataProxy {
 
         // Convert single entity reference to ID
         processedValue = typeof idAttribute === 'function' ? idAttribute(value) : value[idAttribute];
+      } else if (value === null || value === undefined) {
+        // Handle setting a relationship to null/undefined
+        if (oldValue && typeof oldValue !== 'undefined') {
+          let oldId;
+          if (typeof oldValue === 'string' || typeof oldValue === 'number') {
+            oldId = oldValue.toString();
+          } else {
+            oldId = typeof idAttribute === 'function' ? idAttribute(oldValue) : oldValue[idAttribute];
+          }
+
+          if (oldId) {
+            removedEntityIds.push(oldId);
+          }
+        }
+
+        // Set processed value to null
+        processedValue = null;
       }
     }
 
@@ -426,7 +452,7 @@ export class EntityDataProxy {
     if (Array.isArray(oldValue)) {
       strategy = Array.isArray(value) ? '$set' : '$push';
     } else if (value === null || value === undefined) {
-      strategy = '$unset';
+      strategy = '$set';
     }
 
     // Create actions

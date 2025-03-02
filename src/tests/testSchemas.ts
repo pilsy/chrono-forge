@@ -32,6 +32,7 @@ SchemaManager.parseYAML(`
     idAttribute: id
     sitemaps: [Sitemap]
     vendors: [Vendor]
+    products: [Product]
 
   Vendor:
     idAttribute: name
@@ -46,6 +47,7 @@ SchemaManager.parseYAML(`
   Product:
     idAttribute: id
     vendor: Vendor
+    website: Website
 
   Sitemap:
     idAttribute: id
