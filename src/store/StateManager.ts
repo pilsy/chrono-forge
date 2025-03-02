@@ -6,7 +6,7 @@ import { limitRecursion } from '../utils';
 import { LRUCacheWithDelete } from 'mnemonist';
 import { Relationship, SchemaManager } from './SchemaManager';
 import { GraphManager } from './GraphManager';
-import { EntityDataProxy } from './EntityDataProxy';
+import { EntityProxyManager } from './EntityProxyManager';
 
 /**
  * Represents the detailed diff structure for EntitiesState
@@ -49,6 +49,11 @@ export class StateManager extends EventEmitter {
     this._instanceId = _instanceId;
     this._state = {};
     this.graphManager = GraphManager.getInstance();
+
+    // Initialize EntityProxyManager if it hasn't been initialized yet
+    if (!EntityProxyManager['proxyStateTree']) {
+      EntityProxyManager.initialize();
+    }
   }
 
   /**
@@ -61,6 +66,12 @@ export class StateManager extends EventEmitter {
     if (!instanceId) {
       throw new Error(`You must provide a instanceId ${instanceId}!`);
     }
+
+    // Initialize EntityProxyManager if it hasn't been initialized yet
+    if (!EntityProxyManager['proxyStateTree']) {
+      EntityProxyManager.initialize();
+    }
+
     if (!this.instances[instanceId]) {
       this.instances[instanceId] = new StateManager(instanceId);
     }
@@ -102,8 +113,8 @@ export class StateManager extends EventEmitter {
     const differences = detailedDiff(previousState, newState);
     if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
       this._state = newState;
-      EntityDataProxy.clearCache();
       this.cache.clear();
+      EntityProxyManager.clearCache();
 
       await this.emitStateChangeEvents(differences, previousState, newState, Array.from(origins));
     }
@@ -262,8 +273,8 @@ export class StateManager extends EventEmitter {
       return entity;
     }
 
-    // Create and return a proxy for the denormalized entity
-    return EntityDataProxy.create(entityName, id, denormalized, this);
+    // Create and return a proxy for the denormalized entity using EntityProxyManager
+    return EntityProxyManager.createEntityProxy(entityName, id, denormalized, this);
   }
 
   /**

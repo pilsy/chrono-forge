@@ -1,6 +1,6 @@
 {
   "name": "chrono-forge",
-  "version": "1.5.14",
+  "version": "1.5.15",
   "description": "A comprehensive framework for building resilient Temporal workflows, advanced state management, and real-time streaming activities in TypeScript. Designed for a seamless developer experience with powerful abstractions, dynamic orchestration, and full control over distributed systems.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -91,6 +91,7 @@
     "lodash": "^4.17.x",
     "mnemonist": "^0.40.3",
     "normalizr": "^3.6.2",
+    "proxy-state-tree": "^6.3.0",
     "ramda": "^0.30.1",
     "reflect-metadata": "^0.2.2"
   },

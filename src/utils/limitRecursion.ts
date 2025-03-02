@@ -34,7 +34,7 @@ export const limitRecursion: Function = (
     return stateManager.cache.get(entityKey);
   }
 
-  const result: Record<string, any> = Object.create(null);
+  const result: Record<string, any> = Object.create({});
   const schemaRelations = schema.schema;
 
   for (const key of Object.keys(entity)) {

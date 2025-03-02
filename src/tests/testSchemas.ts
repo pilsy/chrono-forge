@@ -8,6 +8,7 @@ SchemaManager.parseYAML(`
     photos: [Photo]
     nested: Nested
     friends: [User]
+    profile: Profile
   
   Listing:
     idAttribute: id
@@ -60,8 +61,13 @@ SchemaManager.parseYAML(`
 
   Browser:
     idAttribute: id
+
+  Profile:
+    idAttribute: id
+    user: User
 `);
 
 export const { schemas } = SchemaManager;
-export const { User, Listing, Photo, Like } = schemas;
+export const { User, Listing, Photo, Like, Website, Vendor, Collection, Product, Sitemap, Link, Browser, Profile } =
+  schemas;
 export default schemas;
