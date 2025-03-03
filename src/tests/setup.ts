@@ -72,7 +72,7 @@ export const setup = async () => {
         makeHTTPRequest: async () => '99'
       },
       workflowsPath: path.resolve(__dirname, './testWorkflows'),
-      // debugMode: true,
+      debugMode: true,
       sinks: {
         // @ts-ignore
         exporter: makeWorkflowExporter(exporter, resource)
@@ -80,7 +80,7 @@ export const setup = async () => {
       interceptors: {
         workflowModules: [require.resolve('./testWorkflows'), require.resolve('../workflows')],
         activityInbound: [(ctx) => new OpenTelemetryActivityInboundInterceptor(ctx)]
-      },
+      }
       // workflowThreadPoolSize: 1
     })
   );

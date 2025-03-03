@@ -4,7 +4,7 @@ import {
   clearEntities,
   deleteNormalizedEntities,
   normalizeEntities,
-  PARTIAL_UPDATE,
+  PARTIAL_UPDATE_ENTITY,
   updateNormalizedEntities,
   partialUpdateEntity
 } from '../store';
@@ -372,7 +372,7 @@ describe('StateManager', () => {
       expect(dispatchSpy).toHaveBeenCalledWith(
         [
           {
-            type: PARTIAL_UPDATE,
+            type: PARTIAL_UPDATE_ENTITY,
             entityName: 'Like',
             entityId: likeId,
             entities: { [likeId]: { name: 'new-like-name' } },
@@ -431,7 +431,7 @@ describe('StateManager', () => {
       expect(dispatchSpy).toHaveBeenCalledWith(
         [
           {
-            type: PARTIAL_UPDATE,
+            type: PARTIAL_UPDATE_ENTITY,
             entityName: 'User',
             entityId: '1',
             entities: { '1': { name: 'Jane Doe' } },
@@ -457,7 +457,7 @@ describe('StateManager', () => {
       expect(dispatchSpy).toHaveBeenCalledWith(
         [
           {
-            type: PARTIAL_UPDATE,
+            type: PARTIAL_UPDATE_ENTITY,
             entityName: 'User',
             entityId: '1',
             entities: { '1': { attributes: { score: 20 } } },
@@ -480,7 +480,7 @@ describe('StateManager', () => {
       expect(dispatchSpy).toHaveBeenCalledWith(
         [
           {
-            type: PARTIAL_UPDATE,
+            type: PARTIAL_UPDATE_ENTITY,
             entityName: 'Nested',
             entityId: '100',
             entities: { '100': { list: [1, 10, 3] } },
@@ -496,7 +496,7 @@ describe('StateManager', () => {
         2,
         [
           {
-            type: PARTIAL_UPDATE,
+            type: PARTIAL_UPDATE_ENTITY,
             entityName: 'Nested',
             entityId: '100',
             entities: { '100': { list: [1, 10, 3, 25] } },
@@ -569,7 +569,7 @@ describe('StateManager', () => {
             type: 'entities.upsertEntities'
           },
           {
-            type: PARTIAL_UPDATE,
+            type: PARTIAL_UPDATE_ENTITY,
             entityName: 'Photo',
             entityId: photoId,
             entities: { [photoId]: { likes: [like1.id, like2.id] } },
@@ -604,7 +604,7 @@ describe('StateManager', () => {
       expect(dispatchSpy).toHaveBeenCalledWith(
         [
           {
-            type: PARTIAL_UPDATE,
+            type: PARTIAL_UPDATE_ENTITY,
             entityName: 'Nested',
             entityId: '100',
             entities: { '100': { list: [15, 2, 3] } },
@@ -627,7 +627,7 @@ describe('StateManager', () => {
       expect(dispatchSpy).toHaveBeenCalledWith(
         [
           {
-            type: PARTIAL_UPDATE,
+            type: PARTIAL_UPDATE_ENTITY,
             entityName: 'Nested',
             entityId: '100',
             entities: { '100': { list: [1, 2, 3, 25] } },

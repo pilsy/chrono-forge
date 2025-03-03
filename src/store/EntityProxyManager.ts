@@ -5,7 +5,12 @@ import { getEntityName } from '../utils';
 import { EntityAction, EntityStrategy, partialUpdateEntity, deleteEntity, updateEntity } from './actions';
 
 /**
- * Interface for proxy-state-tree mutation object
+ * Interface representing a mutation operation from proxy-state-tree.
+ * Contains information about what was changed, how it was changed, and the arguments used.
+ *
+ * @property path - The dot-notation path to the property that was modified
+ * @property method - The method name that was called (for array operations) or undefined for direct assignment
+ * @property args - The arguments passed to the method or the new value for direct assignment
  */
 interface ProxyMutation {
   path: string;
@@ -16,20 +21,35 @@ interface ProxyMutation {
 /**
  * EntityProxyManager provides a reactive interface to entity data with automatic state updates
  * and relationship handling, using proxy-state-tree for the proxy implementation.
+ *
+ * This class manages the creation and caching of entity proxies, handles mutations to those
+ * proxies, and ensures that changes are properly propagated to the state management system.
+ * It also handles complex relationship updates between entities.
  */
 export class EntityProxyManager {
-  // The main proxy-state-tree instance
+  /**
+   * The main proxy-state-tree instance that manages all entity proxies
+   * and tracks mutations to those proxies.
+   */
   private static proxyStateTree: ProxyStateTree<Record<string, Record<string, any>>>;
 
-  // Cache of entity IDs to avoid recreating proxies
+  /**
+   * Cache of entity proxies to avoid recreating proxies for the same entity.
+   * Keys are in the format `${entityName}::${entityId}`.
+   */
   private static readonly entityCache = new Map<string, any>();
 
-  // Map of entity IDs to their StateManager instances
+  /**
+   * Map of entity cache keys to their StateManager instances.
+   * Used to dispatch state updates when entities are modified.
+   * Keys are in the format `${entityName}::${entityId}`.
+   */
   private static readonly entityStateManagers = new Map<string, StateManager>();
 
   /**
-   * Initialize the proxy-state-tree instance
-   * This should be called once at application startup
+   * Initializes the proxy-state-tree instance.
+   * This should be called once at application startup before any entity proxies are created.
+   * If the proxy-state-tree instance already exists, this method does nothing.
    */
   public static initialize(): void {
     if (!this.proxyStateTree) {
@@ -38,12 +58,14 @@ export class EntityProxyManager {
   }
 
   /**
-   * Creates a proxy for an entity or returns a cached instance
-   * @param entityName The entity type name
-   * @param entityId The entity ID
-   * @param data The entity data
-   * @param stateManager The StateManager instance
-   * @returns A proxy for the entity
+   * Creates a proxy for an entity or returns a cached instance if one already exists.
+   * The proxy allows tracking mutations to the entity and automatically updating the state.
+   *
+   * @param entityName - The type name of the entity (e.g., 'user', 'task')
+   * @param entityId - The unique identifier of the entity
+   * @param data - The entity data to be proxied
+   * @param stateManager - The StateManager instance responsible for this entity
+   * @returns A proxy object that wraps the entity data and tracks mutations
    */
   public static createEntityProxy(entityName: string, entityId: string, data: any, stateManager: StateManager): any {
     const cacheKey = `${entityName}::${entityId}`;
@@ -83,10 +105,13 @@ export class EntityProxyManager {
   }
 
   /**
-   * Handles mutations to an entity
-   * @param entityName The entity type name
-   * @param entityId The entity ID
-   * @param mutation The mutation object from proxy-state-tree
+   * Handles mutations to an entity by determining the type of mutation and dispatching
+   * the appropriate state updates. This method is called automatically when a property
+   * of an entity proxy is modified.
+   *
+   * @param entityName - The type name of the entity being mutated
+   * @param entityId - The unique identifier of the entity being mutated
+   * @param mutation - The mutation object from proxy-state-tree containing details about the change
    */
   private static handleEntityMutation(entityName: string, entityId: string, mutation: ProxyMutation): void {
     const cacheKey = `${entityName}::${entityId}`;
@@ -142,15 +167,17 @@ export class EntityProxyManager {
   }
 
   /**
-   * Process a mutation that affects nested entities
-   * @param entityName The parent entity type name
-   * @param entityId The parent entity ID
-   * @param fieldName The relationship field name
-   * @param nestedPath The path parts after the relationship field
-   * @param currentValue The current value of the relationship field
-   * @param stateManager The StateManager instance
-   * @param relation The relationship information
-   * @param mutation The original mutation object
+   * Processes a mutation that affects nested entities within a relationship field.
+   * This method determines which related entity was modified and updates it appropriately.
+   *
+   * @param entityName - The parent entity type name
+   * @param entityId - The parent entity ID
+   * @param fieldName - The relationship field name that contains the nested entity
+   * @param nestedPath - The path parts after the relationship field, identifying the nested property
+   * @param currentValue - The current value of the relationship field
+   * @param stateManager - The StateManager instance for the parent entity
+   * @param relation - The relationship metadata describing the connection between entities
+   * @param mutation - The original mutation object containing details about the change
    */
   private static processNestedMutation(
     entityName: string,
@@ -218,12 +245,23 @@ export class EntityProxyManager {
   }
 
   /**
-   * Update a nested entity based on a mutation
-   * @param entityName The entity type name
-   * @param entityId The entity ID
-   * @param nestedPath The remaining path within the entity
-   * @param stateManager The StateManager instance
-   * @param mutation The original mutation object
+   * Updates a nested entity based on a mutation. This method is called when a property
+   * within a related entity is modified through a relationship.
+   *
+   * This method handles various types of nested updates, including:
+   * - Direct field updates within the nested entity
+   * - Array operations (push, pop, etc.) on array fields
+   * - Updates to deeply nested properties within objects
+   * - Updates to nested relationships
+   *
+   * It creates appropriate partial update actions based on the type of mutation
+   * and dispatches them to the state manager.
+   *
+   * @param entityName - The entity type name of the nested entity
+   * @param entityId - The entity ID of the nested entity
+   * @param nestedPath - The remaining path within the nested entity to the modified property
+   * @param stateManager - The StateManager instance
+   * @param mutation - The original mutation object containing details about the change
    */
   private static updateNestedEntity(
     entityName: string,
@@ -424,12 +462,19 @@ export class EntityProxyManager {
   }
 
   /**
-   * Handles mutations to entity relationships
-   * @param entityName The entity type name
-   * @param entityId The entity ID
-   * @param fieldName The field that was changed
-   * @param newValue The new value of the field
-   * @param stateManager The StateManager instance
+   * Handles mutations to relationship fields by updating both the parent entity
+   * and any related entities as needed. This method processes different relationship types
+   * (one-to-one, one-to-many) and handles adding, removing, and updating related entities.
+   *
+   * It tracks which entities were added or removed from the relationship and dispatches
+   * the appropriate actions to update the state, including potentially deleting entities
+   * that are no longer referenced.
+   *
+   * @param entityName - The entity type name of the parent entity
+   * @param entityId - The entity ID of the parent entity
+   * @param fieldName - The name of the relationship field that was modified
+   * @param newValue - The new value of the relationship field
+   * @param stateManager - The StateManager instance
    */
   private static handleRelationshipMutation(
     entityName: string,
@@ -605,7 +650,14 @@ export class EntityProxyManager {
   }
 
   /**
-   * Updates an entity field in the state
+   * Updates an entity field in the state by dispatching the appropriate action.
+   * This method handles different update strategies based on the type of value.
+   *
+   * @param entityName - The entity type name
+   * @param entityId - The entity ID
+   * @param fieldName - The name of the field to update
+   * @param newValue - The new value for the field
+   * @param stateManager - The StateManager instance
    */
   private static updateEntityField(
     entityName: string,
@@ -641,9 +693,16 @@ export class EntityProxyManager {
   }
 
   /**
-   * Checks if a mutation is an array method operation
-   * @param mutation The mutation object
-   * @returns True if the mutation is an array method operation
+   * Determines if a mutation represents an array method operation like push, pop, etc.
+   *
+   * Array method mutations require special handling because they modify an existing array
+   * rather than replacing it entirely. This method helps identify when such special
+   * handling is needed throughout the proxy manager.
+   *
+   * The supported array methods are: push, pop, shift, unshift, splice, sort, and reverse.
+   *
+   * @param mutation - The mutation object to check
+   * @returns True if the mutation is an array method operation, false otherwise
    */
   private static isArrayMethodMutation(mutation: ProxyMutation): boolean {
     return (
@@ -652,7 +711,14 @@ export class EntityProxyManager {
   }
 
   /**
-   * Clear the entity cache
+   * Clears the entire entity cache and state manager mappings.
+   * This should be called when the application state is reset or when
+   * all entities need to be recreated.
+   *
+   * Clearing the cache forces new proxies to be created the next time entities
+   * are accessed, which ensures that the proxies reflect the current state.
+   * This is particularly important after major state changes like loading
+   * a new dataset or resetting the application.
    */
   public static clearCache(): void {
     this.entityCache.clear();
@@ -660,9 +726,16 @@ export class EntityProxyManager {
   }
 
   /**
-   * Remove a specific entity from the cache
-   * @param entityName The entity type name
-   * @param entityId The entity ID
+   * Removes a specific entity from the cache.
+   * This should be called when an entity is deleted or when its proxy
+   * needs to be recreated from scratch.
+   *
+   * Removing an entity from the cache ensures that the next time it's accessed,
+   * a new proxy will be created with the current state. This is important after
+   * operations that significantly change an entity's structure or relationships.
+   *
+   * @param entityName - The entity type name
+   * @param entityId - The entity ID
    */
   public static removeFromCache(entityName: string, entityId: string): void {
     const cacheKey = `${entityName}::${entityId}`;

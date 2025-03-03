@@ -1,5 +1,22 @@
 import { sleep, CancellationScope, isCancellation } from '@temporalio/workflow';
 
+/**
+ * Debounce decorator to debounce method calls in Temporal workflows.
+ *
+ * This decorator uses Temporal's CancellationScope to implement debouncing:
+ * - When a decorated method is called multiple times in quick succession, only the last call executes
+ * - Previous pending calls are cancelled via CancellationScope
+ * - The method execution is protected from cancellation using nonCancellable scope
+ *
+ * The implementation acts as an async mutex by:
+ * - Tracking the current execution via the currentScope variable
+ * - Cancelling any in-progress debounce wait period when a new call arrives
+ * - Ensuring the actual method execution happens in a non-cancellable context
+ * - Properly handling cancellation exceptions
+ *
+ * @param {number} ms - The debounce time in milliseconds.
+ * @returns {MethodDecorator} - The debounce decorator.
+ */
 export function Debounce(ms: number): MethodDecorator {
   let currentScope: CancellationScope | null = null;
 

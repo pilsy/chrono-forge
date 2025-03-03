@@ -2,7 +2,8 @@ import yaml from 'js-yaml';
 import { schema, Schema } from 'normalizr';
 
 /**
- * Represents a relationship between schemas with ID attribute and key
+ * Represents a relationship between schemas with ID attribute and key.
+ * This type extends the base Schema with additional relationship metadata.
  */
 export type SchemaRelationship = {
   _idAttribute: string;
@@ -11,7 +12,8 @@ export type SchemaRelationship = {
 };
 
 /**
- * Enhanced Entity schema with additional schema definition and ID attribute
+ * Enhanced Entity schema that extends normalizr's Entity with additional schema definition and ID attribute.
+ * Provides type safety for schema relationships and custom ID attribute functions.
  */
 export interface EnhancedEntity extends schema.Entity {
   schema: {
@@ -21,21 +23,24 @@ export interface EnhancedEntity extends schema.Entity {
 }
 
 /**
- * Definition of all schemas with their names as keys
+ * Definition of all schemas with their names as keys.
+ * Used as the primary configuration input for the SchemaManager.
  */
 export type SchemasDefinition = {
   [schemaName: string]: SchemaDefinition;
 };
 
 /**
- * Definition of a single schema with ID attribute and relationships
+ * Definition of a single schema with optional ID attribute and relationships.
+ * Each field represents either a single or array relationship to another entity.
  */
 export type SchemaDefinition = {
   idAttribute?: string | ((entity: any, parent?: any, key?: string) => any);
 } & Record<string, string | [string]>;
 
 /**
- * Represents a relationship between entities
+ * Represents a relationship between entities.
+ * Defines whether the relationship is to one (single) or many (collection) entities.
  */
 export type Relationship = {
   relatedEntityName: string;
@@ -43,7 +48,8 @@ export type Relationship = {
 };
 
 /**
- * Represents how an entity is referenced by another entity
+ * Represents how an entity is referenced by another entity.
+ * Contains the field name in the referencing entity and whether it's a collection.
  */
 export type ReferencedBy = {
   fieldName: string;
@@ -51,28 +57,33 @@ export type ReferencedBy = {
 };
 
 /**
- * Map of entities that reference this entity
+ * Map of entities that reference this entity.
+ * Keys are the names of referencing entities, values describe how they reference this entity.
  */
 export type ReferencedByMap = {
   [referencingEntityName: string]: ReferencedBy;
 };
 
 /**
- * Represents all relationships for an entity
+ * Represents all relationships for an entity.
+ * Includes both outgoing relationships and incoming references (_referencedBy).
  */
 export type EntityRelationships = {
   [fieldName: string]: Relationship | undefined;
 } & { _referencedBy: ReferencedByMap };
 
 /**
- * Map of all entities and their relationships
+ * Map of all entities and their relationships.
+ * Provides a complete picture of the data model's relational structure.
  */
 export type RelationshipMap = {
   [entityName: string]: EntityRelationships;
 };
 
 /**
- * Manages schema definitions and relationships between entities
+ * Manages schema definitions and relationships between entities.
+ * Implements the Singleton pattern to ensure a single source of truth for schemas.
+ * Provides methods to create, retrieve, and analyze entity relationships.
  */
 export class SchemaManager {
   private constructor() {}
@@ -81,24 +92,25 @@ export class SchemaManager {
   private relationshipMap: RelationshipMap = {};
 
   /**
-   * Gets all registered schemas
-   * @returns Record of all schemas
+   * Gets all registered schemas.
+   * @returns Record of all schema entities indexed by name.
    */
   public static get schemas(): Record<string, EnhancedEntity> {
     return this.getInstance().getSchemas();
   }
 
   /**
-   * Gets the relationship map between all entities
-   * @returns RelationshipMap containing all entity relationships
+   * Gets the relationship map between all entities.
+   * @returns RelationshipMap containing all entity relationships.
    */
   public static get relationshipMap(): RelationshipMap {
     return this.getInstance().getRelationshipMap();
   }
 
   /**
-   * Gets the singleton instance of SchemaManager
-   * @returns SchemaManager instance
+   * Gets the singleton instance of SchemaManager.
+   * Creates the instance if it doesn't exist yet.
+   * @returns The singleton SchemaManager instance.
    */
   public static getInstance(): SchemaManager {
     if (!this.instance) {
@@ -109,8 +121,9 @@ export class SchemaManager {
 
   /**
    * Sets schemas based on the provided configuration.
+   * Creates schema entities and builds the relationship map.
    * @param schemaConfig The schema configuration to set.
-   * @returns The current schemas.
+   * @returns The created schema entities.
    */
   setSchemas(schemaConfig: SchemasDefinition): Record<string, EnhancedEntity> {
     // @ts-expect-error stfu
@@ -119,8 +132,8 @@ export class SchemaManager {
   }
 
   /**
-   * Retrieves all schemas.
-   * @returns The current schemas.
+   * Retrieves all registered schemas.
+   * @returns The current schema entities.
    */
   getSchemas(): Record<string, EnhancedEntity> {
     return this.schemas;
@@ -129,7 +142,7 @@ export class SchemaManager {
   /**
    * Retrieves a specific schema by name.
    * @param schemaName The name of the schema to retrieve.
-   * @returns The schema.
+   * @returns The requested schema entity.
    * @throws Error if the schema is not defined.
    */
   getSchema(schemaName: string): EnhancedEntity {
@@ -141,9 +154,12 @@ export class SchemaManager {
 
   /**
    * Creates schemas dynamically based on the configuration provided.
-   * Supports defining relationships between schemas.
+   * Performs a two-pass process:
+   * 1. Creates schema entities without relationships
+   * 2. Defines relationships between entities and builds the relationship map
+   *
    * @param schemaConfig The schema configuration.
-   * @returns The created schemas.
+   * @returns The created schema entities.
    */
   private createSchemas(schemaConfig: SchemasDefinition) {
     const schemas: { [key: string]: schema.Entity } = {};
@@ -215,6 +231,8 @@ export class SchemaManager {
 
   /**
    * Parses schemas from a YAML string and sets them in the SchemaManager.
+   * Convenience method for initializing schemas from YAML configuration.
+   *
    * @param yamlSchema The YAML string containing schema definitions.
    */
   public static parseYAML(yamlSchema: string): void {
@@ -224,8 +242,10 @@ export class SchemaManager {
   }
 
   /**
-   * Gets the relationship map for all entities
-   * @returns RelationshipMap containing all entity relationships
+   * Gets the relationship map for all entities.
+   * The relationship map describes both outgoing and incoming relationships.
+   *
+   * @returns RelationshipMap containing all entity relationships.
    */
   public getRelationshipMap(): RelationshipMap {
     return this.relationshipMap;
@@ -233,6 +253,7 @@ export class SchemaManager {
 }
 
 /**
- * Exports the schemas from SchemaManager
+ * Exports the schemas from SchemaManager.
+ * Provides a convenient way to access the schemas without directly using the SchemaManager.
  */
 export const { schemas } = SchemaManager;

@@ -16,20 +16,27 @@ import { LRUCacheWithDelete } from 'mnemonist';
 
 /**
  * Options for configuring a Temporal Workflow.
+ *
+ * This interface defines the configuration options that can be passed to a Temporal workflow
+ * when it is created or registered with the Temporal service.
  */
 export interface TemporalOptions {
   /**
    * The name of the workflow.
+   * If not provided, the class name will be used as the workflow name.
    */
   name?: string;
 
   /**
    * The task queue for the workflow.
+   * Specifies which task queue the workflow should be registered with.
+   * Workers listening on this task queue will be able to execute this workflow.
    */
   taskQueue?: string;
 
   /**
    * Additional arbitrary options.
+   * Any other configuration options that might be needed for specific workflow implementations.
    */
   [key: string]: any;
 }
@@ -115,17 +122,29 @@ export function Temporal(options?: TemporalOptions) {
  * Includes mechanisms for handling signals, queries, event handling, and more.
  * Extends the EventEmitter to aid in workflow event management.
  *
+ * This class implements core Temporal workflow functionality including:
+ * - Signal and query handling
+ * - Event emission and subscription
+ * - Workflow state management
+ * - Child workflow management
+ * - Execution flow control (pause, resume, cancel)
+ * - Continuation (continueAsNew) support
+ * - Structured logging
+ *
  * @template P - Type of input parameters for the workflow constructor.
  * @template O - Type of configuration options for the workflow.
  */
 export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   /**
    * Map to keep track of child workflow handles.
+   * Uses LRU cache to efficiently manage a large number of child workflow references
+   * without consuming excessive memory.
    */
   protected handles: LRUCacheWithDelete<string, workflow.ChildWorkflowHandle<any>> = new LRUCacheWithDelete(2000);
 
   /**
    * Internal flags used to determine if certain decorators have been bound to this workflow instance.
+   * These flags prevent duplicate binding of handlers during workflow execution.
    */
   protected _eventsBound = false;
   private _hooksBound = false;
@@ -135,6 +154,11 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
   /**
    * Workflow logging instance provided by Temporal.
+   *
+   * Provides structured logging with workflow context information automatically included.
+   * All log messages are prefixed with workflow class name and workflow ID for easier debugging.
+   *
+   * Available log levels: debug, info, warn, error, trace
    */
   protected log = {
     debug: (message: string, ...args: any[]) =>
@@ -151,45 +175,57 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
   /**
    * Workflow execution result.
+   * Stores the final result of the workflow execution that will be returned to the caller.
    */
   protected result: any;
 
   /**
    * Handlers for workflow queries.
+   * Maps query names to their handler functions.
+   * Query handlers allow external systems to retrieve workflow state without modifying it.
    */
   protected queryHandlers: { [key: string]: (...args: any[]) => any } = {};
 
   /**
    * Handlers for workflow signals.
+   * Maps signal names to their handler functions.
+   * Signal handlers allow external systems to trigger actions within the workflow.
    */
   protected signalHandlers: { [key: string]: (args: any[]) => Promise<void> } = {};
 
   /**
    * Determines whether the workflow is a long running continueAsNew type workflow or a short lived one.
+   * When true, the workflow will use the continueAsNew mechanism to restart itself with the same parameters
+   * when it reaches certain limits (history size, iterations, etc.).
    */
   @Property({ set: false })
   protected continueAsNew = false;
 
   /**
    * Boolean flag indicating if workflow should continue as new immediately.
+   * When set to true, the workflow will trigger the continueAsNew mechanism at the end of the current iteration.
    */
   @Property()
   protected shouldContinueAsNew = false;
 
   /**
    * Maximum number of iterations for the workflow.
+   * Prevents infinite loops and ensures the workflow history doesn't grow too large.
+   * When this limit is reached, the workflow will either continue as new or terminate.
    */
   @Property({ set: false })
   protected maxIterations = 10000;
 
   /**
    * Current workflow iteration count.
+   * Tracks how many times the workflow has executed its main loop.
    */
   @Property({ set: false })
   protected iteration = 0;
 
   /**
-   * Boolean flag indicating pending iteration, setting this to true will result in a full execute() loop being run.
+   * Boolean flag indicating pending iteration.
+   * Setting this to true will result in a full execute() loop being run.
    * This is useful if you have made changes and want the state or memo to update, or similar.
    */
   @Property()
@@ -197,18 +233,31 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
   /**
    * Current status of the workflow.
+   * Possible values include: 'running', 'paused', 'cancelling', 'cancelled', 'complete', 'completed', 'error', etc.
+   * This status is used to control workflow execution flow and can be queried externally.
    */
   @Property()
   protected status: string = 'running';
 
   /**
-   * Boolean flag indicating a pending update, setting this to true will result in loadData() being called if it is defined.
+   * Boolean flag indicating a pending update.
+   * Setting this to true will result in loadData() being called if it is defined.
+   * Useful for triggering data refresh operations within the workflow.
    */
   @Property()
   protected pendingUpdate = true;
 
   /**
    * Signal to pause workflow execution.
+   *
+   * When this signal is received, the workflow will:
+   * 1. Change its status to 'paused'
+   * 2. Update the workflow memo with the new status
+   * 3. Forward the pause signal to all child workflows
+   * 4. Emit the 'paused' event
+   * 5. Wait for a resume signal before continuing execution
+   *
+   * The workflow will not process any further iterations until resumed.
    */
   @Signal()
   public pause(): void {
@@ -227,6 +276,14 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
   /**
    * Signal to resume workflow execution.
+   *
+   * When this signal is received, the workflow will:
+   * 1. Change its status from 'paused' to 'running'
+   * 2. Update the workflow memo with the new status
+   * 3. Forward the resume signal to all child workflows
+   * 4. Continue processing iterations
+   *
+   * If the workflow is already running, this signal has no effect.
    */
   @Signal()
   public resume(): void {
@@ -245,6 +302,15 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
   /**
    * Signal to cancel workflow execution.
+   *
+   * When this signal is received, the workflow will:
+   * 1. Change its status to 'cancelling'
+   * 2. Update the workflow memo with the new status
+   * 3. Forward the cancel signal to all child workflows
+   * 4. Eventually transition to 'cancelled' state
+   *
+   * The workflow will terminate after completing any necessary cleanup operations.
+   * If the workflow is already cancelling, this signal has no effect.
    */
   @Signal()
   public cancel(): void {
@@ -262,10 +328,13 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   }
 
   /**
-   * Basic constructor for Workflow.
+   * Constructor for the Workflow base class.
    *
-   * @param args - Initial parameters for workflow execution.
-   * @param options - Configuration options for the workflow.
+   * Initializes the workflow with the provided arguments and options.
+   * Sets up the basic workflow state and prepares it for execution.
+   *
+   * @param args - Initial parameters for workflow execution. These parameters define the input data for the workflow.
+   * @param options - Configuration options for the workflow. These options control workflow behavior and settings.
    */
   constructor(
     protected args: P,
@@ -278,12 +347,19 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
   /**
    * Optional duration for condition timeout.
+   *
+   * When set, this duration limits how long the workflow will wait for conditions to be met
+   * before continuing execution. If not set, the workflow will wait indefinitely.
    */
   @Property()
   protected conditionTimeout: Duration | undefined = undefined;
 
   /**
    * Check if workflow is in a terminal state.
+   *
+   * Terminal states indicate that the workflow has finished execution and will not
+   * process any more iterations. This includes successful completion, cancellation,
+   * and error states.
    *
    * @returns {boolean} True if the workflow is in a terminal state, false otherwise.
    */
@@ -296,6 +372,10 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   /**
    * Abstract method to execute the workflow logic.
    *
+   * This method must be implemented by concrete workflow classes to define the
+   * actual business logic of the workflow. It will be called repeatedly during
+   * workflow execution until a terminal state is reached or the workflow continues as new.
+   *
    * @param args - Arguments required for execution.
    * @returns {Promise<unknown>} Result of the workflow execution.
    */
@@ -303,6 +383,14 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
   /**
    * Core method to manage workflow execution and its lifecycle.
+   *
+   * This method implements the main execution loop of the workflow, handling:
+   * - Condition waiting
+   * - Pause/resume/cancel signals
+   * - Iteration counting
+   * - Error handling
+   * - ContinueAsNew logic
+   * - Terminal state detection
    *
    * @param args - Arguments passed for workflow execution.
    * @returns {Promise<any>} Result of the workflow processing.
@@ -369,7 +457,12 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   /**
    * Handle the scenario when maximum iterations are reached.
    *
-   * @returns {Promise<void>} Denotes successful handling of max iterations.
+   * This method is called when the workflow reaches its maximum iteration count
+   * or when the history size becomes too large. It manages the continueAsNew process
+   * by waiting for all handlers to finish and then calling the appropriate continueAsNew method.
+   *
+   * @returns {Promise<void>} Resolves when the continueAsNew process is complete.
+   * @throws {Error} If no method decorated with @ContinueAsNew is found.
    */
   protected async handleMaxIterations(): Promise<void> {
     await workflow.condition(() => workflow.allHandlersFinished(), '30 seconds');
@@ -385,11 +478,16 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   }
 
   /**
-   * Generic method to handle errors encountered during workflow execution.
+   * Handle errors encountered during workflow execution.
    *
-   * @param err - Error encountered.
-   * @param reject - Function to call with rejection error.
-   * @returns {Promise<void>}
+   * This method provides centralized error handling for the workflow, with special
+   * handling for cancellation errors. For cancellation errors, it ensures all child
+   * workflows are also cancelled. For other errors, it logs the error and rejects
+   * the workflow promise.
+   *
+   * @param err - Error encountered during workflow execution.
+   * @param reject - Function to call with rejection error to propagate it up the call stack.
+   * @returns {Promise<void>} Resolves when error handling is complete.
    */
   protected async handleExecutionError(err: any, reject: (err: Error) => void): Promise<void> {
     this.log.error(`Error encountered: ${err?.message}: ${err?.stack}`);
@@ -420,6 +518,16 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
   }
 
+  /**
+   * Override of EventEmitter's emit method to prevent synchronous event emission.
+   *
+   * Temporal workflows must be deterministic, so synchronous event emission is not allowed.
+   * This method throws an error to remind developers to use emitAsync instead.
+   *
+   * @param event - The event to emit.
+   * @param args - Arguments to pass to the event listeners.
+   * @throws {Error} Always throws an error directing the developer to use emitAsync.
+   */
   emit<T extends string | symbol>(event: T, ...args: any[]): boolean {
     throw new Error('Workflows need to be deterministic, emitAsync should be used instead!');
   }
@@ -427,8 +535,13 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   /**
    * Emit events asynchronously to the necessary listeners.
    *
+   * This method provides a deterministic way to emit events in Temporal workflows.
+   * It ensures that all event listeners are called in sequence and any errors are
+   * properly handled without affecting other listeners.
+   *
    * @param event - The event to be emitted.
    * @param args - Arguments to pass to the listeners.
+   * @returns {Promise<boolean>} True if there were listeners for the event, false otherwise.
    */
   protected async emitAsync(event: string, ...args: any[]): Promise<boolean> {
     const listeners = this.listeners(event);
@@ -447,8 +560,13 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   /**
    * Forward a signal to all child workflows.
    *
+   * This method sends the specified signal to all child workflows managed by this workflow.
+   * It's commonly used to propagate pause, resume, and cancel signals to ensure consistent
+   * state across the workflow hierarchy.
+   *
    * @param signalName - The name of the signal to be forwarded.
-   * @param args - Additional arguments to pass.
+   * @param args - Additional arguments to pass with the signal.
+   * @returns {Promise<void>} Resolves when all signals have been sent.
    */
   protected async forwardSignalToChildren(signalName: string, ...args: unknown[]): Promise<void> {
     for (const handle of this.handles.values()) {
@@ -460,6 +578,14 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
   }
 
+  /**
+   * Bind event handlers based on metadata.
+   *
+   * This method uses reflection to find all methods decorated with @On and binds them
+   * as event handlers. It ensures that event handlers are only bound once per workflow instance.
+   *
+   * @returns {Promise<void>} Resolves when all event handlers are bound.
+   */
   protected async bindEventHandlers() {
     if (this._eventsBound) {
       return;
@@ -480,6 +606,12 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
   /**
    * Bind lifecycle hooks to workflow methods.
+   *
+   * This method finds all methods with @Before and @After decorators and wraps the
+   * target methods to execute the hooks at the appropriate times. It ensures hooks
+   * are only bound once per workflow instance.
+   *
+   * @returns {Promise<void>} Resolves when all hooks are bound.
    */
   @On('hooks')
   private async bindHooks() {
@@ -500,6 +632,18 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     this._hooksBound = true;
   }
 
+  /**
+   * Create a method wrapped with before and after hooks.
+   *
+   * This helper method creates a new function that wraps the original method with
+   * the specified before and after hooks. The hooks are executed in the order they
+   * were defined.
+   *
+   * @param methodName - The name of the method being wrapped.
+   * @param originalMethod - The original method implementation.
+   * @param hookConfig - Configuration specifying before and after hooks.
+   * @returns {Function} A new function that executes the hooks and the original method.
+   */
   private createHookedMethod(
     methodName: string,
     originalMethod: (...args: any[]) => any,
@@ -535,6 +679,12 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
   /**
    * Bind property handlers based on metadata.
+   *
+   * This method finds all properties decorated with @Property and sets up the appropriate
+   * query and signal handlers for them. It allows properties to be accessed via queries
+   * and modified via signals.
+   *
+   * @returns {Promise<void>} Resolves when all property handlers are bound.
    */
   @On('init')
   protected async bindProperties() {
@@ -562,6 +712,12 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
   /**
    * Bind query handlers for the workflow.
+   *
+   * This method finds all methods decorated with @Query and registers them as
+   * Temporal query handlers. It allows external systems to query the workflow state
+   * without modifying it.
+   *
+   * @returns {Promise<void>} Resolves when all query handlers are bound.
    */
   @On('init')
   protected bindQueries() {
@@ -581,6 +737,12 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
   /**
    * Bind signal handlers for the workflow.
+   *
+   * This method finds all methods decorated with @Signal and registers them as
+   * Temporal signal handlers. It allows external systems to trigger actions within
+   * the workflow.
+   *
+   * @returns {Promise<void>} Resolves when all signal handlers are bound.
    */
   @On('init')
   protected bindSignals() {
@@ -599,11 +761,15 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   }
 
   /**
-   * Collect custom metadata for event handlers.
+   * Collect custom metadata for decorators.
    *
-   * @param metadataKey - The metadata key symbol.
-   * @param target - The target to collect metadata from.
-   * @returns {any[]} The collected metadata.
+   * This method traverses the prototype chain to collect all metadata for a specific
+   * metadata key. It ensures that metadata from parent classes is properly inherited
+   * and that duplicate metadata is filtered out.
+   *
+   * @param metadataKey - The metadata key symbol to collect.
+   * @param target - The target object to collect metadata from.
+   * @returns {any[]} The collected metadata as an array.
    */
   protected collectMetadata(metadataKey: Symbol, target: any): any[] {
     const collectedMetadata: any[] = [];
@@ -628,8 +794,12 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   /**
    * Collect hook metadata for processing lifecycle hooks.
    *
-   * @param target - The target prototype.
-   * @returns {Object} The collected hook metadata.
+   * This method traverses the prototype chain to collect all hook metadata.
+   * It ensures that hooks from parent classes are properly inherited and merged
+   * with hooks from child classes.
+   *
+   * @param target - The target prototype to collect hook metadata from.
+   * @returns {Object} An object mapping method names to their before and after hooks.
    */
   private collectHookMetadata(target: any): { [key: string]: { before: string[]; after: string[] } } {
     const collectedMetadata: { [key: string]: { before: string[]; after: string[] } } = {};

@@ -1,42 +1,226 @@
-### **Overview of the `Workflow` Class**
+# Overview of the Workflow Class
 
-#### **Introduction**
+## Introduction
 
-The `Workflow` class is the foundational building block in the ChronoForge framework for creating Temporal workflows. As a core component, it provides essential functionality to manage the execution lifecycle of workflows, handle asynchronous signals and synchronous queries, and implement robust error handling strategies. The `Workflow` class simplifies the process of defining workflows by leveraging TypeScript decorators and class-based structures, allowing developers to focus on business logic rather than boilerplate code.
+The `Workflow` class is the cornerstone of the ChronoForge framework, providing a robust foundation for building Temporal workflows in TypeScript. It abstracts away much of the complexity involved in working directly with Temporal's low-level APIs, offering a more intuitive and developer-friendly interface for defining workflows.
 
-In the context of ChronoForge, the `Workflow` class serves as the base class upon which more complex and stateful workflows can be built. It provides a set of standardized methods and decorators that ensure workflows are properly registered with Temporal and conform to best practices for workflow execution and management.
+By extending the `Workflow` class, developers can create stateful, resilient, and maintainable workflows that leverage Temporal's powerful orchestration capabilities while writing clean, declarative TypeScript code.
 
-#### **Role of `Workflow` in ChronoForge**
+## Core Concepts
 
-The `Workflow` class in ChronoForge is designed to be extended by other workflow classes to create custom workflows that can interact with Temporal's powerful orchestration engine. By extending `Workflow`, developers can:
+### What is a Workflow?
 
-- **Manage Workflow Execution**: Implement the main workflow logic within an `execute` method, which is the entry point for all workflow operations.
-- **Handle Signals and Queries**: Define handlers for Temporal signals (asynchronous notifications) and queries (synchronous requests) using the `@Signal` and `@Query` decorators.
-- **Control Workflow Lifecycle**: Utilize hooks and decorators to manage the workflow's lifecycle, including starting, pausing, resuming, or terminating workflows.
-- **Integrate Error Handling**: Leverage centralized and custom error handling mechanisms to manage errors gracefully within workflows.
+In Temporal, a workflow is a durable function execution that can span multiple services and maintain state across failures. Workflows in Temporal are designed to be:
 
-The `Workflow` class's primary goal is to provide a simple yet powerful abstraction over Temporal's workflow API, enabling developers to build complex workflows with ease and confidence.
+- **Resilient**: They can recover from failures and continue execution from where they left off.
+- **Scalable**: They can handle large volumes of concurrent executions.
+- **Observable**: They provide visibility into their execution state and history.
+- **Maintainable**: They can be versioned and updated without disrupting running instances.
 
-#### **Importance of the `Workflow` Class as a Base for Creating Temporal Workflows**
+The `Workflow` class in ChronoForge encapsulates these principles and provides a structured way to define workflows that adhere to Temporal's best practices.
 
-Temporal workflows are long-running, durable processes that can span hours, days, or even months. They manage state and execution flow transparently, allowing developers to build applications that require complex orchestration, fault tolerance, and reliability. The `Workflow` class is crucial in this context because it provides a robust foundation for defining such workflows. By encapsulating the fundamental aspects of Temporal workflows, the `Workflow` class ensures that:
+### The Role of the `Workflow` Class
 
-- **Workflows are Durable and Reliable**: Temporal guarantees that workflow state is persisted, and `Workflow` ensures that state transitions and operations follow best practices.
-- **Custom Workflows are Easily Created**: With `Workflow` as a base class, creating custom workflows becomes straightforward. Developers can focus on implementing business-specific logic without needing to manage the low-level details of Temporal's workflow API.
-- **Reusability and Extensibility**: By defining reusable components and decorators within `Workflow`, developers can extend its functionality to create more advanced workflows, such as those involving state management, child workflows, and dynamic interactions.
+The `Workflow` class serves as an abstract base class that all workflow implementations in ChronoForge should extend. It provides:
 
-#### **Extension by `StatefulWorkflow` for Advanced Features**
+1. **Core Infrastructure**: Essential methods and properties for interacting with Temporal's workflow engine.
+2. **Decorator Support**: Integration with ChronoForge's decorator system for defining signals, queries, and hooks.
+3. **State Management**: Utilities for managing workflow state and handling state transitions.
+4. **Error Handling**: Robust error handling mechanisms to ensure workflow resilience.
+5. **Lifecycle Management**: Methods for controlling workflow execution flow (pause, resume, cancel).
+6. **Child Workflow Management**: Tools for creating and managing child workflows.
+7. **Logging and Tracing**: Structured logging and OpenTelemetry integration for observability.
 
-While the `Workflow` class provides the fundamental building blocks for Temporal workflows, more complex scenarios often require advanced features such as persistent state management, dynamic child workflow orchestration, and event-driven subscriptions. For these cases, ChronoForge introduces the [`StatefulWorkflow`](./StatefulWorkflow/introduction.md) class, which extends the base `Workflow` class to provide:
+## Key Features
 
-- **Advanced State Management**: The ability to manage persistent state across multiple workflow executions using normalized data structures.
-- **Child Workflow Management**: Automatic handling of child workflows based on changes in the parent workflow's state, ensuring consistency and synchronization.
-- **Dynamic Subscription Handling**: Subscriptions that enable workflows to react to changes in state or receive external signals dynamically.
+### Event-Based Architecture
 
-By extending the `Workflow` class, `StatefulWorkflow` builds upon the foundation provided by `Workflow` to offer more sophisticated capabilities, allowing developers to create even more powerful and flexible workflows within the ChronoForge framework.
+The `Workflow` class extends `EventEmitter`, providing an event-based architecture for workflow execution. This allows for:
 
-#### **Conclusion**
+- **Decoupled Components**: Different parts of the workflow can communicate without tight coupling.
+- **Lifecycle Hooks**: Events can be emitted at key points in the workflow lifecycle.
+- **Custom Events**: Developers can define and listen for custom events specific to their workflow logic.
 
-The `Workflow` class is the cornerstone of workflow development in ChronoForge, providing a standardized, efficient, and scalable way to create Temporal workflows. It abstracts the complexity of Temporal's workflow management, making it easier for developers to define, execute, and manage workflows. By serving as a base class for more advanced workflows, such as those built with `StatefulWorkflow`, the `Workflow` class lays the groundwork for a versatile and extensible workflow framework in ChronoForge.
+### Declarative API with Decorators
 
-For a deeper dive into the features, decorators, and usage patterns provided by the `Workflow` class, refer to the subsequent sections of this documentation.
+ChronoForge leverages TypeScript decorators to provide a declarative API for defining workflow behavior:
+
+- **`@Temporal`**: Marks a class as a Temporal workflow.
+- **`@Signal`**: Defines methods that handle external signals.
+- **`@Query`**: Defines methods that respond to queries without changing workflow state.
+- **`@Hook`**: Defines methods that run before or after other methods.
+- **`@Property`**: Creates properties with automatic query and signal handlers.
+- **`@Step`**: Defines methods as workflow steps with dependencies and conditions.
+
+### Structured Execution Flow
+
+The `Workflow` class provides a structured execution flow through:
+
+- **Step-Based Execution**: Define workflow steps with dependencies and conditions.
+- **Dependency Resolution**: Automatically determine the correct execution order based on step dependencies.
+- **Conditional Execution**: Execute steps only when specific conditions are met.
+- **Error Recovery**: Handle errors at the step level with retry logic and custom error handlers.
+
+### Comprehensive State Management
+
+State management in the `Workflow` class includes:
+
+- **Property Decorators**: Easily expose workflow state as queryable properties.
+- **Signal Handlers**: Update workflow state in response to external signals.
+- **Memoization**: Store and retrieve workflow state efficiently.
+- **ContinueAsNew Support**: Handle long-running workflows by continuing as new when needed.
+
+## Basic Usage
+
+Here's a simple example of how to create a workflow using the `Workflow` class:
+
+```typescript
+import { Workflow, Temporal, Signal, Query, Property } from 'chrono-forge';
+
+interface OrderProcessingParams {
+  orderId: string;
+  customerId: string;
+}
+
+@Temporal({ name: 'OrderProcessingWorkflow' })
+class OrderProcessingWorkflow extends Workflow<OrderProcessingParams, {}> {
+  @Property()
+  private orderStatus: string = 'pending';
+
+  @Signal()
+  async updateStatus(newStatus: string): Promise<void> {
+    this.orderStatus = newStatus;
+    this.log.info(`Order status updated to: ${newStatus}`);
+  }
+
+  @Query()
+  getOrderStatus(): string {
+    return this.orderStatus;
+  }
+
+  protected async execute(): Promise<any> {
+    this.log.info(`Starting order processing for order ${this.args.orderId}`);
+    
+    // Workflow logic here
+    this.orderStatus = 'processing';
+    
+    // Simulate some processing time
+    await workflow.sleep('5s');
+    
+    this.orderStatus = 'completed';
+    this.log.info(`Order processing completed for order ${this.args.orderId}`);
+    
+    return { orderId: this.args.orderId, status: this.orderStatus };
+  }
+}
+```
+
+## Advanced Features
+
+The `Workflow` class includes several advanced features for building complex workflows:
+
+### Step-Based Execution
+
+For more complex workflows, you can use the `@Step` decorator to define steps with dependencies:
+
+```typescript
+import { Workflow, Temporal, Step } from 'chrono-forge';
+
+@Temporal({ name: 'StepBasedWorkflow' })
+class StepBasedWorkflow extends Workflow {
+  private data: any = {};
+
+  @Step()
+  async step1(): Promise<void> {
+    this.data.step1 = 'completed';
+  }
+
+  @Step({ after: 'step1' })
+  async step2(): Promise<void> {
+    this.data.step2 = 'completed';
+  }
+
+  @Step({ 
+    after: 'step2',
+    on: function() { return this.data.step2 === 'completed'; }
+  })
+  async step3(): Promise<void> {
+    this.data.step3 = 'completed';
+  }
+
+  protected async execute(): Promise<any> {
+    await this.executeSteps();
+    return this.data;
+  }
+}
+```
+
+### Child Workflow Management
+
+The `Workflow` class provides tools for managing child workflows:
+
+```typescript
+import { Workflow, Temporal } from 'chrono-forge';
+import { workflow } from '@temporalio/workflow';
+
+@Temporal({ name: 'ParentWorkflow' })
+class ParentWorkflow extends Workflow {
+  protected async execute(): Promise<any> {
+    // Start a child workflow
+    const childHandle = await workflow.startChild('ChildWorkflow', {
+      args: [{ data: 'some data' }],
+      taskQueue: 'my-task-queue',
+      workflowId: 'child-workflow-' + workflow.uuid4()
+    });
+    
+    // Store the handle for later use
+    this.handles.set('child1', childHandle);
+    
+    // Wait for the child workflow to complete
+    const result = await childHandle.result();
+    
+    return result;
+  }
+}
+```
+
+### Error Handling
+
+The `Workflow` class includes robust error handling mechanisms:
+
+```typescript
+import { Workflow, Temporal, Step } from 'chrono-forge';
+
+@Temporal({ name: 'ErrorHandlingWorkflow' })
+class ErrorHandlingWorkflow extends Workflow {
+  @Step({
+    retries: 3,
+    onError: (error) => {
+      console.error('Step failed:', error);
+      return { error: error.message };
+    }
+  })
+  async riskyStep(): Promise<void> {
+    // This step might fail, but will be retried up to 3 times
+    // If it still fails, the onError handler will be called
+  }
+
+  protected async execute(): Promise<any> {
+    try {
+      await this.executeSteps();
+      return { success: true };
+    } catch (error) {
+      this.log.error('Workflow failed:', error);
+      return { success: false, error: error.message };
+    }
+  }
+}
+```
+
+## Conclusion
+
+The `Workflow` class in ChronoForge provides a powerful and flexible foundation for building Temporal workflows in TypeScript. By abstracting away much of the complexity of working directly with Temporal's APIs, it allows developers to focus on their business logic while still leveraging the full power of Temporal's orchestration capabilities.
+
+Whether you're building simple workflows or complex, multi-step processes with dependencies and error handling, the `Workflow` class provides the tools and structure you need to create robust, maintainable, and scalable workflow applications.
+
+For more detailed information on specific features and usage patterns, refer to the other sections of this documentation.

@@ -1,8 +1,36 @@
+/**
+ * @fileoverview Utility functions for handling recursive entity relationships
+ * with protection against infinite recursion and circular references.
+ *
+ * This module provides tools for safely traversing and resolving entity relationships
+ * in a normalized data store, implementing lazy-loading for better performance.
+ */
+
 import { schema as normalizrSchema } from 'normalizr';
 import { SchemaManager } from '../store/SchemaManager';
 import { StateManager } from '../store/StateManager';
 import { EntitiesState } from '../store';
 
+/**
+ * Recursively resolves entity relationships with protection against infinite recursion.
+ * Creates a new object with lazy-loaded properties for related entities.
+ *
+ * @param {string} entityId - The ID of the entity to resolve
+ * @param {string} entityName - The type/name of the entity to resolve
+ * @param {EntitiesState} entities - The normalized entities state object
+ * @param {boolean|StateManager} stateManager - Optional StateManager instance for caching, or false
+ * @param {Map<string, number>} visited - Map of already visited entities with their depth
+ * @param {number} depth - Current recursion depth
+ * @returns {any} The resolved entity with lazy-loaded relationships
+ *
+ * @example
+ * // Basic usage
+ * const resolvedUser = limitRecursion('user123', 'users', state.entities);
+ *
+ * @example
+ * // With StateManager for caching
+ * const resolvedUser = limitRecursion('user123', 'users', state.entities, stateManager);
+ */
 export const limitRecursion: Function = (
   entityId: string,
   entityName: string,
@@ -132,6 +160,18 @@ export const limitRecursion: Function = (
   return result;
 };
 
+/**
+ * Extracts the entity name from a schema relation.
+ * Handles various relation formats including arrays, normalizr Entity objects,
+ * strings, and custom relation objects.
+ *
+ * @param {any} relation - The schema relation to extract the entity name from
+ * @returns {string} The extracted entity name
+ * @throws {Error} If the relation type is unknown or cannot be processed
+ *
+ * @example
+ * const entityName = getEntityName(userSchema);  // Returns 'users'
+ */
 export const getEntityName = (relation: any): string => {
   if (Array.isArray(relation)) {
     return getEntityName(relation[0]);

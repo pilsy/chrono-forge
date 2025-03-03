@@ -2205,30 +2205,36 @@ export abstract class StatefulWorkflow<
   }
 
   /**
-   * Initiates a child workflow for a given entity item based on its configuration and current state.
+   * Initiates a child workflow based on the provided configuration and state data.
    *
-   * This method manages the start of a child workflow, configuring it with options extracted from
-   * the given `ManagedPath` configuration. It handles setup, conditions, and recursive dependency
-   * checks to ensure appropriate initialization.
+   * This method handles the creation and initialization of child workflows according to the
+   * specified managed path configuration. It processes entity data, constructs appropriate
+   * workflow parameters, and manages the lifecycle of child workflows within the parent context.
    *
-   * ## Parameters
-   * - `config`: An object of type `ManagedPath` which includes all necessary settings for starting the workflow.
-   * - `state`: The current state data of the entity item to be processed.
-   * - `newState`: The updated state reflecting new changes and additional context for the workflow.
+   * @param {ManagedPath} config - Configuration object that defines workflow behavior and entity relationships.
+   *   Contains settings such as workflow type, entity name, ID attributes, and execution policies.
+   * @param {any} state - The current state of the entity that will be used to initialize the child workflow.
+   * @param {any} newState - The complete state context in which the child workflow will operate.
+   * @returns {Promise<void>} A promise that resolves when the child workflow has been successfully started
+   *   or when the start operation has been appropriately handled (e.g., when autoStart is disabled).
    *
-   * ## Return
-   * - A `Promise<void>` confirming the initialization of the child workflow, or handling errors if encountered.
+   * @throws Will propagate errors from workflow creation, though these are caught internally
+   *   and logged for diagnostic purposes.
    *
-   * ## Method Details
-   * - Extracts configurations such as workflow type, entity name, and other options needed for initializing the workflow.
-   * - Checks if the `autoStart` property permits automatic workflow initiation. Logs and skips starting if not allowed.
-   * - Retrieves a composite identifier for the entity to ensure unique workflow instances, constructing `workflowId`.
-   * - Identifies circular dependencies via `workflowId` checks, logging and preventing recursive workflow starts.
-   * - Employs conditional logic from `config.condition`, if provided, to validate whether workflow initiation criteria are met.
-   * - Assembles a `startPayload` with workflow configurations, including arguments, timeout settings, and retry policies.
-   * - Starts the child workflow using `workflow.startChild`, setting up handles and event emissions for workflow lifecycle events.
-   * - Manages the responses from the workflow results, emitting relevant events on completion or error, and attempting restarts
-   *   on cancellations, subject to internal workflow conditions.
+   * ## Key Features
+   * - Supports conditional workflow initialization based on entity state
+   * - Configurable retry policies for resilient workflow execution
+   * - Flexible ID generation for workflow instances
+   * - Customizable timeout and cancellation behaviors
+   * - Automatic parent-child relationship management
+   *
+   * ## Configuration Options
+   * - **workflowType**: Defines the type of workflow to be started
+   * - **entityName**: Specifies the entity type being managed
+   * - **idAttribute**: Identifies which property(s) to use as the entity's unique identifier
+   * - **cancellationType**: Controls how child workflows respond to cancellation requests
+   * - **parentClosePolicy**: Determines child workflow behavior when parent closes
+   * - **retry**: Configures the retry strategy for workflow execution
    *
    * ## Usage Example
    * ```typescript
@@ -2236,9 +2242,10 @@ export abstract class StatefulWorkflow<
    * ```
    *
    * ## Notes
-   * - Assumes the presence of entity and workflow management support within the system.
-   * - This function encounters asynchronous operations that utilize error handling to manage faults and retries effectively.
-   * - Enhances logging to provide insights into workflow initialization and lifecycle, aiding in debugging and monitoring.
+   * - Assumes the presence of entity and workflow management support within the system
+   * - Handles asynchronous operations with comprehensive error handling for fault tolerance
+   * - Provides detailed logging for workflow initialization and lifecycle events
+   * - Respects autoStart and condition configurations to determine execution eligibility
    */
   protected async startChildWorkflow(config: ManagedPath, state: any, newState: any): Promise<void> {
     try {
@@ -2410,51 +2417,46 @@ export abstract class StatefulWorkflow<
   }
 
   /**
-   * Updates a child workflow with new state data, managing lifecycle signals effectively.
+   * Updates an existing child workflow with new state information.
    *
-   * This method is responsible for sending an update signal to an existing child workflow
-   * handle. It configures the update with new state data and applies conditions to manage
-   * when and how updates are executed.
+   * This method handles the propagation of state changes from the parent workflow to its child workflows.
+   * It processes the differences between previous and new states, and signals the appropriate updates
+   * to the child workflow based on configuration settings.
    *
-   * ## Parameters
-   * - `handle`: An instance of `workflow.ChildWorkflowHandle`, representing the active child workflow to be updated.
-   * - `state`: The current state data of the entity, providing context for the update.
-   * - `newState`: A broader object representing the updated overall state, used to derive further data if necessary.
-   * - `config`: The `ManagedPath` configuration object encompassing setup requirements for the workflow update.
+   * @param {workflow.ChildWorkflowHandle<any>} handle - The handle to the child workflow to update.
+   * @param {any} previousItem - The previous state of the item associated with the child workflow.
+   * @param {any} previousState - The previous overall state context.
+   * @param {any} newItem - The updated state of the item associated with the child workflow.
+   * @param {any} newState - The updated overall state context.
+   * @param {DetailedDiff} differences - The detailed differences between previous and new states.
+   * @param {ManagedPath} config - Configuration for the managed path that defines update behavior.
+   * @returns {Promise<void>} A promise that resolves when the update operation is complete.
    *
-   * ## Return
-   * - A `Promise<void>` which resolves after attempting the update signal, or managing errors as needed.
+   * @throws Will propagate errors from workflow signaling operations, though these are caught
+   *   internally and logged for diagnostic purposes.
    *
-   * ## Method Details
-   * - Logs the initiation of a workflow update for traceability.
-   * - Extracts key configuration details, including the workflow type, entity naming, ID attributes, and auto-start settings.
-   * - Warns and exits early if the workflow is not configured to autoStart.
-   * - Constructs a `workflowId` using entity identifiers and configuration to ensure unique workflow management.
-   * - Checks for circular dependencies to prevent recursive updates, logging information if detected.
-   * - Applies any conditional checks defined in configuration before proceeding with updates, skipping if conditions are not met.
-   * - Signals the workflow for an update using specific payload data, emitting an event on a successful update.
-   * - Handles errors during signaling, logging messages for debugging and further analysis.
+   * ## Key Features
+   * - Conditional updates based on configuration settings
+   * - Support for different update strategies (merge vs. replace)
+   * - Intelligent handling of entity relationships
+   * - Detailed logging of update operations
    *
-   * ## Usage Example
-   * ```typescript
-   * await updateChildWorkflow(existingHandle, itemState, completeState, managedConfig);
-   * ```
+   * ## Update Process
+   * 1. Validates update eligibility based on autoStart and condition settings
+   * 2. Extracts entity ID and prepares update payload
+   * 3. Processes data through optional transformation functions
+   * 4. Signals the child workflow with the update
+   * 5. Handles any errors that occur during the update process
+   *
+   * ## Configuration Options
+   * - **subscriptions.update.strategy**: Determines how updates are applied ('$set' or '$merge')
+   * - **subscriptions.update.sync**: Controls whether updates are processed synchronously
+   * - **processData**: Optional function to transform data before sending to child workflow
    *
    * ## Notes
-   * - This function assumes that lifecycle strategies, such as `$merge` for merging state data, are compatible with intended updates.
-   * - Extensively logs actions and decision points, providing detail for events throughout the update process.
-   * - Designed for controlled child workflow management in complex state-driven architectures.
-   *
-   * @protected
-   * @async
-   * @param {workflow.ChildWorkflowHandle<any>} handle - The handle to the child workflow to update.
-   * @param {any} previousItem - The previous state of the item.
-   * @param {any} previousState - The previous overall state.
-   * @param {any} newItem - The new state of the item.
-   * @param {any} newState - The new overall state.
-   * @param {DetailedDiff} differences - The detailed differences between states.
-   * @param {ManagedPath} config - Configuration for the managed path.
-   * @returns {Promise<void>} A promise that resolves when the update is complete.
+   * - Update operations respect the subscription configuration in the managed path
+   * - Provides comprehensive error handling with detailed logging
+   * - Supports custom data transformation through the processData function
    */
   protected async updateChildWorkflow(
     handle: workflow.ChildWorkflowHandle<any>,
@@ -2565,23 +2567,29 @@ export abstract class StatefulWorkflow<
   }
 
   /**
-   * Cancels an active child workflow by interacting with its workflow handle.
+   * Cancels a running child workflow.
    *
-   * This method attempts to cancel an existing child workflow via its handle, logging actions
-   * and handling errors throughout the process.
+   * This method safely terminates a child workflow by removing its handle from internal tracking
+   * and sending a cancellation signal. It includes error handling to ensure the parent workflow
+   * continues execution even if cancellation encounters issues.
    *
-   * ## Parameters
-   * - `handle`: The `workflow.ChildWorkflowHandle<any>` that provides access to the child workflow to be cancelled.
+   * @param {workflow.ChildWorkflowHandle<any>} handle - The handle to the child workflow to be cancelled.
+   * @returns {Promise<void>} A promise that resolves when the cancellation operation is complete.
    *
-   * ## Return
-   * - A `Promise<void>` that resolves after the cancellation attempt, error handling, and logging are complete.
+   * @throws Will catch and log any errors that occur during the cancellation process without
+   *   propagating them to the caller.
    *
-   * ## Method Details
-   * - Logs a trace message indicating the start of the unsubscription process from the workflow handle.
-   * - Checks for the existence of the `handle` before proceeding with the cancellation process.
-   * - Logs the initiation of the cancellation attempt for monitoring purposes.
-   * - Retrieves an external workflow handle, `extHandle`, using the workflow ID from `handle`, and requests a cancellation.
-   * - Catches and logs errors that may occur during the cancellation attempt, ensuring traceability and error management.
+   * ## Key Features
+   * - Safe removal of workflow handle from internal tracking
+   * - Graceful error handling during cancellation
+   * - Detailed logging of cancellation operations
+   *
+   * ## Cancellation Process
+   * 1. Logs the cancellation attempt for traceability
+   * 2. Removes the workflow handle from internal tracking to prevent restart attempts
+   * 3. Obtains an external workflow handle for the target workflow
+   * 4. Sends the cancellation signal to the workflow
+   * 5. Catches and logs any errors that occur during the process
    *
    * ## Usage Example
    * ```typescript
@@ -2589,9 +2597,10 @@ export abstract class StatefulWorkflow<
    * ```
    *
    * ## Notes
-   * - Assumes an existing mechanism (e.g., `workflow.getExternalWorkflowHandle`) is available for retrieving external workflow handles.
-   * - Aims to provide robust error logging to aid in debugging and system behavior tracking during workflow management.
-   * - Ensure that the `handle` is correctly instantiated and corresponds to a valid, active child workflow to avoid unnecessary error logs.
+   * - Ensures the workflow handle is valid before attempting cancellation
+   * - Removes the handle from tracking before cancellation to prevent restart attempts
+   * - Provides detailed error logging to aid in debugging cancellation issues
+   * - Uses the external workflow handle mechanism for cancellation operations
    */
   protected async cancelChildWorkflow(handle: workflow.ChildWorkflowHandle<any>) {
     this.log.trace(`Cancelling child workflow: ${handle.workflowId}`);
@@ -2609,26 +2618,29 @@ export abstract class StatefulWorkflow<
   }
 
   /**
-   * Handles transitioning to a new workflow iteration when the maximum iterations are reached.
+   * Handles workflow continuation when maximum iterations are reached.
    *
-   * This method prepares the workflow to continue as a new instance, either by invoking
-   * a custom method if defined, or by using the default continuation function. It ensures
-   * that all workflow handlers have finished before proceeding.
+   * This method manages the transition to a new workflow instance when the current instance
+   * reaches its iteration limit. It ensures all handlers have completed their work before
+   * initiating the continuation process, and supports both custom and default continuation methods.
    *
-   * ## Parameters
-   * - None
+   * @returns {Promise<void>} A promise that resolves when the continuation process is complete.
    *
-   * ## Return
-   * - A `Promise<void>` that resolves when the workflow continuation process is completed.
+   * @throws May throw errors if the continuation process fails, though these are typically
+   *   handled by the Temporal workflow engine.
    *
-   * ## Method Details
-   * - Attempts to fetch a custom continuation method defined as `_continueAsNewMethod` on the object,
-   *   defaulting to `continueAsNewHandler` if not available.
-   * - Waits for a condition indicating that all handlers have finished executing, with a timeout of `30 seconds`.
-   * - If a valid continuation method is available, executes it to continue the workflow anew.
-   * - If no method is set, constructs a continuation function (`continueFn`) via `workflow.makeContinueAsNewFunc`,
-   *   utilizing current workflow configuration such as type, memo, and search attributes.
-   * - Executes the continuation by calling `continueFn` with the current state, status, subscriptions, and parameters.
+   * ## Key Features
+   * - Supports custom continuation methods via _continueAsNewMethod or continueAsNewHandler
+   * - Ensures all handlers have finished before continuation
+   * - Preserves workflow state, status, and subscriptions during transition
+   * - Maintains workflow metadata such as memo and search attributes
+   *
+   * ## Continuation Process
+   * 1. Identifies the appropriate continuation method (custom or default)
+   * 2. Waits for all workflow handlers to complete their execution
+   * 3. If a custom continuation method exists, invokes it directly
+   * 4. Otherwise, creates a continuation function with the current workflow configuration
+   * 5. Executes the continuation with the current workflow state and parameters
    *
    * ## Usage Example
    * ```typescript
@@ -2636,9 +2648,10 @@ export abstract class StatefulWorkflow<
    * ```
    *
    * ## Notes
-   * - The function presupposes existing workflow infrastructure that supports continuation through `workflow.makeContinueAsNewFunc`.
-   * - A type-safe approach is compromised by using type assertions and ignores (via `@ts-ignore`) to access internal properties.
-   * - The successful operation of this method depends on the accurate configuration of workflow info and options.
+   * - Uses workflow.condition to ensure all handlers have finished before continuation
+   * - Preserves workflow context including state, status, and subscriptions
+   * - Maintains workflow metadata such as memo and search attributes
+   * - Uses type assertions to access internal properties due to TypeScript limitations
    */
   protected async handleMaxIterations(): Promise<void> {
     // @ts-ignore
@@ -2670,24 +2683,37 @@ export abstract class StatefulWorkflow<
   }
 
   /**
-   * Loads data and enqueues it for updating the current state.
+   * Loads data from an external source and enqueues it for state updates.
    *
-   * This function attempts to retrieve data via a defined `loadData` method and then
-   * processes it for state updates. It manages normalization and dispatching of entities
-   * within the state framework.
+   * This method invokes the workflow's loadData method (if defined) to fetch data from external
+   * sources, then processes and normalizes that data before dispatching it to the state manager.
+   * It supports both direct data objects and pre-normalized updates.
    *
-   * ## Parameters
-   * - None
+   * @returns {Promise<void>} A promise that resolves when the data loading and enqueueing process is complete.
    *
-   * ## Return
-   * - A `Promise<void>` that resolves after the data is processed and state updates are dispatched.
+   * @throws May propagate errors from the loadData method if they occur during data fetching.
    *
-   * ## Method Details
-   * - Checks if a `loadData` function is defined on the instance and calls it if available.
-   * - Destructures the returned object from `loadData` into `data`, `updates`, and `strategy`, with `$merge` as a default strategy.
-   * - Logs a message if neither `data` nor `updates` are provided, opting to skip the state change process.
-   * - Normalizes the data into updates if only `data` is returned by utilizing `normalizeEntities`.
-   * - Dispatches the updates using `stateManager.dispatch`, applying the specified strategy for entity updates.
+   * ## Key Features
+   * - Conditional execution based on the existence of a loadData method
+   * - Support for both raw data objects and pre-normalized updates
+   * - Configurable update strategy ('$merge' by default)
+   * - Intelligent handling of empty or missing data
+   *
+   * ## Data Loading Process
+   * 1. Checks if the workflow implements a loadData method
+   * 2. Invokes the loadData method to fetch external data
+   * 3. Extracts data, updates, and strategy from the result
+   * 4. Normalizes raw data into entity updates if needed
+   * 5. Dispatches the updates to the state manager with the specified strategy
+   *
+   * ## Expected loadData Return Format
+   * ```typescript
+   * {
+   *   data?: Record<string, any>,    // Raw data object to be normalized
+   *   updates?: EntitiesState,       // Pre-normalized entity updates
+   *   strategy?: '$set' | '$merge'   // Update strategy to apply
+   * }
+   * ```
    *
    * ## Usage Example
    * ```typescript
@@ -2695,14 +2721,10 @@ export abstract class StatefulWorkflow<
    * ```
    *
    * ## Notes
-   * - The function assumes the presence of a `loadData` method that fetches necessary update data for the workflow or process.
-   * - It uses type assertions and ignores (via `@ts-ignore`) to circumvent TypeScript checks when accessing instance properties and methods.
-   * - Suitable error handling and verification should be implemented within `loadData` to ensure data integrity and consistency.
-   * - This method aims to integrate with a state management system that can handle normalized entity updates.
-   *
-   * @protected
-   * @async
-   * @returns {Promise<void>} A promise that resolves when handling is complete.
+   * - Skips state updates if both data and updates are empty or undefined
+   * - Uses the entity's schema for data normalization
+   * - Logs debugging information about the data loading process
+   * - Uses type assertions to handle TypeScript limitations
    */
   protected async loadDataAndEnqueue(): Promise<void> {
     // @ts-ignore
@@ -2722,25 +2744,32 @@ export abstract class StatefulWorkflow<
   }
 
   /**
-   * Binds properties to the instance, enabling custom getter and setter logic based on metadata.
+   * Binds class properties based on metadata decorators.
    *
-   * This function overrides property accessors on the instance to facilitate dynamic data
-   * binding and memoization, using metadata specifications defined on the class prototype.
+   * This method configures property accessors (getters and setters) for class properties
+   * that have been decorated with metadata. It supports memoization, path-based access,
+   * and custom property behaviors defined through decorators.
    *
-   * ## Parameters
-   * - None
+   * @returns {Promise<void>} A promise that resolves when all properties have been bound.
    *
-   * ## Return
-   * - A `Promise<void>` that resolves after the properties are successfully bound.
+   * ## Key Features
+   * - Metadata-driven property configuration
+   * - Support for memoized properties
+   * - Path-based property access using dot notation
+   * - Configurable property behaviors (get/set/enumerable)
    *
-   * ## Method Details
-   * - Calls `super.bindProperties()` to ensure any superclass binding logic is executed.
-   * - Collects metadata associated with `PROPERTY_METADATA_KEY` to determine properties that require custom binding.
-   * - Iterates over each property metadata, analyzing configuration for memoization and path-based access.
-   * - Defines custom getters and setters:
-   *   - For `memo` or `memoKeyString` configurations, properties are cached in `_memoProperties` and accessed via resolved keys.
-   *   - For `isStringPath`, uses `dottie.get` and `dottie.set` to manipulate data paths on `this.data`.
-   *   - Ensures properties are configurable and enumerable for flexibility and iteration.
+   * ## Property Binding Process
+   * 1. Invokes the parent class's bindProperties method
+   * 2. Collects property metadata from class decorators
+   * 3. Iterates through each property with metadata
+   * 4. Configures getters and setters based on metadata options
+   * 5. Handles special cases like memoization and path-based access
+   *
+   * ## Supported Metadata Options
+   * - **memo**: Enables property memoization with an optional key
+   * - **path**: Specifies a dot-notation path for accessing nested data
+   * - **get/set**: Controls whether getters/setters are created
+   * - **enumerable**: Controls property visibility during enumeration
    *
    * ## Usage Example
    * ```typescript
@@ -2748,10 +2777,10 @@ export abstract class StatefulWorkflow<
    * ```
    *
    * ## Notes
-   * - Assumes `collectMetadata` and `dottie` utilities are available to access metadata and manipulate nested object properties.
-   * - The logic supports complex property configurations for dynamic data models involving paths and memoization.
-   * - Suitable for use cases where data interoperability and adaptability via metadata-driven design is essential.
-   * - The implementation is designed for environments where reflective and dynamic property handling is justified and necessary.
+   * - Uses the dottie library for path-based property access
+   * - Stores memoized values in the _memoProperties object
+   * - Supports both direct property access and path-based access
+   * - Designed to work with the Property decorator from the decorators module
    */
   protected async bindProperties() {
     await super.bindProperties();
@@ -2796,26 +2825,32 @@ export abstract class StatefulWorkflow<
   }
 
   /**
-   * Binds actions to the workflow instance by setting up handlers with validation and execution logic.
+   * Binds action methods to workflow handlers based on metadata decorators.
    *
-   * This function initializes action handlers for the workflow, utilizing metadata annotations
-   * to find methods, apply validations, and define how actions should be executed.
+   * This method configures workflow action handlers for methods that have been decorated
+   * with action metadata. It sets up the execution context, validation, and behavior
+   * policies for each action method.
    *
-   * ## Parameters
-   * - None
+   * @returns {Promise<void>} A promise that resolves when all actions have been bound.
    *
-   * ## Return
-   * - A `Promise<void>` that resolves when the actions have been successfully bound to the instance.
+   * ## Key Features
+   * - Metadata-driven action configuration
+   * - Automatic validation of action inputs
+   * - Prevention of redundant action binding
+   * - Configurable handler unfinished policies
    *
-   * ## Method Details
-   * - Checks if actions have already been bound (`_actionsBound`) to prevent redundant binding.
-   * - Retrieves action metadata and potential validators using Reflect metadata on the class prototype.
-   * - Iterates over each action, setting up a handler:
-   *   - Maps the `method` from the action metadata to its equivalent on the workflow instance.
-   *   - Associates any found validator methods to validate inputs before action execution.
-   *   - Sets `updateOptions.unfinishedPolicy` to `HandlerUnfinishedPolicy.ABANDON` as default behavior.
-   *   - Registers the action handler using `workflow.setHandler`, linking the method to its runner function.
-   * - Marks `_actionsBound` as `true` after successful binding to prevent future reinitialization.
+   * ## Action Binding Process
+   * 1. Checks if actions have already been bound to prevent redundancy
+   * 2. Collects action metadata from class decorators
+   * 3. Retrieves associated validators for input validation
+   * 4. Iterates through each action with metadata
+   * 5. Configures workflow handlers with appropriate execution policies
+   * 6. Marks actions as bound to prevent future rebinding
+   *
+   * ## Handler Configuration
+   * - **method**: The class method to be executed when the action is triggered
+   * - **validator**: Optional function to validate action inputs
+   * - **unfinishedPolicy**: Policy for handling unfinished actions (defaults to ABANDON)
    *
    * ## Usage Example
    * ```typescript
@@ -2823,10 +2858,10 @@ export abstract class StatefulWorkflow<
    * ```
    *
    * ## Notes
-   * - The method assumes the use of Reflect metadata for action and validator retrieval, available via predefined keys.
-   * - Depends on a `workflow` library or framework that provides `setHandler` and `defineUpdate` utilities for actions.
-   * - Relies upon proper configuration of metadata annotations to drive binding behavior and validation logic.
-   * - This function is intended as part of an event-driven initialization process, triggered with an `@On('init')` decorator.
+   * - Triggered automatically during workflow initialization via the @On('init') decorator
+   * - Uses the ACTIONS_METADATA_KEY and VALIDATOR_METADATA_KEY for metadata access
+   * - Sets the HandlerUnfinishedPolicy.ABANDON as the default unfinished policy
+   * - Prevents multiple bindings of the same actions through the _actionsBound flag
    */
   @On('init')
   protected async bindActions() {
@@ -2857,7 +2892,42 @@ export abstract class StatefulWorkflow<
   }
 
   /**
-   * Bind event handlers using metadata.
+   * Binds event handlers to workflow and state manager events based on metadata decorators.
+   *
+   * This method configures event listeners for methods that have been decorated with event
+   * metadata. It sets up handlers for both workflow-level events and state manager events,
+   * ensuring that decorated methods are called when the corresponding events are emitted.
+   *
+   * @returns {Promise<void>} A promise that resolves when all event handlers have been bound.
+   *
+   * ## Key Features
+   * - Metadata-driven event handler configuration
+   * - Support for both workflow and state manager events
+   * - Prevention of redundant event handler binding
+   * - Asynchronous event handling with Promise resolution
+   *
+   * ## Event Binding Process
+   * 1. Checks if event handlers have already been bound to prevent redundancy
+   * 2. Collects event metadata from class decorators
+   * 3. Iterates through each event handler with metadata
+   * 4. Determines the appropriate event emitter (workflow or state manager)
+   * 5. Registers event listeners with proper event names
+   * 6. Marks event handlers as bound to prevent future rebinding
+   *
+   * ## Event Handler Configuration
+   * - **event**: The event name to listen for (prefixed with 'state:' for state manager events)
+   * - **method**: The class method to be executed when the event is triggered
+   *
+   * ## Usage Example
+   * ```typescript
+   * await bindEventHandlers();
+   * ```
+   *
+   * ## Notes
+   * - Events prefixed with 'state:' are bound to the state manager
+   * - Other events are bound to the workflow instance itself
+   * - Event handlers are executed asynchronously with Promise resolution
+   * - Prevents multiple bindings of the same handlers through the _eventsBound flag
    */
   protected async bindEventHandlers() {
     if (this._eventsBound) {
@@ -2881,34 +2951,42 @@ export abstract class StatefulWorkflow<
   }
 
   /**
-   * Executes an action method within a workflow, handling concurrency and error management.
+   * Executes an action method within the workflow with concurrency control.
    *
-   * This function is responsible for invoking a specified action defined on the workflow instance,
-   * managing state flags to ensure no overlapping executions and awaiting any pending processing.
+   * This method provides a controlled execution environment for workflow actions,
+   * ensuring that actions don't overlap and that the workflow state is properly
+   * managed before, during, and after action execution.
    *
-   * ## Parameters
-   * - `methodName`: The name of the method to be executed, which should be a key on the `StatefulWorkflow` interface.
-   * - `input`: The input data that will be passed to the action method during execution.
+   * @param {keyof StatefulWorkflow<any, any>} methodName - The name of the method to execute.
+   * @param {any} input - The input data to pass to the action method.
+   * @returns {Promise<any>} A promise that resolves with the result of the action method
+   *   or rejects with any error that occurred during execution.
    *
-   * ## Return
-   * - A `Promise<any>` that resolves with the result of the action or rejects with any error encountered during execution.
+   * @throws Will propagate any errors thrown by the action method after logging them.
    *
-   * ## Method Details
-   * - Sets `actionRunning` to `true` to indicate the action is in progress.
-   * - Attempts to execute the method denoted by `methodName` using the provided `input`, capturing any result or error.
-   * - Logs any error that occurs during the method execution.
-   * - Sets `pendingIteration` to `true` in the `finally` block, ensuring completion flags are reset after execution.
-   * - Awaits a workflow condition that checks for no ongoing state processing and ensures the iteration can proceed.
-   * - Returns the action result or rejects with the logged error if one was caught during execution.
+   * ## Key Features
+   * - Concurrency control to prevent overlapping action executions
+   * - Comprehensive error handling and logging
+   * - Automatic state management before and after execution
+   * - Support for any action method defined on the workflow
+   *
+   * ## Execution Process
+   * 1. Sets the actionRunning flag to prevent concurrent executions
+   * 2. Attempts to execute the specified method with the provided input
+   * 3. Logs any errors that occur during execution
+   * 4. Sets the pendingUpdate flag to trigger state processing
+   * 5. Resets the actionRunning flag when execution completes
    *
    * ## Usage Example
    * ```typescript
-   * const result = await runAction('processDataMethod', dataInput);
+   * const result = await runAction('processItem', itemData);
    * ```
    *
    * ## Notes
-   * - The function is designed for environments where actions are stateful processes synchronized with workflow lifecycles.
-   * - Proper error management is critical for ensuring workflow stability, hence meticulous error logging and control flows.
+   * - Used internally by the workflow handler system
+   * - Ensures actions are executed in a controlled manner
+   * - Provides consistent error handling for all action methods
+   * - Sets pendingUpdate to true to ensure state is processed after action execution
    */
   protected async runAction(methodName: keyof StatefulWorkflow<any, any>, input: any): Promise<any> {
     this.actionRunning = true;

@@ -27,9 +27,10 @@
     "newLine": "lf",
     "removeComments": false,
     "declaration": true,
-    "declarationMap": false,
+    "declarationMap": true,
     "emitDeclarationOnly": false, // Set to true if you only want to generate .d.ts files
-    "sourceMap": false,
+    "sourceMap": true,
+    "inlineSources": true,
     "noUnusedLocals": false, // Ensures all locals are used
     "noUnusedParameters": false, // Ensures all function parameters are used
     "types": ["node", "jest"], // Include types, adjust if needed
