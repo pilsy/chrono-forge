@@ -7,6 +7,7 @@ import { limitRecursion } from '../utils';
 import { LRUCacheWithDelete } from 'mnemonist';
 import { EntityProxyManager } from './EntityProxyManager';
 import { SchemaManager } from './SchemaManager';
+import { Queue } from 'typescript-algos';
 
 /**
  * Represents the detailed diff structure for EntitiesState
@@ -140,12 +141,12 @@ export class StateManager extends EventEmitter {
    * LRU cache for storing entity data with delete capability
    * Used to improve performance by caching frequently accessed entities
    */
-  public readonly cache: LRUCacheWithDelete<string, Record<string, any>> = new LRUCacheWithDelete(100);
+  public readonly cache: LRUCacheWithDelete<string, Record<string, any>> = new LRUCacheWithDelete(1000);
 
   /**
    * Queue of pending entity actions to be processed
    */
-  private readonly _queue: QueueItem[] = [];
+  private readonly _queue: Queue<QueueItem> = new Queue();
 
   /**
    * Gets the current action queue
@@ -167,10 +168,10 @@ export class StateManager extends EventEmitter {
     const actionArray = Array.isArray(actions) ? actions : [actions];
     const queueItems = actionArray.map((action) => ({ action, origin }));
 
-    if (sync) {
+    if (sync && !this._processing) {
       await this.processChanges(queueItems);
     } else {
-      this._queue.push(...queueItems);
+      queueItems.forEach((item) => this._queue.enqueue(item));
     }
   }
 
@@ -194,7 +195,9 @@ export class StateManager extends EventEmitter {
     const MAX_PROCESSING_TIME = 30000; // 30 seconds in milliseconds
 
     while (pendingChanges.length > 0 && itemsProcessed < 100 && Date.now() - startTime < MAX_PROCESSING_TIME) {
-      const { action, origin }: QueueItem = pendingChanges.shift() as QueueItem;
+      const item = Array.isArray(pendingChanges) ? pendingChanges.shift() : pendingChanges.dequeue();
+      if (!item) break;
+      const { action, origin }: QueueItem = item;
       newState = reducer(newState || this._state, action);
       if (origin) {
         origins.add(origin);
