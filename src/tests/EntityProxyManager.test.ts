@@ -1,7 +1,8 @@
 import { EntityProxyManager } from '../store/EntityProxyManager';
 import { StateManager } from '../store/StateManager';
 import { v4 as uuidv4 } from 'uuid';
-import { SchemaManager, RelationshipMap } from '../store/SchemaManager';
+import { DELETE_ENTITIES, UPDATE_ENTITIES, UPDATE_ENTITIES_PARTIAL } from '../store';
+import { limitRecursion } from '../utils';
 import schemas from './testSchemas';
 
 // Helper function to wait for async operations
@@ -26,48 +27,10 @@ describe('EntityProxyManager', () => {
     EntityProxyManager.clearCache();
 
     // Create a state manager instance
-    stateManager = {
-      instanceId: 'test-instance',
-      dispatch: jest.fn(),
-      state: {},
-      isEntityReferenced: jest.fn().mockReturnValue(false)
-    } as unknown as StateManager;
+    stateManager = StateManager.getInstance('test-instance');
 
     // Spy on dispatch method
     dispatchSpy = jest.spyOn(stateManager, 'dispatch');
-
-    // Mock SchemaManager with proper types
-    const mockRelationshipMap = {
-      User: {
-        profile: { relatedEntityName: 'Profile', isMany: false },
-        posts: { relatedEntityName: 'Post', isMany: true },
-        friends: { relatedEntityName: 'User', isMany: true },
-        _referencedBy: {}
-      },
-      Profile: {
-        user: { relatedEntityName: 'User', isMany: false },
-        _referencedBy: {}
-      },
-      Post: {
-        author: { relatedEntityName: 'User', isMany: false },
-        comments: { relatedEntityName: 'Comment', isMany: true },
-        _referencedBy: {}
-      },
-      Comment: {
-        post: { relatedEntityName: 'Post', isMany: false },
-        author: { relatedEntityName: 'User', isMany: false },
-        _referencedBy: {}
-      }
-    } as unknown as RelationshipMap;
-
-    jest.spyOn(SchemaManager, 'relationshipMap', 'get').mockReturnValue(mockRelationshipMap);
-
-    jest.spyOn(SchemaManager, 'schemas', 'get').mockReturnValue({
-      User: { idAttribute: 'id' },
-      Profile: { idAttribute: 'id' },
-      Post: { idAttribute: 'id' },
-      Comment: { idAttribute: 'id' }
-    } as any);
   });
 
   afterEach(() => {
@@ -94,11 +57,9 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '123': { name: 'Johnny' } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', name: 'Johnny' } } },
             strategy: '$merge',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -109,11 +70,9 @@ describe('EntityProxyManager', () => {
         2,
         [
           {
-            entities: { '123': { age: 31 } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', age: 31 } } },
             strategy: '$merge',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -130,11 +89,9 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '123': { bio: null } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', bio: null } } },
             strategy: '$merge',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -153,11 +110,9 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '123': { tags: ['developer', 'javascript', 'typescript'] } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', tags: ['developer', 'javascript', 'typescript'] } } },
             strategy: '$set',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -174,11 +129,9 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '123': { tags: ['developer', 'javascript'] } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', tags: ['developer', 'javascript'] } } },
             strategy: '$set',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -195,11 +148,9 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '123': { tags: ['developer', 'node', 'typescript'] } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', tags: ['developer', 'node', 'typescript'] } } },
             strategy: '$set',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -216,11 +167,9 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '123': { tags: ['developer', 'node', 'typescript'] } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', tags: ['developer', 'node', 'typescript'] } } },
             strategy: '$set',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -237,11 +186,9 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '123': { tags: ['developer', 'javascript'] } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', tags: ['developer', 'javascript'] } } },
             strategy: '$set',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -267,11 +214,9 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '123': { metadata: { joinDate: '2023-01-01', lastLogin: '2023-06-16' } } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', metadata: { joinDate: '2023-01-01', lastLogin: '2023-06-16' } } } },
             strategy: '$merge',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -301,12 +246,15 @@ describe('EntityProxyManager', () => {
         [
           {
             entities: {
-              '123': { settings: { preferences: { notifications: { email: true, push: true }, theme: 'light' } } }
+              User: {
+                '123': {
+                  id: '123',
+                  settings: { preferences: { notifications: { email: true, push: true }, theme: 'light' } }
+                }
+              }
             },
-            entityId: '123',
-            entityName: 'User',
             strategy: '$merge',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -338,14 +286,12 @@ describe('EntityProxyManager', () => {
           {
             entities: { Profile: { '456': { id: '456', bio: 'Developer', user: '123' } } },
             strategy: '$merge',
-            type: 'entities.upsertEntities'
+            type: UPDATE_ENTITIES
           },
           {
-            entities: { '123': { profile: '456' } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', profile: '456' } } },
             strategy: '$merge',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -375,13 +321,11 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '123': { profile: null } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', profile: null } } },
             strategy: '$set',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           },
-          { entityId: '456', entityName: 'Profile', type: 'entities.deleteEntity' }
+          { entities: { Profile: { '456': { id: '456' } } }, type: DELETE_ENTITIES }
         ],
         false,
         'test-instance'
@@ -410,14 +354,12 @@ describe('EntityProxyManager', () => {
           {
             entities: { User: { '456': { id: '456', name: 'Jane' } } },
             strategy: '$merge',
-            type: 'entities.upsertEntities'
+            type: UPDATE_ENTITIES
           },
           {
-            entities: { '123': { friends: ['456'] } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', friends: ['456'] } } },
             strategy: '$set',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -447,9 +389,7 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({
-            entityName: 'User',
-            entityId: '123',
-            entities: { '123': { name: 'Johnny' } }
+            entities: { User: { '123': { id: '123', name: 'Johnny' } } }
           })
         ]),
         false,
@@ -457,7 +397,7 @@ describe('EntityProxyManager', () => {
       );
     });
 
-    it.skip('should handle deeply nested entity relationships', () => {
+    it('should handle deeply nested entity relationships', () => {
       // Setup complex state
       const userId = uuidv4();
       const postId = uuidv4();
@@ -465,7 +405,7 @@ describe('EntityProxyManager', () => {
 
       stateManager.state = {
         User: {
-          [userId]: { id: userId, name: 'John', posts: [postId] }
+          [userId]: { id: userId, name: 'John', posts: [postId], comments: [commentId] }
         },
         Post: {
           [postId]: { id: postId, title: 'Test Post', author: userId, comments: [commentId] }
@@ -476,16 +416,18 @@ describe('EntityProxyManager', () => {
       };
 
       // Create a proxy for the user
-      const userData = { id: userId, name: 'John', posts: [postId] };
-      const user = EntityProxyManager.createEntityProxy('User', userId, userData, stateManager);
+      const user = EntityProxyManager.createEntityProxy(
+        'User',
+        userId,
+        limitRecursion(userId, 'User', stateManager.state, stateManager),
+        stateManager
+      );
 
       // Create a new comment to add
       const newCommentId = uuidv4();
-      const newComment = { id: newCommentId, text: 'Another comment', author: userId };
 
       // Add the comment to the post's comments array
-      const post = { id: postId, title: 'Test Post', comments: [commentId, newCommentId] };
-      user.posts = [post];
+      user.posts[0].comments.push({ id: newCommentId, text: 'Another comment', post: postId, author: userId });
 
       // Verify dispatch was called with actions that handle the deep relationship
       expect(stateManager.dispatch).toHaveBeenCalled();
@@ -497,7 +439,7 @@ describe('EntityProxyManager', () => {
 
       // Check for actions related to the new comment
       const hasNewCommentAction = flattenedActions.some(
-        (action: any) => action.type === 'entities.upsertEntities' && action.entities?.Comment?.[newCommentId]
+        (action: any) => action.type === UPDATE_ENTITIES_PARTIAL && action.entities?.Comment?.[newCommentId]
       );
 
       expect(hasNewCommentAction).toBe(true);
@@ -520,11 +462,9 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '123': { preferences: { categories: ['sports', 'tech', 'music'] } } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', preferences: { categories: ['sports', 'tech', 'music'] } } } },
             strategy: '$merge',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -547,11 +487,9 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '123': { preferences: { categories: ['sports', 'tech'] } } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', preferences: { categories: ['sports', 'tech'] } } } },
             strategy: '$merge',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -574,11 +512,9 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '123': { preferences: { categories: ['sports', 'gaming', 'music'] } } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', preferences: { categories: ['sports', 'gaming', 'music'] } } } },
             strategy: '$merge',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -601,11 +537,9 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '123': { preferences: { categories: ['sports', 'gaming', 'music'] } } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', preferences: { categories: ['sports', 'gaming', 'music'] } } } },
             strategy: '$merge',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -628,11 +562,9 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '123': { preferences: { categories: ['sports', 'tech'] } } },
-            entityId: '123',
-            entityName: 'User',
+            entities: { User: { '123': { id: '123', preferences: { categories: ['sports', 'tech'] } } } },
             strategy: '$merge',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -657,11 +589,11 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '123': { settings: { profile: { interests: ['coding', 'reading', 'hiking'] } } } },
-            entityId: '123',
-            entityName: 'User',
+            entities: {
+              User: { '123': { id: '123', settings: { profile: { interests: ['coding', 'reading', 'hiking'] } } } }
+            },
             strategy: '$merge',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -695,11 +627,9 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '456': { tags: ['personal', 'professional', 'academic'] } },
-            entityId: '456',
-            entityName: 'Profile',
+            entities: { Profile: { '456': { id: '456', tags: ['personal', 'professional', 'academic'] } } },
             strategy: '$set',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,
@@ -735,11 +665,9 @@ describe('EntityProxyManager', () => {
       expect(stateManager.dispatch).toHaveBeenCalledWith(
         [
           {
-            entities: { '789': { tags: ['draft', 'private', 'featured'] } },
-            entityId: '789',
-            entityName: 'Post',
+            entities: { Post: { '789': { id: '789', tags: ['draft', 'private', 'featured'] } } },
             strategy: '$set',
-            type: 'entities.partialUpdate'
+            type: UPDATE_ENTITIES_PARTIAL
           }
         ],
         false,

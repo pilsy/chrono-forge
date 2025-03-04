@@ -8,7 +8,8 @@ import {
   deleteNormalizedEntities,
   updateEntity,
   EntityAction,
-  EntityStrategy
+  EntityStrategy,
+  setState
 } from '../store';
 import { detailedDiff, DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
@@ -1003,11 +1004,7 @@ export abstract class StatefulWorkflow<
     }
 
     if (this.params?.state && !isEmpty(this.params?.state)) {
-      await this.stateManager.dispatch(
-        updateNormalizedEntities(this.params.state, '$set'),
-        false,
-        workflow.workflowInfo().workflowId
-      );
+      await this.stateManager.dispatch(setState(this.params.state), false, workflow.workflowInfo().workflowId);
     }
 
     if (this.params?.data && !isEmpty(this.params?.data)) {

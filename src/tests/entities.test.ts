@@ -7,21 +7,24 @@ import update, { Spec } from 'immutability-helper';
 import { normalize } from 'normalizr';
 import {
   reducer,
-  updateNormalizedEntity,
   updateNormalizedEntities,
-  deleteNormalizedEntity,
   deleteNormalizedEntities,
   clearEntities,
-  UPDATE_ENTITY,
   UPDATE_ENTITIES,
-  DELETE_ENTITY,
   DELETE_ENTITIES,
-  CLEAR_ENTITIES,
+  SET_STATE,
   normalizeEntities,
   createUpdateStatement,
   initialState,
   handleUpdateEntities,
-  handleDeleteEntities
+  handleDeleteEntities,
+  setState,
+  updateEntity,
+  updateEntities,
+  updateEntityPartial,
+  deleteEntities,
+  deleteEntity,
+  UPDATE_ENTITIES_PARTIAL
 } from '../store';
 
 import type { EntitiesState } from '../store';
@@ -29,19 +32,8 @@ import schemas from './testSchemas';
 
 describe('Entities', () => {
   describe('Action Creators', () => {
-    it('should create an action to update a normalized entity', () => {
-      const entity = { id: 1, name: 'EntityName' };
-      const entityName = 'entities';
-      const expectedAction = {
-        type: UPDATE_ENTITY,
-        entity,
-        entityName
-      };
-      expect(updateNormalizedEntity(entity, entityName)).toEqual(expectedAction);
-    });
-
     it('should create an action to update normalized entities with $merge strategy', () => {
-      const entities = { entities: { 1: { id: 1, name: 'EntityName' } } };
+      const entities = { entities: { '1': { id: '1', name: 'EntityName' } } };
       const expectedAction = {
         type: UPDATE_ENTITIES,
         entities,
@@ -50,15 +42,15 @@ describe('Entities', () => {
       expect(updateNormalizedEntities(entities)).toEqual(expectedAction);
     });
 
-    it('should create an action to delete a normalized entity', () => {
-      const entityId = '1';
-      const entityName = 'entities';
+    it('should create an action to update normalized entities with custom strategy', () => {
+      const entities = { entities: { '1': { id: '1', name: 'EntityName' } } };
+      const strategy = '$set' as const;
       const expectedAction = {
-        type: DELETE_ENTITY,
-        entityId,
-        entityName
+        type: UPDATE_ENTITIES,
+        entities,
+        strategy
       };
-      expect(deleteNormalizedEntity(entityId, entityName)).toEqual(expectedAction);
+      expect(updateNormalizedEntities(entities, strategy)).toEqual(expectedAction);
     });
 
     it('should create an action to delete normalized entities', () => {
@@ -71,16 +63,120 @@ describe('Entities', () => {
     });
 
     it('should create an action to clear entities', () => {
-      const expectedAction = { type: CLEAR_ENTITIES };
+      const expectedAction = { type: SET_STATE, entities: {} };
       expect(clearEntities()).toEqual(expectedAction);
+    });
+
+    it('should create an action to set state', () => {
+      const entities = { User: { '1': { id: '1', name: 'Test' } } };
+      const expectedAction = {
+        type: SET_STATE,
+        entities
+      };
+      expect(setState(entities)).toEqual(expectedAction);
+    });
+
+    it('should create an action to set empty state', () => {
+      const expectedAction = {
+        type: SET_STATE,
+        entities: {}
+      };
+      expect(setState()).toEqual(expectedAction);
+    });
+
+    it('should create an action to update a single entity', () => {
+      const entity = { id: '1', name: 'EntityName' };
+      const entityName = 'User';
+      const expectedAction = {
+        type: UPDATE_ENTITIES,
+        entities: {
+          User: {
+            '1': { id: '1', name: 'EntityName' }
+          }
+        },
+        strategy: '$merge'
+      };
+      expect(updateEntity(entity, entityName)).toEqual(expectedAction);
+    });
+
+    it('should create an action to update multiple entities', () => {
+      const entities = [
+        { id: '1', name: 'Entity1' },
+        { id: '2', name: 'Entity2' }
+      ];
+      const entityName = 'User';
+      const expectedAction = {
+        type: UPDATE_ENTITIES,
+        entities: {
+          User: {
+            '1': { id: '1', name: 'Entity1' },
+            '2': { id: '2', name: 'Entity2' }
+          }
+        },
+        strategy: '$merge'
+      };
+      expect(updateEntities(entities, entityName)).toEqual(expectedAction);
+    });
+
+    it('should create an action to partially update an entity', () => {
+      const strategy = '$merge' as const;
+      const updatedEntity = { id: '1', name: 'UpdatedName' };
+      const expectedAction = {
+        type: UPDATE_ENTITIES_PARTIAL,
+        entities: {
+          User: {
+            '1': updatedEntity
+          }
+        },
+        strategy
+      };
+      expect(updateEntityPartial(updatedEntity, 'User', strategy)).toEqual(expectedAction);
+    });
+
+    it('should create an action to delete multiple entities', () => {
+      const entities = [
+        { id: '1', name: 'Entity1' },
+        { id: '2', name: 'Entity2' }
+      ];
+      const entityName = 'User';
+      const expectedAction = {
+        type: DELETE_ENTITIES,
+        entities: {
+          User: {
+            '1': { id: '1', name: 'Entity1' },
+            '2': { id: '2', name: 'Entity2' }
+          }
+        }
+      };
+      expect(deleteEntities(entities, entityName)).toEqual(expectedAction);
+    });
+
+    it('should create an action to delete a single entity', () => {
+      const entity = { id: '1', name: 'Entity1' };
+      const entityName = 'User';
+      const expectedAction = {
+        type: DELETE_ENTITIES,
+        entities: {
+          User: {
+            '1': { id: '1', name: 'Entity1' }
+          }
+        }
+      };
+      expect(deleteEntity(entity, entityName)).toEqual(expectedAction);
+    });
+
+    it('should throw error when schema is not found', () => {
+      const entity = { id: '1', name: 'EntityName' };
+      const entityName = 'NonExistentSchema';
+      expect(() => updateEntity(entity, entityName)).toThrow(`Schema for ${entityName} not found.`);
     });
   });
 
   describe('Helper Functions', () => {
     const state: EntitiesState = {
       entities: {
-        1: { id: 1, name: 'Entity1' },
-        2: { id: 2, name: 'Entity2' }
+        1: { id: '1', name: 'Entity1' },
+        2: { id: '2', name: 'Entity2' }
       }
     };
 
@@ -187,14 +283,9 @@ describe('Entities', () => {
       // Define the entities to perform the $splice operation
       const entities = {
         User: {
-          '1': { items: [] }, // The items field will be spliced
-          '2': { items: [] } // The items field will be spliced
+          '1': { items: [[2, 0, 99]] }, // The items field will be spliced
+          '2': { items: [[1, 1]] } // The items field will be spliced
         }
-      };
-
-      const value = {
-        '1': [[2, 0, 99]], // For entity '1', splice in 99 at index 2
-        '2': [[1, 1]] // For entity '2', remove one element at index 1
       };
 
       const expectedSpec = {
@@ -204,7 +295,7 @@ describe('Entities', () => {
         }
       };
 
-      const updateSpec = handleUpdateEntities(state, entities, '$splice', value);
+      const updateSpec = handleUpdateEntities(state, entities, '$splice');
       expect(updateSpec).toEqual(expectedSpec);
     });
 
@@ -213,8 +304,8 @@ describe('Entities', () => {
 
       const entities = {
         User: {
-          '1': { name: 'ignoreThis' }, // Placeholder for mimicry; this field is not actually used in $apply
-          '2': { name: 'ignoreThisToo' } // Same as above
+          '1': applyFunction,
+          '2': applyFunction
         }
       };
 
@@ -225,7 +316,7 @@ describe('Entities', () => {
         }
       };
 
-      const updateSpec = handleUpdateEntities(state, entities, '$apply', applyFunction);
+      const updateSpec = handleUpdateEntities(state, entities, '$apply');
       expect(updateSpec).toEqual(expectedSpec);
 
       // Simulate application to verify the behavior
@@ -285,49 +376,58 @@ describe('Entities', () => {
 
       const entities = {
         User: {
-          '1': { name: 'ignore' }, // Placeholder for an update
-          '2': { name: 'ignore' }
+          '1': applyFunction,
+          '2': { name: (oldName: string) => oldName.toUpperCase() }
         }
       };
 
       const expectedSpec = {
         User: {
           '1': { $apply: expect.any(Function) },
-          '2': { $apply: expect.any(Function) }
+          '2': {
+            name: { $apply: expect.any(Function) }
+          }
         }
       };
 
-      const updateSpec = handleUpdateEntities(state, entities, '$apply', applyFunction);
+      const updateSpec = handleUpdateEntities(state, entities, '$apply');
       expect(updateSpec).toEqual(expectedSpec);
 
       const resultState = {
         User: {
           // @ts-ignore
-          '1': updateSpec.User['1'].$apply(state.User['1']), // @ts-ignore
-          '2': updateSpec.User['2'].$apply(state.User['2'])
+          '1': updateSpec.User['1'].$apply(state.User['1']),
+          '2': {
+            id: '2', // @ts-ignore
+            name: updateSpec?.User['2'].name.$apply(state.User['2'].name)
+          }
         }
       };
 
       expect(resultState).toEqual({
         User: {
           '1': { id: '1', name: 'OldName', extraField: 42 },
-          '2': { id: '2', name: 'anothername' }
+          '2': { id: '2', name: 'ANOTHERNAME' }
         }
       });
     });
+
     it('should correctly splice elements at boundary indices', () => {
       const state = {
         User: {
           '1': { items: [1, 2, 3, 4, 5] }
         }
       };
-      const entities = { User: { '1': { items: [] } } };
-      const value = {
-        '1': [
-          [0, 1],
-          [4, 0, 99]
-        ]
-      }; // Remove first element, add 99 at the end
+      const entities = {
+        User: {
+          '1': {
+            items: [
+              [0, 1],
+              [4, 0, 99]
+            ]
+          }
+        }
+      };
       const expectedSpec = {
         User: {
           '1': {
@@ -341,7 +441,7 @@ describe('Entities', () => {
         }
       };
 
-      const updateSpec = handleUpdateEntities(state, entities, '$splice', value);
+      const updateSpec = handleUpdateEntities(state, entities, '$splice');
       expect(updateSpec).toEqual(expectedSpec);
 
       const resultState = update(state, updateSpec);
@@ -433,14 +533,9 @@ describe('Entities', () => {
       // Define the entities to perform the $splice operation
       const entities = {
         User: {
-          '1': { items: [], tags: [] }, // Test multiple fields
-          '2': { customArray: [] } // Test different field name
+          '1': { items: [[2, 0, 99]], tags: [[2, 0, 99]] }, // Test multiple fields
+          '2': { customArray: [[1, 1]] } // Test different field name
         }
-      };
-
-      const value = {
-        '1': [[2, 0, 99]], // For entity '1', splice in 99 at index 2
-        '2': [[1, 1]] // For entity '2', remove one element at index 1
       };
 
       const expectedSpec = {
@@ -455,8 +550,50 @@ describe('Entities', () => {
         }
       };
 
-      const updateSpec = handleUpdateEntities(state, entities, '$splice', value);
+      const updateSpec = handleUpdateEntities(state, entities, '$splice');
       expect(updateSpec).toEqual(expectedSpec);
+    });
+
+    it('should correctly handle $replace strategy', () => {
+      const state = {
+        User: {
+          '1': { id: '1', name: 'OldName' }
+        }
+      };
+
+      const entities = {
+        User: {
+          '1': { id: '1', name: 'NewName' }
+        }
+      };
+
+      const expectedSpec = {
+        User: {
+          '1': { $set: { id: '1', name: 'NewName' } }
+        }
+      };
+
+      const updateSpec = handleUpdateEntities(state, entities, '$replace');
+      expect(updateSpec).toEqual(expectedSpec);
+    });
+
+    it('should throw error for invalid strategy', () => {
+      const state = {
+        User: {
+          '1': { id: '1', name: 'Test' }
+        }
+      };
+
+      const entities = {
+        User: {
+          '1': { name: 'UpdatedName' }
+        }
+      };
+
+      // @ts-ignore - Testing invalid strategy
+      expect(() => handleUpdateEntities(state, entities, '$invalidStrategy')).toThrow(
+        'Invalid strategy: $invalidStrategy'
+      );
     });
   });
 
@@ -472,7 +609,7 @@ describe('Entities', () => {
         Task: { $unset: ['3', '4'] }
       };
 
-      const deleteSpec = handleDeleteEntities(entities);
+      const deleteSpec = handleDeleteEntities(entities, entities);
       expect(deleteSpec).toEqual(expectedSpec);
 
       // Test applying the spec
@@ -514,18 +651,6 @@ describe('Entities', () => {
       };
     });
 
-    it('should handle UPDATE_ENTITY', () => {
-      const entity = { '1': { id: '1', name: 'UpdatedEntity1' } };
-      const action = updateNormalizedEntity(entity, 'User');
-      const newState = reducer(state, action);
-      expect(newState).toEqual({
-        User: {
-          '1': { id: '1', name: 'UpdatedEntity1' },
-          '2': { id: '2', name: 'Entity2' }
-        }
-      });
-    });
-
     it('should handle UPDATE_ENTITIES', () => {
       const updates = {
         User: {
@@ -541,17 +666,6 @@ describe('Entities', () => {
           '1': { id: '1', name: 'Entity1' },
           '2': { id: '2', name: 'UpdatedEntity2' },
           '3': { id: '3', name: 'Entity3' }
-        }
-      });
-    });
-
-    it('should handle DELETE_ENTITY', () => {
-      const action = deleteNormalizedEntity('1', 'User');
-      const newState = reducer(state, action);
-
-      expect(newState).toEqual({
-        User: {
-          '2': { id: '2', name: 'Entity2' }
         }
       });
     });
@@ -578,6 +692,17 @@ describe('Entities', () => {
       const newState = reducer(state, action);
 
       expect(newState).toEqual(initialState);
+    });
+
+    it('should handle SET_STATE', () => {
+      const action = setState({
+        User: {
+          '1': { id: '1', name: 'Entity1' },
+          '2': { id: '2', name: 'Entity2' }
+        }
+      });
+      const newState = reducer(state, action);
+      expect(newState).toEqual({ User: { '1': { id: '1', name: 'Entity1' }, '2': { id: '2', name: 'Entity2' } } });
     });
 
     it('should return the initial state when an unknown action is passed', () => {

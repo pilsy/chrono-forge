@@ -1,5 +1,5 @@
 import { SchemaManager, SchemasDefinition } from '../store/SchemaManager';
-import { EntitiesState, updateNormalizedEntity, deleteNormalizedEntity } from '../store';
+import { EntitiesState, deleteEntity, updateEntity } from '../store';
 import { cloneDeep } from 'lodash';
 import StateManager from '../store/StateManager';
 
@@ -130,8 +130,8 @@ describe('SchemaManager Functionality', () => {
         }
       };
 
-      await stateManager.dispatch(updateNormalizedEntity(circularData.user1, 'User'));
-      await stateManager.dispatch(updateNormalizedEntity(circularData.article1, 'Article'));
+      await stateManager.dispatch(updateEntity(circularData.user1, 'User'));
+      await stateManager.dispatch(updateEntity(circularData.article1, 'Article'));
 
       const state = stateManager.state;
       expect(state.User.user1.articles[0]).toBe('article1');
@@ -139,7 +139,7 @@ describe('SchemaManager Functionality', () => {
     });
 
     it('should maintain referential integrity when deleting entities', async () => {
-      await stateManager.dispatch(deleteNormalizedEntity('user1', 'User'));
+      await stateManager.dispatch(deleteEntity(stateManager.state.User.user1, 'User'));
 
       const state = stateManager.state;
       expect(state.User.user1).toBeUndefined();

@@ -4,9 +4,9 @@ import {
   clearEntities,
   deleteNormalizedEntities,
   normalizeEntities,
-  PARTIAL_UPDATE_ENTITY,
   updateNormalizedEntities,
-  partialUpdateEntity
+  updateEntityPartial,
+  UPDATE_ENTITIES_PARTIAL
 } from '../store';
 import schemas from './testSchemas';
 import { limitRecursion } from '../utils';
@@ -166,7 +166,7 @@ describe('StateManager', () => {
       user.name = 'Jane';
 
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [partialUpdateEntity('User', '1', { '1': { name: 'Jane' } }, '$merge')],
+        [updateEntityPartial({ id: '1', name: 'Jane' }, 'User', '$merge')],
         false,
         `testInstance${instanceNum}`
       );
@@ -182,13 +182,13 @@ describe('StateManager', () => {
 
       expect(dispatchSpy).toHaveBeenCalledTimes(1);
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [partialUpdateEntity('Nested', '100', { '100': { list: [10, 20, 30, 40] } }, '$set')],
+        [updateEntityPartial({ id: '100', list: [10, 20, 30, 40] }, 'Nested', '$set')],
         false,
         `testInstance${instanceNum}`
       );
     });
 
-    it('should dispatch update for array push operation', async () => {
+    it('should dispatch update for array pop operation', async () => {
       const nested = stateManager.query('Nested', '100');
       nested.list.pop();
 
@@ -197,7 +197,7 @@ describe('StateManager', () => {
       await sleep();
 
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [partialUpdateEntity('Nested', '100', { '100': { list: [10, 20] } }, '$set')],
+        [updateEntityPartial({ id: '100', list: [10, 20] }, 'Nested', '$set')],
         false,
         `testInstance${instanceNum}`
       );
@@ -212,7 +212,7 @@ describe('StateManager', () => {
       await sleep();
 
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [partialUpdateEntity('Nested', '100', { '100': { list: [10] } }, '$set')],
+        [updateEntityPartial({ id: '100', list: [10] }, 'Nested', '$set')],
         false,
         `testInstance${instanceNum}`
       );
@@ -227,7 +227,7 @@ describe('StateManager', () => {
       await sleep();
 
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [partialUpdateEntity('Nested', '100', { '100': { list: [15, 20, 30] } }, '$set')],
+        [updateEntityPartial({ id: '100', list: [15, 20, 30] }, 'Nested', '$set')],
         false,
         `testInstance${instanceNum}`
       );
@@ -242,7 +242,7 @@ describe('StateManager', () => {
       await sleep();
 
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [partialUpdateEntity('Nested', '100', { '100': { list: [] } }, '$set')],
+        [updateEntityPartial({ id: '100', list: [] }, 'Nested', '$set')],
         false,
         `testInstance${instanceNum}`
       );
@@ -257,7 +257,7 @@ describe('StateManager', () => {
       await sleep();
 
       expect(dispatchSpy).toHaveBeenCalledWith(
-        [partialUpdateEntity('Nested', '100', { '100': { list: [10, 20, 30, null] } }, '$set')],
+        [updateEntityPartial({ id: '100', list: [10, 20, 30, null] }, 'Nested', '$set')],
         false,
         `testInstance${instanceNum}`
       );
@@ -282,20 +282,26 @@ describe('StateManager', () => {
             strategy: '$merge'
           },
           {
-            type: 'entities.partialUpdate',
-            entityName: 'User',
-            entityId: '1',
+            type: 'entities.partialUpdates',
             entities: {
-              '1': {
-                nested: '101'
+              User: {
+                '1': {
+                  id: '1',
+                  nested: '101'
+                }
               }
             },
             strategy: '$merge'
           },
           {
-            type: 'entities.deleteEntity',
-            entityId: '100',
-            entityName: 'Nested'
+            type: 'entities.deleteEntities',
+            entities: {
+              Nested: {
+                '100': {
+                  id: '100'
+                }
+              }
+            }
           }
         ],
         false,
@@ -310,20 +316,26 @@ describe('StateManager', () => {
       expect(dispatchSpy).toHaveBeenCalledWith(
         [
           {
-            type: 'entities.partialUpdate',
-            entityName: 'User',
-            entityId: '1',
+            type: 'entities.partialUpdates',
             entities: {
-              '1': {
-                nested: null
+              User: {
+                '1': {
+                  id: '1',
+                  nested: null
+                }
               }
             },
             strategy: '$set'
           },
           {
-            type: 'entities.deleteEntity',
-            entityId: '100',
-            entityName: 'Nested'
+            type: 'entities.deleteEntities',
+            entities: {
+              Nested: {
+                '100': {
+                  id: '100'
+                }
+              }
+            }
           }
         ],
         false,
@@ -364,6 +376,8 @@ describe('StateManager', () => {
       await stateManager.setState(normalizeEntities(data, 'User'));
       const user = stateManager.query('User', userId);
 
+      dispatchSpy.mockClear();
+
       // Modify deeply nested property
       user.listings[0].photos[0].likes[0].name = 'new-like-name';
 
@@ -372,10 +386,15 @@ describe('StateManager', () => {
       expect(dispatchSpy).toHaveBeenCalledWith(
         [
           {
-            type: PARTIAL_UPDATE_ENTITY,
-            entityName: 'Like',
-            entityId: likeId,
-            entities: { [likeId]: { name: 'new-like-name' } },
+            type: UPDATE_ENTITIES_PARTIAL,
+            entities: {
+              Like: {
+                [likeId]: {
+                  id: likeId,
+                  name: 'new-like-name'
+                }
+              }
+            },
             strategy: '$merge'
           }
         ],
@@ -431,10 +450,8 @@ describe('StateManager', () => {
       expect(dispatchSpy).toHaveBeenCalledWith(
         [
           {
-            type: PARTIAL_UPDATE_ENTITY,
-            entityName: 'User',
-            entityId: '1',
-            entities: { '1': { name: 'Jane Doe' } },
+            type: UPDATE_ENTITIES_PARTIAL,
+            entities: { User: { '1': { id: '1', name: 'Jane Doe' } } },
             strategy: '$merge'
           }
         ],
@@ -457,10 +474,8 @@ describe('StateManager', () => {
       expect(dispatchSpy).toHaveBeenCalledWith(
         [
           {
-            type: PARTIAL_UPDATE_ENTITY,
-            entityName: 'User',
-            entityId: '1',
-            entities: { '1': { attributes: { score: 20 } } },
+            type: UPDATE_ENTITIES_PARTIAL,
+            entities: { User: { '1': { id: '1', attributes: { score: 20 } } } },
             strategy: '$merge'
           }
         ],
@@ -480,10 +495,8 @@ describe('StateManager', () => {
       expect(dispatchSpy).toHaveBeenCalledWith(
         [
           {
-            type: PARTIAL_UPDATE_ENTITY,
-            entityName: 'Nested',
-            entityId: '100',
-            entities: { '100': { list: [1, 10, 3] } },
+            type: UPDATE_ENTITIES_PARTIAL,
+            entities: { Nested: { '100': { id: '100', list: [1, 10, 3] } } },
             strategy: '$set'
           }
         ],
@@ -496,10 +509,8 @@ describe('StateManager', () => {
         2,
         [
           {
-            type: PARTIAL_UPDATE_ENTITY,
-            entityName: 'Nested',
-            entityId: '100',
-            entities: { '100': { list: [1, 10, 3, 25] } },
+            type: UPDATE_ENTITIES_PARTIAL,
+            entities: { Nested: { '100': { id: '100', list: [1, 10, 3, 25] } } },
             strategy: '$set'
           }
         ],
@@ -569,10 +580,8 @@ describe('StateManager', () => {
             type: 'entities.upsertEntities'
           },
           {
-            type: PARTIAL_UPDATE_ENTITY,
-            entityName: 'Photo',
-            entityId: photoId,
-            entities: { [photoId]: { likes: [like1.id, like2.id] } },
+            type: UPDATE_ENTITIES_PARTIAL,
+            entities: { Photo: { [photoId]: { id: photoId, likes: [like1.id, like2.id] } } },
             strategy: '$set'
           }
         ],
@@ -604,10 +613,8 @@ describe('StateManager', () => {
       expect(dispatchSpy).toHaveBeenCalledWith(
         [
           {
-            type: PARTIAL_UPDATE_ENTITY,
-            entityName: 'Nested',
-            entityId: '100',
-            entities: { '100': { list: [15, 2, 3] } },
+            type: UPDATE_ENTITIES_PARTIAL,
+            entities: { Nested: { '100': { id: '100', list: [15, 2, 3] } } },
             strategy: '$set'
           }
         ],
@@ -627,10 +634,8 @@ describe('StateManager', () => {
       expect(dispatchSpy).toHaveBeenCalledWith(
         [
           {
-            type: PARTIAL_UPDATE_ENTITY,
-            entityName: 'Nested',
-            entityId: '100',
-            entities: { '100': { list: [1, 2, 3, 25] } },
+            type: UPDATE_ENTITIES_PARTIAL,
+            entities: { Nested: { '100': { id: '100', list: [1, 2, 3, 25] } } },
             strategy: '$set'
           }
         ],
@@ -662,20 +667,26 @@ describe('StateManager', () => {
             strategy: '$merge'
           },
           {
-            type: 'entities.partialUpdate',
-            entityName: 'User',
-            entityId: '1',
+            type: 'entities.partialUpdates',
             entities: {
-              '1': {
-                nested: '101'
+              User: {
+                '1': {
+                  id: '1',
+                  nested: '101'
+                }
               }
             },
             strategy: '$merge'
           },
           {
-            type: 'entities.deleteEntity',
-            entityId: '100',
-            entityName: 'Nested'
+            type: 'entities.deleteEntities',
+            entities: {
+              Nested: {
+                '100': {
+                  id: '100'
+                }
+              }
+            }
           }
         ],
         false,

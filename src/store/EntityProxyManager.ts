@@ -2,7 +2,7 @@ import { ProxyStateTree } from 'proxy-state-tree';
 import { StateManager } from './StateManager';
 import { SchemaManager, Relationship } from './SchemaManager';
 import { getEntityName } from '../utils';
-import { EntityAction, EntityStrategy, partialUpdateEntity, deleteEntity, updateEntity } from './actions';
+import { EntityAction, EntityStrategy, updateEntityPartial, deleteEntity, updateEntity } from './actions';
 
 /**
  * Interface representing a mutation operation from proxy-state-tree.
@@ -272,14 +272,12 @@ export class EntityProxyManager {
   ): void {
     // Get the current entity from the state
     const entity = stateManager.state[entityName]?.[entityId];
-
     if (!entity) {
-      // Entity doesn't exist in state, can't update it
       return;
     }
 
-    // Create a copy of the entity to modify
     const updatedEntity = { ...entity };
+    const idAttribute = SchemaManager.schemas[entityName].idAttribute;
 
     if (nestedPath.length === 0) {
       // The entity itself was replaced
@@ -336,7 +334,16 @@ export class EntityProxyManager {
 
       // Update the entity
       stateManager.dispatch(
-        [partialUpdateEntity(entityName, entityId, { [entityId]: { [fieldName]: newValue } }, strategy)],
+        [
+          updateEntityPartial(
+            {
+              [typeof idAttribute === 'function' ? idAttribute(updatedEntity) : idAttribute]: entityId,
+              [fieldName]: newValue
+            },
+            entityName,
+            strategy
+          )
+        ],
         false,
         stateManager.instanceId
       );
@@ -454,7 +461,16 @@ export class EntityProxyManager {
 
       // Update just this field
       stateManager.dispatch(
-        [partialUpdateEntity(entityName, entityId, { [entityId]: { [fieldName]: updatedValue } }, strategy)],
+        [
+          updateEntityPartial(
+            {
+              [typeof idAttribute === 'function' ? idAttribute({}) : idAttribute]: entityId,
+              [fieldName]: updatedValue
+            },
+            entityName,
+            strategy
+          )
+        ],
         false,
         stateManager.instanceId
       );
@@ -617,14 +633,12 @@ export class EntityProxyManager {
 
     // Add update action for this entity
     actions.push(
-      partialUpdateEntity(
-        entityName,
-        entityId,
+      updateEntityPartial(
         {
-          [entityId]: {
-            [fieldName]: relation ? processedValue : JSON.parse(JSON.stringify(processedValue))
-          }
+          [typeof idAttribute === 'function' ? idAttribute({}) : idAttribute]: entityId,
+          [fieldName]: relation ? processedValue : JSON.parse(JSON.stringify(processedValue))
         },
+        entityName,
         strategy
       )
     );
@@ -632,6 +646,7 @@ export class EntityProxyManager {
     // Add deleteEntity actions for removed entities if they're no longer referenced
     if (removedEntityIds.length > 0 && relation) {
       const relatedEntityName = getEntityName(relation);
+      const idAttribute = SchemaManager.schemas[relatedEntityName].idAttribute;
 
       removedEntityIds.forEach((entityId: string) => {
         if (
@@ -640,7 +655,12 @@ export class EntityProxyManager {
             fieldName: fieldName
           })
         ) {
-          actions.push(deleteEntity(entityId, relatedEntityName));
+          actions.push(
+            deleteEntity(
+              { [typeof idAttribute === 'function' ? idAttribute(entityId) : idAttribute]: entityId },
+              relatedEntityName
+            )
+          );
         }
       });
     }
@@ -666,6 +686,8 @@ export class EntityProxyManager {
     newValue: any,
     stateManager: StateManager
   ): void {
+    const idAttribute = SchemaManager.schemas[entityName].idAttribute;
+
     // Determine update strategy
     let strategy: EntityStrategy = '$merge';
 
@@ -677,14 +699,12 @@ export class EntityProxyManager {
     }
 
     // Create the update action
-    const action = partialUpdateEntity(
-      entityName,
-      entityId,
+    const action = updateEntityPartial(
       {
-        [entityId]: {
-          [fieldName]: JSON.parse(JSON.stringify(newValue))
-        }
+        [typeof idAttribute === 'function' ? idAttribute({}) : idAttribute]: entityId,
+        [fieldName]: JSON.parse(JSON.stringify(newValue))
       },
+      entityName,
       strategy
     );
 

@@ -1,48 +1,24 @@
-import { normalize, Schema } from 'normalizr';
-import { SchemaManager } from '../store/SchemaManager';
+import { defaultState } from './entities';
+import type { EntitiesState, EntityState } from './entities';
 
-import type { EntitiesState } from './entities';
-
-/**
- * Normalizes entity data using normalizr
- *
- * @template T - The type of data to normalize
- * @param {T | T[]} data - The entity or array of entities to normalize
- * @param {Schema | string} entitySchema - The schema to use for normalization or entity name
- * @returns {EntitiesState} - The normalized entities state
- */
-export const normalizeEntities = <T>(data: T | T[], entitySchema: Schema | string): EntitiesState => {
-  const schema = typeof entitySchema === 'string' ? getSchema(entitySchema) : entitySchema;
-  const { entities } = normalize(data, Array.isArray(data) ? [schema] : schema);
-
-  return entities as EntitiesState;
-};
+import { normalize } from 'normalizr';
+import { EnhancedEntity, SchemaManager } from '../store/SchemaManager';
 
 /**
  * Action type for entity operations
- *
  * @typedef {Object} EntityAction
  * @property {string} type - The action type
- * @property {Record<string | number, any>} [entity] - The entity object
- * @property {EntitiesState} [entities] - The entities state
- * @property {string} [entityId] - The entity ID
- * @property {string} [entityName] - The entity name/type
+ * @property {EntitiesState} entities - The entities state
  * @property {EntityStrategy} [strategy] - The update strategy to apply
- * @property {any} [value] - Any extra value for a specific update operation
  */
 export type EntityAction = {
   type: string;
-  entity?: Record<string | number, any>;
-  entities?: EntitiesState;
-  entityId?: string;
-  entityName?: string;
+  entities: EntitiesState;
   strategy?: EntityStrategy;
-  value?: any; // This if any extra value for a specific update operation
 };
 
 /**
  * Strategy types for entity operations
- *
  * @typedef {string} EntityStrategy
  * @property {'$replace'} $replace - Replace the entire entity
  * @property {'$set'} $set - Set specific properties
@@ -57,137 +33,108 @@ export type EntityAction = {
  * @property {'$remove'} $remove - Remove items from a collection
  */
 export type EntityStrategy =
-  | '$replace'
-  | '$set'
-  | '$merge'
-  | '$unset'
-  | '$push'
-  | '$unshift'
-  | '$splice'
-  | '$apply'
-  | '$toggle'
-  | '$add'
-  | '$remove';
+  | '$replace' // Replace the entire entity
+  | '$set' // Set specific properties
+  | '$merge' // Merge with existing properties
+  | '$unset' // Remove specific properties
+  | '$push' // Add items to the end of an array
+  | '$unshift' // Add items to the beginning of an array
+  | '$splice' // Remove/replace items in an array
+  | '$apply' // Apply a function to transform a value
+  | '$toggle' // Toggle boolean values
+  | '$add' // Add items to a collection
+  | '$remove'; // Remove items from a collection
 
-/** Action type for upserting a single entity */
-export const UPDATE_ENTITY = 'entities.upsertEntity';
 /** Action type for upserting multiple entities */
 export const UPDATE_ENTITIES = 'entities.upsertEntities';
-/** Action type for partially updating an entity */
-export const PARTIAL_UPDATE_ENTITY = 'entities.partialUpdate';
-/** Action type for deleting a single entity */
-export const DELETE_ENTITY = 'entities.deleteEntity';
+/** Action type for partially updating entities */
+export const UPDATE_ENTITIES_PARTIAL = 'entities.partialUpdates';
 /** Action type for deleting multiple entities */
 export const DELETE_ENTITIES = 'entities.deleteEntities';
-/** Action type for clearing all entities */
-export const CLEAR_ENTITIES = 'entities.clearEntities';
 /** Action type for setting the entire entities state */
 export const SET_STATE = 'entities.setState';
 
-/**
- * Creates an action to update a single entity
- *
- * @param {Record<string | number, any>} entity - The entity to update
- * @param {string} entityName - The entity type/name
- * @returns {EntityAction} - The update entity action
- */
-export const updateEntity = (entity: Record<string | number, any>, entityName: string): EntityAction =>
-  updateNormalizedEntities(normalize(entity, getSchema(entityName)).entities as EntitiesState);
+export const actionNames = {
+  UPDATE_ENTITIES,
+  UPDATE_ENTITIES_PARTIAL,
+  DELETE_ENTITIES,
+  SET_STATE
+};
 
 /**
- * Creates an action to update multiple entities
- *
- * @param {any[]} entities - The entities to update
+ * Creates an action to update a single entity
+ * @param {EntityState} entity - The entity to update
  * @param {string} entityName - The entity type/name
- * @returns {EntityAction} - The update entities action
+ * @returns {EntityAction} An action object for updating the entity
  */
-export const updateEntities = (entities: any[], entityName: string): EntityAction =>
-  updateNormalizedEntities(normalize(entities, getSchema(entityName)).entities as EntitiesState);
+export const updateEntity = (entity: EntityState, entityName: string): EntityAction =>
+  updateEntities([entity], entityName);
 
 /**
  * Creates an action to partially update an entity
- *
+ * @param {EntityState} entity - The entity to update
  * @param {string} entityName - The entity type/name
- * @param {string} entityId - The ID of the entity to update
- * @param {EntitiesState} entities - The entity data to update
  * @param {EntityStrategy} [strategy='$merge'] - The update strategy to apply
- * @returns {EntityAction} - The partial update entity action
+ * @returns {EntityAction} An action object for partially updating the entity
  */
-export const partialUpdateEntity = (
+export const updateEntityPartial = (
+  entity: EntityState,
   entityName: string,
-  entityId: string,
-  entities: EntitiesState,
+  strategy: EntityStrategy = '$merge'
+): EntityAction => updateEntitiesPartial([entity], entityName, strategy);
+
+/**
+ * Creates an action to update multiple entities
+ * @param {EntityState[]} entities - Array of entities to update
+ * @param {string} entityName - The entity type/name
+ * @returns {EntityAction} An action object for updating multiple entities
+ */
+export const updateEntities = (entities: EntityState[], entityName: string): EntityAction =>
+  updateNormalizedEntities(
+    normalize(Array.isArray(entities) ? entities : [entities], [getSchema(entityName)]).entities as EntitiesState
+  );
+
+/**
+ * Creates an action to partially update multiple entities
+ * @param {EntityState[]} entities - Array of entities to update
+ * @param {string} entityName - The entity type/name
+ * @param {EntityStrategy} [strategy='$merge'] - The update strategy to apply
+ * @returns {EntityAction} An action object for partially updating multiple entities
+ */
+export const updateEntitiesPartial = (
+  entities: EntityState[],
+  entityName: string,
   strategy: EntityStrategy = '$merge'
 ): EntityAction => ({
-  type: PARTIAL_UPDATE_ENTITY,
-  entityName,
-  entityId,
-  entities,
+  type: UPDATE_ENTITIES_PARTIAL,
+  entities: normalize(Array.isArray(entities) ? entities : [entities], [getSchema(entityName)])
+    .entities as EntitiesState,
   strategy
 });
 
 /**
  * Creates an action to delete a single entity
- *
- * @param {string} entityId - The ID of the entity to delete
+ * @param {EntityState} entity - The entity to delete
  * @param {string} entityName - The entity type/name
- * @returns {EntityAction} - The delete entity action
+ * @returns {EntityAction} An action object for deleting the entity
  */
-export const deleteEntity = (entityId: string, entityName: string): EntityAction => ({
-  type: DELETE_ENTITY,
-  entityId,
-  entityName
-});
+export const deleteEntity = (entity: EntityState, entityName: string): EntityAction =>
+  deleteEntities([entity], entityName);
 
 /**
  * Creates an action to delete multiple entities
- *
- * @param {EntitiesState} entities - The entities to delete
+ * @param {any[]} entities - Array of entities to delete
  * @param {string} entityName - The entity type/name
- * @returns {EntityAction} - The delete entities action
+ * @returns {EntityAction} An action object for deleting multiple entities
  */
-export const deleteEntities = (entities: EntitiesState, entityName: string): EntityAction =>
-  deleteNormalizedEntities(normalizeEntities(entities, entityName));
-
-/**
- * Creates an action to clear all entities
- *
- * @returns {EntityAction} - The clear entities action
- */
-export const clearEntities = (): EntityAction => ({
-  type: CLEAR_ENTITIES
-});
-
-/**
- * Creates an action to set the entire entities state
- *
- * @param {EntitiesState} [entities={}] - The entities state to set
- * @returns {EntityAction} - The set state action
- */
-export const setState = (entities: EntitiesState = {}): EntityAction => ({
-  type: SET_STATE,
-  entities
-});
-
-/**
- * Creates an action to update a single normalized entity
- *
- * @param {Record<string | number, any>} entity - The normalized entity to update
- * @param {string} entityName - The entity type/name
- * @returns {EntityAction} - The update normalized entity action
- */
-export const updateNormalizedEntity = (entity: Record<string | number, any>, entityName: string): EntityAction => ({
-  type: UPDATE_ENTITY,
-  entity,
-  entityName
-});
+export const deleteEntities = (entities: any[], entityName: string): EntityAction =>
+  deleteNormalizedEntities(normalize(entities, [getSchema(entityName)]).entities as EntitiesState);
 
 /**
  * Creates an action to update multiple normalized entities
- *
  * @param {EntitiesState} entities - The normalized entities to update
  * @param {EntityStrategy} [strategy='$merge'] - The update strategy to apply
- * @returns {EntityAction} - The update normalized entities action
+ * @returns {EntityAction} An action object for updating normalized entities
  */
 export const updateNormalizedEntities = (
   entities: EntitiesState,
@@ -199,15 +146,9 @@ export const updateNormalizedEntities = (
 });
 
 /**
- * Alias for deleteEntity
- */
-export const deleteNormalizedEntity = deleteEntity;
-
-/**
  * Creates an action to delete multiple normalized entities
- *
  * @param {EntitiesState} entities - The normalized entities to delete
- * @returns {EntityAction} - The delete normalized entities action
+ * @returns {EntityAction} An action object for deleting normalized entities
  */
 export const deleteNormalizedEntities = (entities: EntitiesState): EntityAction => ({
   type: DELETE_ENTITIES,
@@ -215,13 +156,32 @@ export const deleteNormalizedEntities = (entities: EntitiesState): EntityAction 
 });
 
 /**
- * Gets a schema by entity name from the SchemaManager
- *
- * @param {string} entityName - The entity type/name
- * @returns {Schema} - The schema for the entity
- * @throws {Error} - If the schema is not found
+ * Creates an action to clear all entities
+ * @param {EntitiesState} [entities={...defaultState}] - Optional entities state to set after clearing
+ * @returns {EntityAction} An action object for clearing all entities
  */
-function getSchema(entityName: string): Schema {
+export const clearEntities = (entities = { ...defaultState }): EntityAction => ({
+  type: SET_STATE,
+  entities
+});
+
+/**
+ * Creates an action to set the entire entities state
+ * @param {EntitiesState} [entities={}] - The entities state to set
+ * @returns {EntityAction} An action object for setting the entire entities state
+ */
+export const setState = (entities: EntitiesState = {}): EntityAction => ({
+  type: SET_STATE,
+  entities
+});
+
+/**
+ * Gets a schema by entity name from the SchemaManager
+ * @param {string} entityName - The entity type/name
+ * @returns {EnhancedEntity} The schema for the entity
+ * @throws {Error} If the schema is not found
+ */
+export function getSchema(entityName: string): EnhancedEntity {
   const schemas = SchemaManager.getInstance().getSchemas();
   const schema = schemas[entityName];
   if (!schema) {
@@ -231,15 +191,16 @@ function getSchema(entityName: string): Schema {
 }
 
 export default {
+  actionNames,
+  getSchema,
+  setState,
   updateEntity,
   updateEntities,
-  partialUpdateEntity,
   deleteEntity,
   deleteEntities,
   clearEntities,
-  setState,
-  updateNormalizedEntity,
+  updateEntityPartial,
+  updateEntitiesPartial,
   updateNormalizedEntities,
-  deleteNormalizedEntity,
   deleteNormalizedEntities
 };
