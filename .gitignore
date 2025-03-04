@@ -9,3 +9,10 @@ src/workflows/prototypes/*
 keys/*
 src/tests/testData/*
 tsconfig.tsbuildinfo
+*.cpuprofile
+*.cpuprofile.gz
+*.cpuprofile.json
+*.cpuprofile.json.gz
+*.cpuprofile.json.gz.part
+*.cpuprofile.json.gz.part.1
+*.cpuprofile.json.gz.part.2

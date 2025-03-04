@@ -54,7 +54,7 @@ describe('Entities', () => {
     });
 
     it('should create an action to delete normalized entities', () => {
-      const entities = { entities: ['1', '2'] };
+      const entities = { User: { '1': { id: '1', name: 'EntityName' } } };
       const expectedAction = {
         type: DELETE_ENTITIES,
         entities
@@ -355,7 +355,7 @@ describe('Entities', () => {
       const entities = { User: { '1': { items: [1, 2] } } };
 
       expect(() => handleUpdateEntities(state, entities, '$push')).toThrow(
-        "Expected array for $push operation on key '1.items'"
+        "Expected array for $push operation on entityId '1.items'"
       );
     });
 

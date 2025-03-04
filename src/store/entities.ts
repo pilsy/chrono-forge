@@ -16,14 +16,14 @@ import type { EntityAction, EntityStrategy } from './actions';
  * @property {string|number} [key] - Entity identifier
  * @property {any} [value] - Entity data
  */
-export type EntityState = Record<string | number, any>;
+export type EntityState = Record<string, any>;
 
 /**
  * Represents the structure of the entities state in the Redux store
  * @typedef {Object} EntitiesState
  * @property {EntityState} [entityType] - Map of entity types to their states
  */
-export type EntitiesState = Record<string, EntityState>;
+export type EntitiesState = Record<string, Record<string, EntityState>>;
 
 /**
  * Default empty state for the entities reducer
@@ -155,6 +155,10 @@ const applySetStrategy = (entityGroup: EntityState, stateArray?: EntityState): S
     acc[entityId] = acc[entityId] || {};
 
     Object.entries(entityData as EntityState).forEach(([fieldName, fieldValue]) => {
+      // Skip processing if the value is the entityId
+      if (fieldValue === entityId) {
+        return;
+      }
       acc[entityId][fieldName] = { $set: fieldValue };
     });
 
@@ -187,7 +191,13 @@ const applyUnsetStrategy = (entityGroup: EntityState): Spec<EntitiesState> => {
   return Object.entries(entityGroup).reduce<IndexableSpec<EntityState>>((acc, [entityId, entityData]) => {
     acc[entityId] = acc[entityId] || {};
     acc[entityId].$unset = acc[entityId].$unset || [];
-    acc[entityId].$unset = [...acc[entityId].$unset, ...Object.keys(entityData)];
+    // Filter out fields where value matches entityId
+    acc[entityId].$unset = [
+      ...acc[entityId].$unset,
+      ...Object.entries(entityData)
+        .filter(([_, value]) => value !== entityId)
+        .map(([key]) => key)
+    ];
 
     return acc;
   }, {} as IndexableSpec<EntityState>);
@@ -202,22 +212,25 @@ const applyUnsetStrategy = (entityGroup: EntityState): Spec<EntitiesState> => {
  * @throws {Error} If the target field is not an array
  */
 const applyArrayOperation = (
-  stateArray: EntityState,
+  entityState: EntityState,
   entityGroup: EntityState,
   operation: EntityStrategy
 ): Spec<EntitiesState> =>
-  Object.entries(entityGroup).reduce<IndexableSpec<EntityState>>((acc, [key, update]) => {
-    Object.entries(update).forEach(([propKey, arrayValues]) => {
-      const currentArray = stateArray[key][propKey] ?? [];
-
-      if (!Array.isArray(currentArray)) {
-        throw new Error(`Expected array for ${operation} operation on key '${key}.${propKey}'`);
+  Object.entries(entityGroup).reduce<IndexableSpec<EntityState>>((acc, [entityId, entity]) => {
+    Object.entries(entity).forEach(([fieldName, value]) => {
+      // Skip processing the id field
+      if (entityId === value) {
+        return;
       }
 
-      acc[key] = acc[key] || {};
-      acc[key][propKey] = { [operation]: Array.isArray(arrayValues) ? arrayValues : [arrayValues] };
-    });
+      const currentArray = entityState[entityId][fieldName] ?? [];
+      if (!Array.isArray(currentArray)) {
+        throw new Error(`Expected array for ${operation} operation on entityId '${entityId}.${fieldName}'`);
+      }
 
+      acc[entityId] = acc[entityId] || {};
+      acc[entityId][fieldName] = { [operation]: Array.isArray(value) ? value : [value] };
+    });
     return acc;
   }, {} as IndexableSpec<EntityState>);
 
@@ -227,16 +240,22 @@ const applyArrayOperation = (
  * @param {EntityState} entityGroup - Group of entities with fields to splice
  * @returns {Spec<EntitiesState>} An immutability-helper spec for the splice operation
  */
-const applySpliceStrategy = (entityGroup: EntityState): Spec<EntitiesState> =>
-  Object.entries(entityGroup).reduce<IndexableSpec<EntityState>>((acc, [entityId, entityData]) => {
-    acc[entityId] = acc[entityId] || {};
-
-    Object.entries(entityData as EntityState).forEach(([fieldName, value]) => {
-      acc[entityId][fieldName] = { $splice: Array.isArray(value) ? value : [] };
-    });
-
-    return acc;
-  }, {} as IndexableSpec<EntityState>);
+const applySpliceStrategy = (entityGroup: EntityState): { [key: string]: { [key: string]: { $splice: any[] } } } =>
+  Object.fromEntries(
+    Object.entries(entityGroup).map(([entityId, entity]) => [
+      entityId,
+      Object.fromEntries(
+        Object.entries(entity)
+          .filter(([_, value]) => value !== entityId)
+          .map(([fieldName, value]) => {
+            if (!Array.isArray(value)) {
+              throw new Error(`Expected array for $splice operation on entityId '${entityId}.${fieldName}'`);
+            }
+            return [fieldName, { $splice: value }];
+          })
+      )
+    ])
+  );
 
 /**
  * Applies the $apply strategy to an entity group
@@ -251,7 +270,9 @@ const applyApplyStrategy = (entityGroup: EntityState): Spec<EntitiesState> =>
       typeof entity === 'function'
         ? { $apply: entity as (original: any) => any }
         : Object.fromEntries(
-            Object.entries(entity).map(([key, value]) => [key, { $apply: value as (original: any) => any }])
+            Object.entries(entity)
+              .filter(([_, value]) => value !== entityId)
+              .map(([key, value]) => [key, { $apply: value as (original: any) => any }])
           )
     ])
   );

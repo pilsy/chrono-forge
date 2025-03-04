@@ -1,6 +1,6 @@
 {
   "name": "chrono-forge",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "A comprehensive framework for building resilient Temporal workflows, advanced state management, and real-time streaming activities in TypeScript. Designed for a seamless developer experience with powerful abstractions, dynamic orchestration, and full control over distributed systems.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -203,7 +203,12 @@
     "collectCoverage": false,
     "coverageDirectory": "coverage",
     "coveragePathIgnorePatterns": [],
-    "coverageProvider": "babel"
+    "coverageProvider": "babel",
+    "testEnvironmentOptions": {
+      "nodeOptions": [
+        "--expose-gc"
+      ]
+    }
   },
   "nodemonConfig": {
     "execMap": {
