@@ -144,7 +144,7 @@
     "@opentelemetry/exporter-logs-otlp-grpc": "^0.52.1",
     "@opentelemetry/exporter-metrics-otlp-proto": "^0.52.1",
     "@opentelemetry/exporter-prometheus": "^0.52.1",
-    "@opentelemetry/instrumentation-ioredis": "^0.42.0",
+    "@opentelemetry/instrumentation-ioredis": "^0.47.1",
     "@opentelemetry/instrumentation-perf-hooks": "^0.1.0",
     "@opentelemetry/instrumentation-winston": "^0.39.0",
     "@opentelemetry/sdk-logs": "^0.57.1",
