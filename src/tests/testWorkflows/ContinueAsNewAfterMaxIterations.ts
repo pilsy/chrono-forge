@@ -8,12 +8,12 @@ export class ContinueAsNewAfterMaxIterations extends StatefulWorkflow {
   protected maxIterations: number = 3;
 
   async execute() {
-    console.log('execute');
+    this.log.info('execute');
   }
 
   @ContinueAsNew()
   async customContinueAsNew() {
-    console.log('handleMaxIterations');
+    this.log.info('handleMaxIterations');
     const continueFn = workflow.makeContinueAsNewFunc({
       workflowType: String(this.options.workflowType),
       memo: workflow.workflowInfo().memo,

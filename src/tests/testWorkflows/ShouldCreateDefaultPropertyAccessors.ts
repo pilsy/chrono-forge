@@ -1,10 +1,14 @@
 import { Workflow, Temporal } from '../../workflows';
-import { Property } from '../../decorators';
+import { Condition, Property } from '../../decorators';
 
 @Temporal()
 export class ShouldCreateDefaultPropertyAccessors extends Workflow {
+  @Property()
+  protected status: string = 'running';
+
+  // @ts-ignore
+  @Condition(() => this?.status === 'running', '1 second')
   async execute() {
-    // Return the current status after setting via signal
     return this.status;
   }
 }

@@ -11,6 +11,8 @@ import {
 import schemas from './testSchemas';
 import { limitRecursion } from '../utils';
 import { readFileSync, writeFileSync } from 'fs';
+import { detailedDiff } from 'deep-object-diff';
+import { entityDifferences } from '../utils/entityDifferences';
 
 const sleep = async (duration = 1000) =>
   new Promise((resolve) => {
@@ -72,23 +74,6 @@ describe('StateManager', () => {
       const website_1 = JSON.parse(readFileSync('./src/tests/testData/Website_1.json', 'utf8'));
       const website_1_state = JSON.parse(readFileSync('./src/tests/testData/Website_1_normalised.json', 'utf8'));
 
-      // website_1.products = [];
-      // for (const vendor of website_1.vendors) {
-      //   vendor.website = '1';
-      //   for (const product of vendor.products) {
-      //     product.vendor = vendor.name;
-      //     product.website = '1';
-      //     website_1.products.push(product.id);
-      //   }
-      // }
-      // writeFileSync('./src/tests/testData/Website_1.json', JSON.stringify(website_1, null, 2));
-      // writeFileSync(
-      //   './src/tests/testData/Website_1_normalised.json',
-      //   JSON.stringify(normalizeEntities(website_1, 'Website'), null, 2)
-      // );
-
-      // const hugeState = JSON.parse(readFileSync('./src/tests/testData/hugeState.json', 'utf8'));
-      // const hugeData = JSON.parse(readFileSync('./src/tests/testData/hugeData.json', 'utf8'));
       console.time('limitRecursion');
       const data = limitRecursion('1', 'Website', website_1_state);
       console.timeEnd('limitRecursion');
@@ -102,13 +87,20 @@ describe('StateManager', () => {
       expect(limitRecursion('1', 'Website', stateManager.state)).toEqual(data);
 
       const website = stateManager.query('Website', '1');
-      expect(website.toJSON()).toEqual(website_1);
+      website.vendors.pop();
+      website_1.vendors.pop();
 
-      stateManager.dispatch(deleteNormalizedEntities({ Vendor: stateManager.state.Vendor }));
+      expect(website).toEqual(website_1);
+
       await applyAllPendingChanges(stateManager);
 
-      // website.vendors.length = website.vendors.length - 1;
-      console.log(stateManager.queue);
+      console.time('detailedDiff');
+      detailedDiff(website_1_state, stateManager.state);
+      console.timeEnd('detailedDiff');
+
+      console.time('entityDifferences');
+      entityDifferences(website_1_state, stateManager.state);
+      console.timeEnd('entityDifferences');
     });
   });
 
@@ -298,7 +290,8 @@ describe('StateManager', () => {
             entities: {
               Nested: {
                 '100': {
-                  id: '100'
+                  id: '100',
+                  list: [10, 20, 30]
                 }
               }
             }
@@ -332,7 +325,8 @@ describe('StateManager', () => {
             entities: {
               Nested: {
                 '100': {
-                  id: '100'
+                  id: '100',
+                  list: [10, 20, 30]
                 }
               }
             }
@@ -683,7 +677,8 @@ describe('StateManager', () => {
             entities: {
               Nested: {
                 '100': {
-                  id: '100'
+                  id: '100',
+                  list: [1, 2, 3]
                 }
               }
             }

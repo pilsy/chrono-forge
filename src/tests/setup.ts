@@ -1,7 +1,7 @@
 import path from 'path';
 import { WorkflowCoverage } from '@temporalio/nyc-test-coverage';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
-import { Worker, Runtime, DefaultLogger, LogEntry } from '@temporalio/worker';
+import { Worker, Runtime, DefaultLogger, LogEntry, makeTelemetryFilterString } from '@temporalio/worker';
 import { Client, WorkflowClient } from '@temporalio/client';
 import { v4 as uuid4 } from 'uuid';
 import {
@@ -42,7 +42,7 @@ logger.trace = (...args) => logger.verbose(...args);
 Runtime.install({
   telemetryOptions: {
     // metrics: { otel: { url: 'http://localhost:4317/v1/metrics' } },
-    // logging: {}
+    logging: { filter: makeTelemetryFilterString({ core: 'INFO', other: 'INFO' }) }
   },
   // @ts-ignore
   logger
@@ -82,6 +82,7 @@ export const setup = async () => {
         activityInbound: [(ctx) => new OpenTelemetryActivityInboundInterceptor(ctx)]
       },
       workflowThreadPoolSize: 2
+      // reuseV8Context: true
     })
   );
 

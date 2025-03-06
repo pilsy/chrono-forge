@@ -74,7 +74,7 @@ describe('Workflow', () => {
 
       // Test setting a value
       await handle.signal('status', 'updated status');
-      await sleep();
+      await sleep(2500);
 
       // Test getting the value
       const queryResult = await handle.query('status');

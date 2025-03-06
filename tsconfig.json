@@ -25,7 +25,7 @@
     "noFallthroughCasesInSwitch": true,
     "verbatimModuleSyntax": false,
     "newLine": "lf",
-    "removeComments": false,
+    "removeComments": true,
     "declaration": true,
     "declarationMap": true,
     "emitDeclarationOnly": false, // Set to true if you only want to generate .d.ts files
@@ -49,6 +49,7 @@
     "src/utils/runWorker.ts",
     "src/decorators/Worker.ts",
     "src/utils/instrumentation.ts",
-    "src/utils/logger.ts"
+    "src/utils/logger.ts",
+    "src/utils/entityDifferences.ts"
   ]
 }

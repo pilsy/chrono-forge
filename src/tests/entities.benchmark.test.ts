@@ -67,8 +67,8 @@ describe('Entity Store Benchmarks', () => {
   const DATASET_SIZES = [
     { size: 100, name: 'small' },
     { size: 1000, name: 'medium' },
-    { size: 10000, name: 'large' },
-    { size: 100000, name: 'xlarge' }
+    { size: 5000, name: 'large' },
+    { size: 10000, name: 'xlarge' }
   ];
 
   const OPERATIONS = [

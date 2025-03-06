@@ -325,7 +325,7 @@ describe('EntityProxyManager', () => {
             strategy: '$set',
             type: UPDATE_ENTITIES_PARTIAL
           },
-          { entities: { Profile: { '456': { id: '456' } } }, type: DELETE_ENTITIES }
+          { entities: { Profile: { '456': { id: '456', bio: 'Developer', user: '123' } } }, type: DELETE_ENTITIES }
         ],
         false,
         'test-instance'

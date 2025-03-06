@@ -1,4 +1,17 @@
-import { Temporal, StatefulWorkflow, ManagedPaths, Action, Debounce, Property, Signal, Query } from '../..';
+import {
+  Temporal,
+  StatefulWorkflow,
+  ManagedPaths,
+  Action,
+  Debounce,
+  Property,
+  Signal,
+  Query,
+  Mutex,
+  Before,
+  Conditional,
+  Validator
+} from '../..';
 import { workflowInfo } from '@temporalio/workflow';
 import { schemas } from '../testSchemas';
 
@@ -46,6 +59,13 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
   @Property({ path: 'listings' })
   protected listings!: any[];
 
+  @Validator<TestAction>('testAction')
+  protected validateTestAction(action: TestAction) {
+    if (!action.payload.fromUpdate) {
+      throw new Error('fromUpdate is required');
+    }
+  }
+
   @Action<TestAction, void>()
   protected async testAction(action: TestAction): Promise<void> {
     if (!this.data) {
@@ -53,7 +73,7 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
     }
     const { fromUpdate } = action.payload;
     this.fromUpdate = fromUpdate;
-    console.log(`fromUpdate=${fromUpdate}`);
+    this.log.info(`fromUpdate=${fromUpdate}`);
   }
 
   @Property()
@@ -61,7 +81,7 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
 
   @Signal()
   public async incrementNumberTest() {
-    console.log('incrementNumberTest');
+    this.log.info('incrementNumberTest');
     for (let i = 0; i < 10; i++) {
       await this.debounceTest();
     }
@@ -115,7 +135,14 @@ export class ShouldExecuteStateful extends StatefulWorkflow {
     }
   }
 
+  @Before('execute')
+  @Conditional<ShouldExecuteStateful>((self) => self.entityName === 'User')
+  protected async before() {
+    this.log.info('Conditional before worked');
+  }
+
+  @Mutex('testMutex')
   async execute(params: any) {
-    console.log('execute', this.state);
+    this.log.info('execute', this.state);
   }
 }

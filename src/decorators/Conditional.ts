@@ -48,18 +48,20 @@
  * @see Action
  * @see Mutex
  */
-export function Conditional(condition: (...args: any[]) => boolean | Promise<boolean>): MethodDecorator {
+export function Conditional<T = any>(
+  condition: (this: T, ...args: any[]) => boolean | Promise<boolean>
+): MethodDecorator {
   return (target: Object, propertyKey: string | symbol, descriptor: PropertyDescriptor): void => {
     const originalMethod = descriptor.value;
 
-    descriptor.value = async function (...args: any[]) {
+    descriptor.value = async function (this: T, ...args: any[]) {
       try {
-        const shouldExecute = await condition.apply(this, args);
+        const shouldExecute = await condition.apply(this, [this, ...args]);
         if (shouldExecute) {
           return await originalMethod.apply(this, args);
         } else {
           // @ts-ignore
-          this.log.info(`Conditional: Skipping ${String(propertyKey)} as condition not met.`);
+          this.log?.info?.(`Conditional: Skipping ${String(propertyKey)} as condition not met.`);
         }
       } catch (error) {
         console.error(`Error executing condition for ${String(propertyKey)}:`, error);

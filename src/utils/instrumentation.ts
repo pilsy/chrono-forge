@@ -76,7 +76,12 @@ export function initTracer(serviceName: string, environmentName: string, url: st
     );
     logs.setGlobalLoggerProvider(loggerProvider);
     ['SIGINT', 'SIGTERM'].forEach((signal) => {
-      process.on(signal, () => loggerProvider.shutdown().catch(console.error));
+      process.on(signal, () =>
+        loggerProvider
+          .shutdown()
+          .catch(console.error)
+          .finally(() => process.exit(0))
+      );
     });
 
     registerInstrumentations({
@@ -108,8 +113,11 @@ export function initTracer(serviceName: string, environmentName: string, url: st
     });
 
     ['SIGINT', 'SIGTERM'].forEach((signal) => {
-      process.on(signal, () => provider.shutdown().catch(console.error));
-      process.on(signal, () => exporter.shutdown().catch(console.error));
+      process.on(signal, () => {
+        Promise.all([provider.shutdown().catch(console.error), exporter.shutdown().catch(console.error)]).finally(() =>
+          process.exit(0)
+        );
+      });
     });
 
     tracers.set(serviceName, {

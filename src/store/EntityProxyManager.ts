@@ -1,7 +1,7 @@
 import { ProxyStateTree } from 'proxy-state-tree';
 import { StateManager } from './StateManager';
 import { SchemaManager, Relationship } from './SchemaManager';
-import { getEntityName } from '../utils';
+import { getEntityName, limitRecursion } from '../utils';
 import { EntityAction, EntityStrategy, updateEntityPartial, deleteEntity, updateEntity } from './actions';
 
 /**
@@ -635,7 +635,9 @@ export class EntityProxyManager {
     actions.push(
       updateEntityPartial(
         {
-          [typeof idAttribute === 'function' ? idAttribute({}) : idAttribute]: entityId,
+          [typeof SchemaManager.schemas[entityName].idAttribute === 'function'
+            ? SchemaManager.schemas[entityName].idAttribute({})
+            : SchemaManager.schemas[entityName].idAttribute]: entityId,
           [fieldName]: relation ? processedValue : JSON.parse(JSON.stringify(processedValue))
         },
         entityName,
@@ -645,20 +647,26 @@ export class EntityProxyManager {
 
     // Add deleteEntity actions for removed entities if they're no longer referenced
     if (removedEntityIds.length > 0 && relation) {
-      const relatedEntityName = getEntityName(relation);
-      const idAttribute = SchemaManager.schemas[relatedEntityName].idAttribute;
+      const removedEntityName = getEntityName(relation);
 
-      removedEntityIds.forEach((entityId: string) => {
+      removedEntityIds.forEach((removedEntityId: string) => {
         if (
-          !stateManager.isEntityReferenced(relatedEntityName, entityId, {
+          !stateManager.isEntityReferenced(removedEntityName, removedEntityId, {
             entityName: entityName,
             fieldName: fieldName
           })
         ) {
           actions.push(
             deleteEntity(
-              { [typeof idAttribute === 'function' ? idAttribute(entityId) : idAttribute]: entityId },
-              relatedEntityName
+              limitRecursion(
+                removedEntityId,
+                removedEntityName,
+                stateManager.state,
+                stateManager,
+                new Map([[`${entityName}::${entityId}`, 0]]),
+                1
+              ),
+              removedEntityName
             )
           );
         }

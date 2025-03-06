@@ -346,13 +346,22 @@ export class StateManager extends EventEmitter {
    * @param entityName - Name of the entity type to check
    * @param entityId - ID of the entity to check
    * @param ignoreReference - Optional reference to ignore during the check
+   * @param checkedEntities - Set of already checked entities to prevent circular references
    * @returns Boolean indicating if the entity is referenced
    */
   public isEntityReferenced(
     entityName: string,
     entityId: string,
-    ignoreReference?: { entityName: string; fieldName: string }
+    ignoreReference?: { entityName: string; fieldName: string },
+    checkedEntities: Set<string> = new Set()
   ): boolean {
+    // Add current entity to checked set to prevent circular references
+    const entityKey = `${entityName}:${entityId}`;
+    if (checkedEntities.has(entityKey)) {
+      return false;
+    }
+    checkedEntities.add(entityKey);
+
     const referenceMap = SchemaManager.relationshipMap[entityName]?._referencedBy;
     if (!referenceMap) return false;
 
@@ -374,12 +383,17 @@ export class StateManager extends EventEmitter {
         const entity = entities[id];
         if (!entity || entity[referencingEntity.fieldName] === undefined) return false;
 
-        if (referencingEntity.isMany) {
-          return (
-            Array.isArray(entity[referencingEntity.fieldName]) && entity[referencingEntity.fieldName].includes(entityId)
-          );
+        const hasReference = referencingEntity.isMany
+          ? Array.isArray(entity[referencingEntity.fieldName]) && entity[referencingEntity.fieldName].includes(entityId)
+          : entity[referencingEntity.fieldName] === entityId;
+
+        if (hasReference) {
+          // Check if the referencing entity itself is only referenced by entities we're already checking
+          // This handles the cascade deletion case
+          return this.isEntityReferenced(referencingEntityName, id, ignoreReference, checkedEntities);
         }
-        return entity[referencingEntity.fieldName] === entityId;
+
+        return false;
       });
     });
   }

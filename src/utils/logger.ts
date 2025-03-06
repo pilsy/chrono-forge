@@ -5,7 +5,7 @@ import type { Logger } from 'winston';
 
 const { NODE_ENV } = process.env;
 
-export const { LOG_LEVEL = NODE_ENV === 'development' ? 'debug' : 'warn' } = process.env;
+export const { LOG_LEVEL = NODE_ENV === 'production' ? 'info' : 'debug' } = process.env;
 
 const levels = {
   error: 0,

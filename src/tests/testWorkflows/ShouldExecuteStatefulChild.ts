@@ -35,6 +35,6 @@ export class ShouldExecuteStatefulChild extends StatefulWorkflow {
   // }
 
   async execute(params: any) {
-    console.log(`Execute`);
+    this.log.info(`Execute`);
   }
 }

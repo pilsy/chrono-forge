@@ -45,6 +45,7 @@ export interface TemporalOptions {
  * Temporal Decorator
  *
  * A class decorator that transforms a TypeScript class into a Temporal workflow function.
+ *
  * This decorator handles the registration, initialization, and lifecycle management of workflows
  * in the TemporalForge framework.
  *
@@ -56,7 +57,7 @@ export interface TemporalOptions {
  * - Supports dynamic class extension for non-Workflow classes
  *
  * The decorator performs the following operations:
- * 1. Ensures the class extends the Workflow base class (creates dynamic extension if needed)
+ * 1. Ensures the class extends the Workflow base class
  * 2. Sets up workflow metadata and configuration
  * 3. Binds event handlers, hooks, and signals
  * 4. Manages workflow execution flow and error handling
@@ -70,13 +71,9 @@ export function Temporal(options?: TemporalOptions) {
     const workflowName: string = optionalName ?? constructor.name;
 
     if (!(constructor.prototype instanceof Workflow)) {
-      abstract class DynamicTemporal extends Workflow {
-        constructor(params: any, options: TemporalOptions = {}) {
-          super(params, options);
-          Object.assign(this, new constructor(params, options));
-        }
-      }
-      constructor = DynamicTemporal;
+      throw new Error(
+        `Workflows must extend the Workflow class, any class that extends Workflow is supported. ${constructor.name} does not extend Workflow.`
+      );
     }
 
     const construct = new Function(

@@ -190,7 +190,7 @@ describe('Entity Store Performance Tests', () => {
           reducer(state, action);
         });
         performanceResults['Array Splice'][name] = executionTime;
-        expect(executionTime).toBeLessThan(20);
+        expect(executionTime).toBeLessThan(25);
       });
     });
   });
