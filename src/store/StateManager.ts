@@ -397,6 +397,40 @@ export class StateManager extends EventEmitter {
       });
     });
   }
+
+  /**
+   * Cleans up this StateManager instance by clearing cache, state, and removing event listeners.
+   *
+   * This method should be called when a workflow completes or during continueAsNew
+   * to ensure that state data doesn't persist between workflow executions in the
+   * shared VM environment.
+   *
+   * ## Cleanup actions:
+   * - Clears the LRU cache
+   * - Resets the state to an empty object
+   * - Removes all event listeners from this instance
+   * - Clears the action queue
+   */
+  public cleanup(): void {
+    this.removeAllListeners();
+
+    this._state = {};
+    this._processing = false;
+    while (this._queue.length > 0) {
+      this._queue.dequeue();
+    }
+
+    this.cache.clear();
+    delete StateManager.instances[this.instanceId];
+  }
+
+  /**
+   * Clears the StateManager singleton instances map.
+   * This is useful for full system resets or testing.
+   */
+  public static clearInstances(): void {
+    this.instances = {};
+  }
 }
 
 export default StateManager;

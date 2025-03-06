@@ -95,7 +95,21 @@ export function Temporal(options?: TemporalOptions) {
             ? 'executeWorkflow'
             : 'execute';
 
-          return await instance[executionMethod](...args);
+          let result;
+          try {
+            result = await instance[executionMethod](...args);
+          } finally {
+            // Ensure cleanup happens in all cases: success, error, or continueAsNew
+            if (typeof instance.cleanup === 'function') {
+              try {
+                instance.cleanup();
+              } catch (cleanupError) {
+                workflow.log.error('Error during workflow cleanup: ' + 
+                  (cleanupError instanceof Error ? cleanupError.message : String(cleanupError)));
+              }
+            }
+          }
+          return result;
         } catch (e) {
           if (workflow.isCancellation(e)) {
             await workflow.CancellationScope.nonCancellable(async () => {
@@ -552,6 +566,33 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
 
     return listeners.length > 0;
+  }
+
+  /**
+   * Cleans up event listeners and resets binding flags to prevent memory leaks in the shared V8 VM.
+   *
+   * This method should be called before a workflow completes or during continueAsNew
+   * to ensure that event listeners don't persist between workflow executions in the
+   * shared VM environment.
+   *
+   * ## Cleanup actions:
+   * - Removes all event listeners from the workflow instance
+   * - Resets all binding flags (_eventsBound, _hooksBound, _signalsBound, etc.)
+   *
+   * @returns {void}
+   */
+  protected cleanup(): void {
+    try {
+      this.removeAllListeners();
+
+      this._eventsBound = false;
+      this._hooksBound = false;
+      this._signalsBound = false;
+      this._queriesBound = false;
+      this._propertiesBound = false;
+    } catch (error) {
+      this.log.error(`Error cleaning up event listeners: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   /**

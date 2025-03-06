@@ -25,7 +25,6 @@ import {
   PROPERTY_METADATA_KEY,
   ActionOptions,
   On,
-  After,
   EVENTS_METADATA_KEY
 } from '../decorators';
 import { EnhancedEntity, SchemaManager } from '../store/SchemaManager';
@@ -2980,5 +2979,39 @@ export abstract class StatefulWorkflow<
       return Promise.reject(!(error instanceof Error) ? new Error(error) : error);
     }
     return result !== undefined ? result : this.data;
+  }
+
+  /**
+   * Cleans up event listeners to prevent memory leaks in the shared V8 VM.
+   *
+   * This method should be called before a workflow completes or during continueAsNew
+   * to ensure that event listeners don't persist between workflow executions in the
+   * shared VM environment.
+   *
+   * ## Cleanup actions:
+   * - Removes the stateChanged listener from the stateManager
+   * - Cleans up the StateManager (cache, state, event listeners)
+   * - Calls the parent class cleanup method
+   * - Resets StatefulWorkflow-specific flags
+   *
+   * @returns {void}
+   */
+  protected cleanup(): void {
+    try {
+      this._actionsBound = false;
+
+      if (this.stateManager) {
+        this.stateManager.removeListener('stateChange', this.stateChanged.bind(this));
+        this.stateManager.cleanup();
+      }
+
+      this.selectorPatternCache.clear();
+      this.subscriptionHandles.clear();
+      this.ancestorHandles.clear();
+
+      super.cleanup();
+    } catch (error) {
+      this.log.error(`Error cleaning up event listeners: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 }
