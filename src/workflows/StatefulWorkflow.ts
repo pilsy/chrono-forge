@@ -365,6 +365,12 @@ export type StateEventListener = {
   origins: string[];
 };
 
+export type LoadDataResult<T> = {
+  data?: T;
+  updates?: EntitiesState;
+  strategy?: EntityStrategy;
+};
+
 export abstract class StatefulWorkflow<
   P extends StatefulWorkflowParams = StatefulWorkflowParams,
   O extends StatefulWorkflowOptions = StatefulWorkflowOptions
@@ -503,6 +509,14 @@ export abstract class StatefulWorkflow<
   protected conditionTimeout: Duration | undefined = undefined;
 
   /**
+   * Optional method that can be implemented by extending classes to load data from external sources.
+   * This method is called automatically when pendingUpdate is true.
+   *
+   * @returns A promise that resolves to an object containing data and/or updates to be applied to the state
+   */
+  protected loadData?(): Promise<LoadDataResult<P['data']>>;
+
+  /**
    * Determines whether data should be loaded in the workflow based on internal state.
    *
    * This method checks if the `loadData` function exists and if there is a pending update.
@@ -600,13 +614,13 @@ export abstract class StatefulWorkflow<
     return this.state;
   }
 
+  get state() {
+    return this.stateManager.state;
+  }
+
   @Signal('state')
   async setState(state: EntitiesState) {
     await this.stateManager.setState(state);
-  }
-
-  get state() {
-    return this.stateManager.state;
   }
 
   /**
@@ -2696,9 +2710,7 @@ export abstract class StatefulWorkflow<
    * - Uses type assertions to handle TypeScript limitations
    */
   protected async loadDataAndEnqueue(): Promise<void> {
-    // @ts-ignore
     if (typeof this?.loadData === 'function') {
-      // @ts-ignore
       let { data, updates, strategy = '$merge' } = await this.loadData();
       if (!data && !updates) {
         this.log.debug(`No data or updates returned from loadData(), skipping state change...`);
@@ -2708,7 +2720,9 @@ export abstract class StatefulWorkflow<
         updates = normalizeEntities(data, this.entityName);
       }
 
-      await this.stateManager.dispatch(updateNormalizedEntities(updates, strategy), false);
+      if (updates) {
+        await this.stateManager.dispatch(updateNormalizedEntities(updates, strategy), false);
+      }
     }
   }
 
