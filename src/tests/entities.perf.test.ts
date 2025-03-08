@@ -215,7 +215,7 @@ describe('Entity Store Performance Tests', () => {
 
           // Perform multiple operations with small delays
           let state = initialState;
-          for (let i = 0; i < 10; i++) {
+          for (let i = 0; i < size / 10; i++) {
             const action = updateEntityPartial({ id: String(i), name: `Updated ${i}` }, 'User'); // @ts-ignore
             state = reducer(state, action);
             // Small delay to allow GC to stabilize
