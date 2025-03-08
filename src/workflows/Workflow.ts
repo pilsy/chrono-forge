@@ -393,6 +393,13 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   protected abstract execute(...args: unknown[]): Promise<unknown>;
 
   /**
+   * Optional method that can be implemented by subclasses to define custom continue-as-new behavior.
+   * If implemented, this method will be called when the workflow reaches its maximum iterations.
+   * @returns A promise that resolves when the continue-as-new process is complete.
+   */
+  protected onContinue?(): Promise<void>;
+
+  /**
    * Core method to manage workflow execution and its lifecycle.
    *
    * This method implements the main execution loop of the workflow, handling:
@@ -473,18 +480,34 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    * by waiting for all handlers to finish and then calling the appropriate continueAsNew method.
    *
    * @returns {Promise<void>} Resolves when the continueAsNew process is complete.
-   * @throws {Error} If no method decorated with @ContinueAsNew is found.
+   * @throws {Error} If no onContinue method is found.
    */
   protected async handleMaxIterations(): Promise<void> {
     await workflow.condition(() => workflow.allHandlersFinished(), '30 seconds');
 
-    const continueAsNewMethod = (this as any)._continueAsNewMethod;
-    if (continueAsNewMethod && typeof (this as any)[continueAsNewMethod] === 'function') {
-      return await (this as any)[continueAsNewMethod]();
+    const continueFn = workflow.makeContinueAsNewFunc({
+      workflowType: String(this.options.workflowType),
+      memo: workflow.workflowInfo().memo,
+      searchAttributes: workflow.workflowInfo().searchAttributes
+    });
+
+    // Default parameters for continue-as-new
+    const defaultParams = {
+      ...Object.keys(this.params).reduce(
+        (params, key: string) => ({
+          ...params, // @ts-ignore
+          [key]: this[key]
+        }),
+        {}
+      )
+    };
+
+    // If onContinue is defined, call it to get custom parameters, otherwise throw error
+    if (typeof this.onContinue === 'function') {
+      const customParams = await this.onContinue();
+      await continueFn(customParams || defaultParams);
     } else {
-      throw new Error(
-        `No method decorated with @ContinueAsNew found in ${this.constructor.name}. Cannot continue as new.`
-      );
+      throw new Error(`No onContinue method found in ${this.constructor.name}. Cannot continue as new.`);
     }
   }
 

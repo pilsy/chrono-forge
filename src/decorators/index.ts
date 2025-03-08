@@ -2,7 +2,6 @@ export * from './Action';
 export * from './After';
 export * from './Before';
 export * from './Condition';
-export * from './ContinueAsNew';
 export * from './Debounce';
 export * from './Hook';
 export * from './On';

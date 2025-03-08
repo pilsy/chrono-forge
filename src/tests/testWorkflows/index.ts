@@ -13,3 +13,5 @@ export { ShouldCreateCustomPropertyAccessors } from './ShouldCreateCustomPropert
 export { ShouldDisableSetForProperty } from './ShouldDisableSetForProperty';
 export { ShouldExecuteStatefulChild } from './ShouldExecuteStatefulChild';
 export { ShouldSignalWithStartAndArguments } from './ShouldSignalWithStartAndArguments';
+export { ShouldImplementOnContinue } from './ShouldImplementOnContinue';
+export { ShouldImplementStatefulOnContinue } from './ShouldImplementStatefulOnContinue';
