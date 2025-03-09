@@ -120,10 +120,92 @@ export class StateManager extends EventEmitter {
     const differences = detailedDiff(previousState, newState);
     if (!isEmpty(differences.added) || !isEmpty(differences.updated) || !isEmpty(differences.deleted)) {
       this._state = newState;
+
       this.cache.clear();
+      // this.invalidateChangedEntities(differences);
+
       EntityProxyManager.clearCache();
+      // this.invalidateEntityProxies(differences);
 
       await this.emitStateChangeEvents(differences, previousState, newState, Array.from(origins));
+    }
+  }
+
+  /**
+   * Invalidates cache entries for entities that have been added, updated, or deleted
+   * @param differences - The detailed diff of state changes
+   */
+  private invalidateChangedEntities(differences: DetailedDiff): void {
+    const changedPaths = ['added', 'updated', 'deleted'] as const;
+
+    for (const changeType of changedPaths) {
+      const entities = (differences as EntitiesStateDetailedDiff)[changeType];
+      if (!entities || typeof entities !== 'object') continue;
+
+      for (const [entityName, entityChanges] of Object.entries(entities)) {
+        if (!entityChanges || typeof entityChanges !== 'object') continue;
+
+        for (const entityId of Object.keys(entityChanges)) {
+          // Delete the specific entity from cache
+          const cacheKey = `${entityName}::${entityId}`;
+          this.cache.delete(cacheKey);
+
+          // Also invalidate any entities that might reference this entity
+          this.invalidateReferencingEntities(entityName, entityId);
+        }
+      }
+    }
+  }
+
+  /**
+   * Invalidates cache entries for entities that reference the given entity
+   * @param entityName - The name of the entity that changed
+   * @param entityId - The ID of the entity that changed
+   */
+  private invalidateReferencingEntities(entityName: string, entityId: string): void {
+    const referenceMap = SchemaManager.relationshipMap[entityName]?._referencedBy;
+    if (!referenceMap) return;
+
+    Object.entries(referenceMap).forEach(([referencingEntityName, referencingEntity]) => {
+      const entities = this.state[referencingEntityName];
+      if (!entities) return;
+
+      // Find any entity that references our target entity and invalidate it
+      Object.keys(entities).forEach((id) => {
+        const entity = entities[id];
+        if (!entity || entity[referencingEntity.fieldName] === undefined) return;
+
+        const hasReference = referencingEntity.isMany
+          ? Array.isArray(entity[referencingEntity.fieldName]) && entity[referencingEntity.fieldName].includes(entityId)
+          : entity[referencingEntity.fieldName] === entityId;
+
+        if (hasReference) {
+          const cacheKey = `${referencingEntityName}::${id}`;
+          this.cache.delete(cacheKey);
+        }
+      });
+    });
+  }
+
+  /**
+   * Invalidates EntityProxyManager cache entries for changed entities
+   * @param differences - The detailed diff of state changes
+   */
+  private invalidateEntityProxies(differences: DetailedDiff): void {
+    const changedPaths = ['added', 'updated', 'deleted'] as const;
+
+    for (const changeType of changedPaths) {
+      const entities = (differences as EntitiesStateDetailedDiff)[changeType];
+      if (!entities || typeof entities !== 'object') continue;
+
+      for (const [entityName, entityChanges] of Object.entries(entities)) {
+        if (!entityChanges || typeof entityChanges !== 'object') continue;
+
+        for (const entityId of Object.keys(entityChanges)) {
+          // Remove the entity proxy from EntityProxyManager cache
+          EntityProxyManager.removeFromCache(entityName, entityId);
+        }
+      }
     }
   }
 
