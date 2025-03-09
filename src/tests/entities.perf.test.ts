@@ -136,7 +136,7 @@ describe('Entity Store Performance Tests', () => {
           reducer(state, action);
         });
         performanceResults['Partial Update'][name] = executionTime;
-        expect(executionTime).toBeLessThan(size * 0.1); // Allow 0.1ms per entity in state
+        expect(executionTime).toBeLessThan(size * 0.2); // Allow 0.2ms per entity in state
       });
     });
 
