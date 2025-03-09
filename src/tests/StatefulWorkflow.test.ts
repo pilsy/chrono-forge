@@ -107,7 +107,11 @@ describe('StatefulWorkflow', () => {
   describe('ContinueAsNew', () => {
     it('Should continue as new', async () => {
       const data = { id: uuid4() };
-      const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
+      const handle = await execute(workflows.ShouldImplementStatefulOnContinue, {
+        id: data.id,
+        entityName: 'User',
+        data
+      });
       await sleep();
 
       const state = await handle.query('state');
@@ -1021,47 +1025,6 @@ describe('StatefulWorkflow', () => {
       const childHandle = await client.workflow.getHandle(`Listing-${listingId1}`);
       const { status } = await childHandle.describe();
       expect(['CANCELLED', 'TERMINATED']).toContain(status.name);
-    });
-  });
-
-  describe('onContinue Method', () => {
-    it('Should use onContinue method when continuing as new', async () => {
-      const userId = uuid4();
-      const initialData = {
-        name: 'Test User',
-        age: 30,
-        counter: 0
-      };
-
-      // Start the workflow
-      const handle = await execute(workflows.ShouldImplementStatefulOnContinue, {
-        id: userId,
-        entityName: 'User',
-        data: initialData,
-        status: 'active'
-      });
-
-      await sleep(1000);
-
-      // Check initial state
-      const initialState = await handle.query('state');
-      expect(initialState).toEqual(normalizeEntities(initialData, SchemaManager.getInstance().getSchema('User')));
-
-      // Force continue-as-new
-      await handle.signal('shouldContinueAsNew', true);
-      await sleep(2500);
-
-      // Get the new workflow handle after continue-as-new
-      const newHandle = await client.workflow.getHandle(userId);
-
-      // Check that onContinue logic was applied (counter should be incremented by 100)
-      const finalState = await newHandle.query('state');
-      const userData = finalState.User[userId];
-
-      expect(userData).toBeDefined();
-      expect(userData.counter).toBeGreaterThan(100); // Should be at least 101 (1 + 100)
-      expect(userData.name).toBe('Test User');
-      expect(userData.age).toBe(30);
     });
   });
 });
