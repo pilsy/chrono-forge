@@ -1,5 +1,45 @@
-.sonarlint
-coverage
-dist
-keys
+# Dependencies
 node_modules
+.pnpm-store
+
+# Build outputs
+dist
+build
+out
+.next
+.nuxt
+.output
+
+# Coverage reports
+coverage
+.nyc_output
+
+# Cache directories
+.cache
+.parcel-cache
+.eslintcache
+.npm
+.yarn
+
+# Editor directories
+.vscode
+.idea
+.cursor
+vscode*
+
+# Test data
+src/tests/testData
+
+# Config files that don't need formatting
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+tsconfig*.json
+*.min.js
+*.min.css
+
+# Other files to ignore
+.git
+.DS_Store
+.env*
+*.log
