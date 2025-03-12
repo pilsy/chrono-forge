@@ -366,7 +366,7 @@ export type StateEventListener = {
 };
 
 export type LoadDataResult<T> = {
-  data?: T;
+  data?: Partial<T>;
   updates?: EntitiesState;
   strategy?: EntityStrategy;
 };
