@@ -83,26 +83,26 @@ export const handleUpdateEntities = (
   Object.entries(entities).reduce<IndexableSpec<EntitiesState>>((acc, [entityName, entityGroup]) => {
     switch (strategy) {
       case '$replace':
-        acc[entityName] = applyReplaceStrategy(entityGroup);
+        acc[entityName] = replaceStrategy(entityGroup);
         break;
       case '$set':
-        acc[entityName] = applySetStrategy(entityGroup, state[entityName]);
+        acc[entityName] = setStrategy(entityGroup, state[entityName]);
         break;
       case '$merge':
-        acc[entityName] = applyMergeStrategy(state, entityName, entityGroup);
+        acc[entityName] = mergeStrategy(state, entityName, entityGroup);
         break;
       case '$unset':
-        acc[entityName] = applyUnsetStrategy(entityGroup);
+        acc[entityName] = unsetStrategy(entityGroup);
         break;
       case '$push':
       case '$unshift':
-        acc[entityName] = applyArrayOperation(state[entityName], entityGroup, strategy);
+        acc[entityName] = arrayOperation(state[entityName], entityGroup, strategy);
         break;
       case '$splice':
-        acc[entityName] = applySpliceStrategy(entityGroup);
+        acc[entityName] = spliceStrategy(entityGroup);
         break;
       case '$apply':
-        acc[entityName] = applyApplyStrategy(entityGroup);
+        acc[entityName] = applyStrategy(entityGroup);
         break;
       default:
         throw new Error(`Invalid strategy: ${strategy}`);
@@ -137,7 +137,7 @@ export const handleDeleteEntities = (state: EntitiesState, entities: EntitiesSta
  * @param {EntityState} entityGroup - Group of entities to replace
  * @returns {Spec<EntitiesState>} An immutability-helper spec for the replace operation
  */
-const applyReplaceStrategy = (entityGroup: EntityState): Spec<EntitiesState> =>
+const replaceStrategy = (entityGroup: EntityState): Spec<EntitiesState> =>
   Object.entries(entityGroup).reduce<IndexableSpec<EntityState>>((acc, [entityId, entityData]) => {
     acc[entityId] = { $set: entityData };
     return acc;
@@ -150,7 +150,7 @@ const applyReplaceStrategy = (entityGroup: EntityState): Spec<EntitiesState> =>
  * @param {EntityState} [stateArray] - Current state of the entity group
  * @returns {Spec<EntitiesState>} An immutability-helper spec for the set operation
  */
-const applySetStrategy = (entityGroup: EntityState, stateArray?: EntityState): Spec<EntitiesState> =>
+const setStrategy = (entityGroup: EntityState, stateArray?: EntityState): Spec<EntitiesState> =>
   Object.entries(entityGroup).reduce<IndexableSpec<EntityState>>((acc, [entityId, entityData]) => {
     acc[entityId] = acc[entityId] || {};
 
@@ -173,11 +173,7 @@ const applySetStrategy = (entityGroup: EntityState, stateArray?: EntityState): S
  * @param {EntityState} entityGroup - Group of entities to merge
  * @returns {Spec<EntitiesState>} An immutability-helper spec for the merge operation
  */
-const applyMergeStrategy = (
-  state: EntitiesState,
-  entityName: string,
-  entityGroup: EntityState
-): Spec<EntitiesState> => ({
+const mergeStrategy = (state: EntitiesState, entityName: string, entityGroup: EntityState): Spec<EntitiesState> => ({
   ...(createUpdateStatement(state, { [entityName]: entityGroup }) as IndexableSpec<EntitiesState>)[entityName]
 });
 
@@ -187,7 +183,7 @@ const applyMergeStrategy = (
  * @param {EntityState} entityGroup - Group of entities with fields to unset
  * @returns {Spec<EntitiesState>} An immutability-helper spec for the unset operation
  */
-const applyUnsetStrategy = (entityGroup: EntityState): Spec<EntitiesState> => {
+const unsetStrategy = (entityGroup: EntityState): Spec<EntitiesState> => {
   return Object.entries(entityGroup).reduce<IndexableSpec<EntityState>>((acc, [entityId, entityData]) => {
     acc[entityId] = acc[entityId] || {};
     acc[entityId].$unset = acc[entityId].$unset || [];
@@ -211,7 +207,7 @@ const applyUnsetStrategy = (entityGroup: EntityState): Spec<EntitiesState> => {
  * @returns {Spec<EntitiesState>} An immutability-helper spec for the array operation
  * @throws {Error} If the target field is not an array
  */
-const applyArrayOperation = (
+const arrayOperation = (
   entityState: EntityState,
   entityGroup: EntityState,
   operation: EntityStrategy
@@ -240,7 +236,7 @@ const applyArrayOperation = (
  * @param {EntityState} entityGroup - Group of entities with fields to splice
  * @returns {Spec<EntitiesState>} An immutability-helper spec for the splice operation
  */
-const applySpliceStrategy = (entityGroup: EntityState): { [key: string]: { [key: string]: { $splice: any[] } } } =>
+const spliceStrategy = (entityGroup: EntityState): { [key: string]: { [key: string]: { $splice: any[] } } } =>
   Object.fromEntries(
     Object.entries(entityGroup).map(([entityId, entity]) => [
       entityId,
@@ -263,7 +259,7 @@ const applySpliceStrategy = (entityGroup: EntityState): { [key: string]: { [key:
  * @param {EntityState} entityGroup - Group of entities with fields to transform
  * @returns {Spec<EntitiesState>} An immutability-helper spec for the apply operation
  */
-const applyApplyStrategy = (entityGroup: EntityState): Spec<EntitiesState> =>
+const applyStrategy = (entityGroup: EntityState): Spec<EntitiesState> =>
   Object.fromEntries(
     Object.entries(entityGroup).map(([entityId, entity]) => [
       entityId,

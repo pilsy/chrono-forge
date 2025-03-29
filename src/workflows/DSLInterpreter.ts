@@ -7,24 +7,23 @@ export type DSL = {
 
 type Sequence = {
   elements: Statement[];
-  level?: number; // Optional level indicating the height of execution
+  level?: number;
 };
 
 type ActivityInvocation = {
   name: string;
   arguments?: string[];
   result?: string;
-  group?: number; // Optional group indicating the spacing of this activity in a level
+  group?: number;
 };
 
 type Parallel = {
   branches: Statement[];
-  level?: number; // Optional level indicating the height of execution
+  level?: number;
 };
 
 type Statement = { activity: ActivityInvocation } | { sequence: Sequence } | { parallel: Parallel };
 
-// Set up proxy activities
 const acts = proxyActivities<Record<string, (...args: string[]) => Promise<string | undefined>>>({
   startToCloseTimeout: '1 minute'
 });
@@ -35,12 +34,31 @@ export async function DSLInterpreter(dsl: DSL): Promise<unknown> {
   return await executeGraph(dependencyGraph, bindings);
 }
 
-// Function to build a dependency graph based on the DSL structure
 function buildDependencyGraph(
   root: Statement,
-  bindings: Record<string, string>
+  bindings: Record<string, string | undefined>
 ): Map<string, { dependencies: string[]; execute: () => Promise<void> }> {
   const graph = new Map<string, { dependencies: string[]; execute: () => Promise<void> }>();
+
+  const visited = new Set<string>();
+  const stack = new Set<string>();
+
+  const detectCycle = (nodeName: string): boolean => {
+    if (stack.has(nodeName)) return true;
+    if (visited.has(nodeName)) return false;
+
+    visited.add(nodeName);
+    stack.add(nodeName);
+
+    const node = graph.get(nodeName);
+    if (node) {
+      for (const dep of node.dependencies) {
+        if (detectCycle(dep)) return true;
+      }
+    }
+    stack.delete(nodeName);
+    return false;
+  };
 
   const addNode = (name: string, dependencies: string[], execute: () => Promise<void>) => {
     graph.set(name, { dependencies, execute });
@@ -49,12 +67,19 @@ function buildDependencyGraph(
   const processStatement = (statement: Statement) => {
     if ('activity' in statement) {
       const { name, arguments: args = [], result } = statement.activity;
-      const dependencies = args.filter((arg) => graph.has(arg)); // List of dependencies
+      const dependencies = args.filter((arg) => graph.has(arg) || bindings[arg] !== undefined);
+
       addNode(result || name, dependencies, async () => {
-        let resolvedArgs = args.map((arg) => graph.get(arg)?.execute() || Promise.resolve(arg));
-        // @ts-expect-error stfu
-        const result = await acts[name](...(await Promise.all(resolvedArgs)));
-        if (result) bindings[result] = result;
+        let resolvedArgs = args.map((arg) => graph.get(arg)?.execute() || Promise.resolve(bindings[arg]));
+
+        // @ts-ignore
+        const output = await acts[name](...(await Promise.all(resolvedArgs)));
+
+        if (result && output !== undefined) {
+          bindings[result] = output;
+          // @ts-ignore
+          addNode(result, [], async () => Promise.resolve(output));
+        }
       });
     } else if ('sequence' in statement) {
       statement.sequence.elements.forEach(processStatement);
@@ -64,33 +89,42 @@ function buildDependencyGraph(
   };
 
   processStatement(root);
+
+  for (const node of graph.keys()) {
+    if (detectCycle(node)) {
+      throw new Error(`Circular dependency detected at node ${node}`);
+    }
+  }
+
   return graph;
 }
 
-// Function to execute the dependency graph
 async function executeGraph(
   graph: Map<string, { dependencies: string[]; execute: () => Promise<void> }>,
   bindings: Record<string, string | undefined>
 ): Promise<void> {
   const executed = new Set<string>();
+  const pending = new Map(graph);
 
-  async function executeNode(nodeName: string): Promise<void> {
-    if (executed.has(nodeName)) return; // Skip if already executed
-    const node = graph.get(nodeName);
+  async function tryExecuteNode(nodeName: string) {
+    if (executed.has(nodeName)) return;
+    const node = pending.get(nodeName);
     if (!node) return;
 
-    // Ensure dependencies are executed first
-    await Promise.all(node.dependencies.map(executeNode));
+    const dependenciesResolved = node.dependencies.every((dep) => executed.has(dep) || bindings[dep] !== undefined);
 
-    // Execute the node itself
-    await node.execute();
-    executed.add(nodeName);
+    if (dependenciesResolved) {
+      await node.execute();
+      executed.add(nodeName);
+      pending.delete(nodeName);
+
+      for (const nextNode of pending.keys()) {
+        await tryExecuteNode(nextNode);
+      }
+    }
   }
 
-  // Execute all nodes in the graph that have no dependencies
-  for (const [nodeName, node] of graph.entries()) {
-    if (node.dependencies.length === 0) {
-      await executeNode(nodeName);
-    }
+  for (const nodeName of graph.keys()) {
+    await tryExecuteNode(nodeName);
   }
 }
