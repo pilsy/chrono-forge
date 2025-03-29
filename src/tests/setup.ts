@@ -69,7 +69,9 @@ export const setup = async () => {
       connection: global.nativeConnection,
       taskQueue: 'test',
       activities: {
-        makeHTTPRequest: async () => '99'
+        makeHTTPRequest: jest.fn().mockResolvedValue('http_response_data'),
+        formatData: jest.fn().mockImplementation((data) => Promise.resolve(`formatted_${data}`)),
+        processResult: jest.fn().mockImplementation((data) => Promise.resolve(`processed_${data}`))
       },
       workflowsPath: path.resolve(__dirname, './testWorkflows'),
       // debugMode: true,
