@@ -1,34 +1,17 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 import { DSLInterpreter, DSL } from '../workflows/DSLInterpreter';
 
-// Mock the @temporalio/workflow module first
-jest.mock('@temporalio/workflow', () => {
-  // Create mock activities inline within the mock
-  const mockActs = {
-    // @ts-ignore
-    makeHTTPRequest: jest.fn().mockResolvedValue('httpResult'), // @ts-ignore
-    formatData: jest.fn().mockResolvedValue('formattedData'), // @ts-ignore
-    processResult: jest.fn().mockResolvedValue('processedResult'), // @ts-ignore
-    slowOperation: jest.fn().mockResolvedValue('slowResult'), // @ts-ignore
-    parallelTask1: jest.fn().mockResolvedValue('parallelResult1'), // @ts-ignore
-    parallelTask2: jest.fn().mockResolvedValue('parallelResult2'), // @ts-ignore
-    combineResults: jest.fn().mockResolvedValue('combinedResult'), // @ts-ignore
-    complexOperation: jest.fn().mockResolvedValue('complexResult')
-  };
-
-  return {
-    proxyActivities: jest.fn(() => mockActs)
-  };
-});
-
-// Import the mocked functions for testing
-// @ts-ignore
-const { proxyActivities } = jest.requireMock('@temporalio/workflow');
-const mockActivities = proxyActivities();
+// Mock the @temporalio/workflow module
+jest.mock('@temporalio/workflow', () => ({
+  proxyActivities: jest.fn(() => global.activities)
+}));
 
 describe('DSLInterpreter', () => {
   beforeEach(() => {
-    // Reset mocks before each test
+    // Reset all mocks before each test
     jest.clearAllMocks();
   });
 
@@ -44,10 +27,11 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl);
+    // Use the global.activities directly as injected activities
+    await DSLInterpreter(dsl, global.activities);
 
     // Verify the activity was called
-    expect(mockActivities.makeHTTPRequest).toHaveBeenCalledTimes(1);
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
   });
 
   it('should execute a sequence of activities in order', async () => {
@@ -82,14 +66,14 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl);
+    await DSLInterpreter(dsl, global.activities);
 
     // Verify the activities were called in order
-    expect(mockActivities.makeHTTPRequest).toHaveBeenCalledTimes(1);
-    expect(mockActivities.formatData).toHaveBeenCalledTimes(1);
-    expect(mockActivities.formatData).toHaveBeenCalledWith('httpResult');
-    expect(mockActivities.processResult).toHaveBeenCalledTimes(1);
-    expect(mockActivities.processResult).toHaveBeenCalledWith('formattedData');
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
+    expect(global.activities.formatData).toHaveBeenCalledTimes(1);
+    expect(global.activities.formatData).toHaveBeenCalledWith('httpResult');
+    expect(global.activities.processResult).toHaveBeenCalledTimes(1);
+    expect(global.activities.processResult).toHaveBeenCalledWith('formattedData');
   });
 
   it('should execute parallel activities', async () => {
@@ -116,11 +100,11 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl);
+    await DSLInterpreter(dsl, global.activities);
 
     // Verify both parallel activities were called
-    expect(mockActivities.parallelTask1).toHaveBeenCalledTimes(1);
-    expect(mockActivities.parallelTask2).toHaveBeenCalledTimes(1);
+    expect(global.activities.parallelTask1).toHaveBeenCalledTimes(1);
+    expect(global.activities.parallelTask2).toHaveBeenCalledTimes(1);
   });
 
   it('should handle complex nested structures with dependencies', async () => {
@@ -167,19 +151,19 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl);
+    await DSLInterpreter(dsl, global.activities);
 
     // Verify the sequence of calls
-    expect(mockActivities.makeHTTPRequest).toHaveBeenCalledTimes(1);
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
 
     // Both formatData and slowOperation should be called
-    expect(mockActivities.formatData).toHaveBeenCalledTimes(1);
-    expect(mockActivities.formatData).toHaveBeenCalledWith('httpResult');
-    expect(mockActivities.slowOperation).toHaveBeenCalledTimes(1);
+    expect(global.activities.formatData).toHaveBeenCalledTimes(1);
+    expect(global.activities.formatData).toHaveBeenCalledWith('httpResult');
+    expect(global.activities.slowOperation).toHaveBeenCalledTimes(1);
 
     // combineResults should be called with both results
-    expect(mockActivities.combineResults).toHaveBeenCalledTimes(1);
-    expect(mockActivities.combineResults).toHaveBeenCalledWith('formattedData', 'slowResult');
+    expect(global.activities.combineResults).toHaveBeenCalledTimes(1);
+    expect(global.activities.combineResults).toHaveBeenCalledWith('formattedData', 'slowResult');
   });
 
   it('should handle activity dependencies correctly', async () => {
@@ -216,12 +200,12 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl);
+    await DSLInterpreter(dsl, global.activities);
 
     // Verify the activities were called with correct arguments
-    expect(mockActivities.makeHTTPRequest).toHaveBeenCalledTimes(1);
-    expect(mockActivities.formatData).toHaveBeenCalledWith('httpResult');
-    expect(mockActivities.complexOperation).toHaveBeenCalledWith('formattedData', 'someConstant');
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
+    expect(global.activities.formatData).toHaveBeenCalledWith('httpResult');
+    expect(global.activities.complexOperation).toHaveBeenCalledWith('formattedData', 'someConstant');
   });
 
   it('should handle predefined variables in the DSL', async () => {
@@ -240,15 +224,15 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl);
+    await DSLInterpreter(dsl, global.activities);
 
     // Verify the activity was called with the predefined variable
-    expect(mockActivities.makeHTTPRequest).toHaveBeenCalledWith('secret-key');
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledWith('secret-key');
   });
 
   it('should update bindings with activity results', async () => {
     // Mock implementation that returns a specific value
-    mockActivities.makeHTTPRequest.mockResolvedValue('responseData');
+    global.activities.makeHTTPRequest.mockResolvedValue('responseData');
 
     // Create a DSL that stores the result
     const dsl: DSL = {
@@ -261,7 +245,7 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    const result = await DSLInterpreter(dsl);
+    const result = await DSLInterpreter(dsl, global.activities);
 
     // The variables should be updated with the activity result
     expect((dsl.variables as Record<string, string>)['apiResponse']).toBe('responseData');
@@ -269,10 +253,12 @@ describe('DSLInterpreter', () => {
 
   it('should handle a complex workflow with multiple dependencies', async () => {
     // Set up mocked responses
-    mockActivities.makeHTTPRequest.mockResolvedValue('api_data');
-    mockActivities.formatData.mockImplementation((data: string) => Promise.resolve(`formatted_${data}`));
-    mockActivities.processResult.mockImplementation((data: string) => Promise.resolve(`processed_${data}`));
-    mockActivities.combineResults.mockImplementation((a: string, b: string) => Promise.resolve(`combined_${a}_${b}`));
+    global.activities.makeHTTPRequest.mockResolvedValue('api_data');
+    global.activities.formatData.mockImplementation((data: string) => Promise.resolve(`formatted_${data}`));
+    global.activities.processResult.mockImplementation((data: string) => Promise.resolve(`processed_${data}`));
+    global.activities.combineResults.mockImplementation((a: string, b: string) =>
+      Promise.resolve(`combined_${a}_${b}`)
+    );
 
     // Create a complex DSL with multiple dependencies
     const dsl: DSL = {
@@ -324,17 +310,250 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl);
+    await DSLInterpreter(dsl, global.activities);
 
     // Verify the execution flow
-    expect(mockActivities.makeHTTPRequest).toHaveBeenCalledWith('startValue');
-    expect(mockActivities.formatData).toHaveBeenCalledWith('api_data');
-    expect(mockActivities.processResult).toHaveBeenCalledWith('api_data');
-    expect(mockActivities.combineResults).toHaveBeenCalledWith('formatted_api_data', 'processed_api_data');
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledWith('startValue');
+    expect(global.activities.formatData).toHaveBeenCalledWith('api_data');
+    expect(global.activities.processResult).toHaveBeenCalledWith('api_data');
+    expect(global.activities.combineResults).toHaveBeenCalledWith('formatted_api_data', 'processed_api_data');
 
     // Verify the final result
     expect((dsl.variables as Record<string, string>)['finalOutput']).toBe(
       'combined_formatted_api_data_processed_api_data'
     );
+  });
+
+  it('should handle empty variables object', async () => {
+    const dsl: DSL = {
+      variables: {},
+      root: {
+        activity: {
+          name: 'makeHTTPRequest',
+          result: 'httpResult'
+        }
+      }
+    };
+
+    await DSLInterpreter(dsl, global.activities);
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('should handle activities without result binding', async () => {
+    global.activities.makeHTTPRequest.mockResolvedValue('noBindingResult');
+
+    const dsl: DSL = {
+      variables: {},
+      root: {
+        activity: {
+          name: 'makeHTTPRequest'
+          // No result specified
+        }
+      }
+    };
+
+    await DSLInterpreter(dsl, global.activities);
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
+    // Verify we don't crash when no result binding is provided
+    global.activities.makeHTTPRequest.mockResolvedValue('httpResult');
+  });
+
+  it('should handle deeply nested sequences and parallels', async () => {
+    // Temporarily mock formatData to match the test expectations
+    const originalFormatData = global.activities.formatData;
+    global.activities.formatData.mockImplementation((input) => Promise.resolve('formattedData'));
+
+    const dsl: DSL = {
+      variables: {},
+      root: {
+        sequence: {
+          elements: [
+            {
+              activity: {
+                name: 'makeHTTPRequest',
+                result: 'httpResult'
+              }
+            },
+            {
+              parallel: {
+                branches: [
+                  {
+                    sequence: {
+                      elements: [
+                        {
+                          activity: {
+                            name: 'formatData',
+                            arguments: ['httpResult'],
+                            result: 'formattedData'
+                          }
+                        },
+                        {
+                          activity: {
+                            name: 'processResult',
+                            arguments: ['formattedData'],
+                            result: 'processedData'
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    activity: {
+                      name: 'slowOperation',
+                      result: 'slowResult'
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    };
+
+    await DSLInterpreter(dsl, global.activities);
+
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
+    expect(global.activities.formatData).toHaveBeenCalledWith('httpResult');
+    expect(global.activities.processResult).toHaveBeenCalledWith('formattedData');
+    expect(global.activities.slowOperation).toHaveBeenCalledTimes(1);
+
+    // Restore original mock
+    global.activities.formatData = originalFormatData;
+  });
+
+  it('should handle activity arguments that are static values', async () => {
+    const dsl: DSL = {
+      variables: {
+        staticArg1: 'value1',
+        staticArg2: 'value2'
+      },
+      root: {
+        activity: {
+          name: 'combineResults',
+          arguments: ['staticArg1', 'staticArg2'],
+          result: 'combinedStaticResult'
+        }
+      }
+    };
+
+    await DSLInterpreter(dsl, global.activities);
+
+    expect(global.activities.combineResults).toHaveBeenCalledWith('value1', 'value2');
+  });
+
+  it('should support conditional execution through activities', async () => {
+    global.activities.makeHTTPRequest.mockResolvedValue('true');
+
+    const dsl: DSL = {
+      variables: {},
+      root: {
+        sequence: {
+          elements: [
+            {
+              activity: {
+                name: 'makeHTTPRequest',
+                result: 'condition'
+              }
+            },
+            {
+              activity: {
+                name: 'conditionalTask',
+                arguments: ['condition'],
+                result: 'conditionalResult'
+              }
+            }
+          ]
+        }
+      }
+    };
+
+    await DSLInterpreter(dsl, global.activities);
+
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
+    expect(global.activities.conditionalTask).toHaveBeenCalledWith('true');
+    expect((dsl.variables as Record<string, string>)['conditionalResult']).toBe('condition met');
+  });
+
+  it('should handle activities with multiple outputs that feed into future activities', async () => {
+    global.activities.makeHTTPRequest.mockResolvedValue('request_data');
+    global.activities.formatData.mockResolvedValue('formatted_request_data');
+    global.activities.processResult.mockResolvedValue('processed_request_data');
+
+    const dsl: DSL = {
+      variables: {},
+      root: {
+        sequence: {
+          elements: [
+            {
+              activity: {
+                name: 'makeHTTPRequest',
+                result: 'httpData'
+              }
+            },
+            {
+              parallel: {
+                branches: [
+                  {
+                    activity: {
+                      name: 'formatData',
+                      arguments: ['httpData'],
+                      result: 'formattedData'
+                    }
+                  },
+                  {
+                    activity: {
+                      name: 'processResult',
+                      arguments: ['httpData'],
+                      result: 'processedData'
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              activity: {
+                name: 'combineResults',
+                arguments: ['formattedData', 'processedData'],
+                result: 'finalData'
+              }
+            }
+          ]
+        }
+      }
+    };
+
+    await DSLInterpreter(dsl, global.activities);
+
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
+    expect(global.activities.formatData).toHaveBeenCalledWith('request_data');
+    expect(global.activities.processResult).toHaveBeenCalledWith('request_data');
+    expect(global.activities.combineResults).toHaveBeenCalledWith('formatted_request_data', 'processed_request_data');
+  });
+
+  it('should throw an error if there is a circular dependency', async () => {
+    // Create a DSL that directly references itself
+    const dsl: DSL = {
+      variables: {},
+      root: {
+        activity: {
+          name: 'makeHTTPRequest',
+          arguments: ['circularRef'], // This creates a circular dependency
+          result: 'circularRef' // by using the same name for input and output
+        }
+      }
+    };
+
+    // Use a try-catch pattern to verify the error is thrown
+    let error;
+    try {
+      await DSLInterpreter(dsl, global.activities);
+    } catch (e) {
+      error = e;
+    }
+
+    // Assert that we got an error with the expected message
+    expect(error).toBeDefined();
+    expect(error.message).toContain('Circular dependency detected');
   });
 });
