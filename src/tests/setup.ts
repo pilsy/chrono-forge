@@ -29,8 +29,24 @@ declare global {
   var execute: (workflowName: string, params: any, timeout: number) => () => any;
   var workflowCoverage: WorkflowCoverage;
   var sleep: (duration?: number) => Promise<void>;
-  var mockActivities: { [key: string]: (...args: any[]) => Promise<any> };
+  var activities: { [key: string]: (...args: any[]) => Promise<any> };
 }
+
+global.activities = {
+  // @ts-ignore
+  makeHTTPRequest: jest.fn().mockResolvedValue('httpResult'), // @ts-ignore
+  formatData: jest.fn().mockResolvedValue('formattedData'), // @ts-ignore
+  processResult: jest.fn().mockResolvedValue('processedResult'), // @ts-ignore
+  slowOperation: jest.fn().mockResolvedValue('slowResult'), // @ts-ignore
+  parallelTask1: jest.fn().mockResolvedValue('parallelResult1'), // @ts-ignore
+  parallelTask2: jest.fn().mockResolvedValue('parallelResult2'), // @ts-ignore
+  combineResults: jest.fn().mockResolvedValue('combinedResult'), // @ts-ignore
+  complexOperation: jest.fn().mockResolvedValue('complexResult'), // @ts-ignore
+  errorProneActivity: jest.fn().mockRejectedValue(new Error('Activity failed')), // @ts-ignore
+  conditionalTask: jest
+    .fn()
+    .mockImplementation((condition) => Promise.resolve(condition === 'true' ? 'condition met' : 'condition not met'))
+};
 
 global.tracer = initTracer('temporal_worker', 'local', 'http://localhost:4317/v1/traces')?.tracer;
 global.exporter = getExporter('temporal_worker');
@@ -68,9 +84,7 @@ export const setup = async () => {
     global.workflowCoverage!.augmentWorkerOptions({
       connection: global.nativeConnection,
       taskQueue: 'test',
-      activities: {
-        makeHTTPRequest: async () => '99'
-      },
+      activities,
       workflowsPath: path.resolve(__dirname, './testWorkflows'),
       // debugMode: true,
       sinks: {

@@ -1,4 +1,6 @@
 import { proxyActivities } from '@temporalio/workflow';
+import { DirectedGraph } from 'eventemitter3-graphology';
+import { hasCycle, topologicalSort, topologicalGenerations, forEachTopologicalGeneration } from 'graphology-dag';
 
 export type DSL = {
   variables: Record<string, unknown>;
@@ -7,55 +9,85 @@ export type DSL = {
 
 type Sequence = {
   elements: Statement[];
-  level?: number; // Optional level indicating the height of execution
+  level?: number;
 };
 
 type ActivityInvocation = {
   name: string;
   arguments?: string[];
   result?: string;
-  group?: number; // Optional group indicating the spacing of this activity in a level
+  group?: number;
 };
 
 type Parallel = {
   branches: Statement[];
-  level?: number; // Optional level indicating the height of execution
+  level?: number;
 };
 
 type Statement = { activity: ActivityInvocation } | { sequence: Sequence } | { parallel: Parallel };
 
-// Set up proxy activities
-const acts = proxyActivities<Record<string, (...args: string[]) => Promise<string | undefined>>>({
-  startToCloseTimeout: '1 minute'
-});
+export async function DSLInterpreter(
+  dsl: DSL,
+  injectedActivities?: Record<string, (...args: string[]) => Promise<string | undefined>>
+): Promise<unknown> {
+  // Use injected activities if provided, otherwise use proxyActivities
+  const acts =
+    injectedActivities ||
+    proxyActivities<Record<string, (...args: string[]) => Promise<string | undefined>>>({
+      startToCloseTimeout: '1 minute'
+    });
 
-export async function DSLInterpreter(dsl: DSL): Promise<unknown> {
   const bindings = dsl.variables as Record<string, string>;
-  const dependencyGraph = buildDependencyGraph(dsl.root, bindings);
-  return await executeGraph(dependencyGraph, bindings);
+  const graph = buildDependencyGraph(dsl.root, bindings);
+
+  // You can choose which execution strategy to use
+  // return await executeGraphSequentially(graph, bindings);
+  return await executeGraphByGenerations(graph, bindings, acts);
 }
 
-// Function to build a dependency graph based on the DSL structure
-function buildDependencyGraph(
-  root: Statement,
-  bindings: Record<string, string>
-): Map<string, { dependencies: string[]; execute: () => Promise<void> }> {
-  const graph = new Map<string, { dependencies: string[]; execute: () => Promise<void> }>();
-
-  const addNode = (name: string, dependencies: string[], execute: () => Promise<void>) => {
-    graph.set(name, { dependencies, execute });
-  };
+function buildDependencyGraph(root: Statement, bindings: Record<string, string | undefined>): DirectedGraph {
+  const graph = new DirectedGraph();
 
   const processStatement = (statement: Statement) => {
     if ('activity' in statement) {
       const { name, arguments: args = [], result } = statement.activity;
-      const dependencies = args.filter((arg) => graph.has(arg)); // List of dependencies
-      addNode(result || name, dependencies, async () => {
-        let resolvedArgs = args.map((arg) => graph.get(arg)?.execute() || Promise.resolve(arg));
-        // @ts-expect-error stfu
-        const result = await acts[name](...(await Promise.all(resolvedArgs)));
-        if (result) bindings[result] = result;
-      });
+      const nodeId = result || name;
+
+      // Add node if it doesn't exist
+      if (!graph.hasNode(nodeId)) {
+        graph.addNode(nodeId, {
+          execute: async (activities: Record<string, (...args: string[]) => Promise<string | undefined>>) => {
+            let resolvedArgs = args.map((arg) => {
+              try {
+                if (graph.hasNodeAttribute(arg, 'result')) {
+                  return graph.getNodeAttribute(arg, 'result');
+                }
+              } catch (e) {
+                return bindings[arg];
+              }
+            });
+
+            const output = await activities[name](...resolvedArgs);
+
+            if (result && output !== undefined) {
+              bindings[result] = output;
+              graph.setNodeAttribute(result, 'result', output);
+            }
+            return output;
+          }
+        });
+      }
+
+      // Add dependencies as edges (from dependency to current node)
+      for (const arg of args) {
+        if ((graph.hasNode(arg) || bindings[arg] !== undefined) && !graph.hasEdge(arg, nodeId)) {
+          try {
+            graph.addEdge(arg, nodeId);
+          } catch (e) {
+            // Edge might already exist
+          }
+        }
+      }
     } else if ('sequence' in statement) {
       statement.sequence.elements.forEach(processStatement);
     } else if ('parallel' in statement) {
@@ -64,33 +96,70 @@ function buildDependencyGraph(
   };
 
   processStatement(root);
+
+  // Check for cycles
+  if (hasCycle(graph)) {
+    throw new Error('Circular dependency detected in workflow graph');
+  }
+
+  // After building the graph, we can visualize it
+  console.log(visualizeWorkflowGenerations(graph));
+
   return graph;
 }
 
-// Function to execute the dependency graph
-async function executeGraph(
-  graph: Map<string, { dependencies: string[]; execute: () => Promise<void> }>,
-  bindings: Record<string, string | undefined>
+async function executeGraphByGenerations(
+  graph: DirectedGraph,
+  bindings: Record<string, string | undefined>,
+  activities: Record<string, (...args: string[]) => Promise<string | undefined>>
 ): Promise<void> {
-  const executed = new Set<string>();
+  const generations = topologicalGenerations(graph);
 
-  async function executeNode(nodeName: string): Promise<void> {
-    if (executed.has(nodeName)) return; // Skip if already executed
-    const node = graph.get(nodeName);
-    if (!node) return;
+  for (let genIndex = 0; genIndex < generations.length; genIndex++) {
+    const generation = generations[genIndex];
 
-    // Ensure dependencies are executed first
-    await Promise.all(node.dependencies.map(executeNode));
-
-    // Execute the node itself
-    await node.execute();
-    executed.add(nodeName);
+    console.log(`Executing generation ${genIndex} with ${generation.length} nodes: ${generation.join(', ')}`);
+    await executeGenerationWithErrorHandling(generation, graph, activities);
   }
+}
 
-  // Execute all nodes in the graph that have no dependencies
-  for (const [nodeName, node] of graph.entries()) {
-    if (node.dependencies.length === 0) {
-      await executeNode(nodeName);
-    }
+function visualizeWorkflowGenerations(graph: DirectedGraph): string {
+  const generations = topologicalGenerations(graph);
+  let visualization = 'Workflow Execution Plan:\n';
+
+  generations.forEach((generation, index) => {
+    visualization += `\nGeneration ${index}:\n`;
+    generation.forEach((nodeId) => {
+      const dependencies = graph.inNeighbors(nodeId);
+      visualization += `  - ${nodeId}${dependencies.length > 0 ? ` (depends on: ${dependencies.join(', ')})` : ''}\n`;
+    });
+  });
+
+  return visualization;
+}
+
+async function executeGenerationWithErrorHandling(
+  generation: string[],
+  graph: DirectedGraph,
+  activities: Record<string, (...args: string[]) => Promise<string | undefined>>
+): Promise<void> {
+  const results = await Promise.allSettled(
+    generation.map(async (nodeId) => {
+      try {
+        if (graph.hasNodeAttribute(nodeId, 'execute')) {
+          const execute = graph.getNodeAttribute(nodeId, 'execute');
+          return await execute(activities);
+        }
+      } catch (error) {
+        console.error(`Error executing node ${nodeId}:`, error);
+        throw error;
+      }
+    })
+  );
+
+  // Check if any operations failed
+  const failures = results.filter((r) => r.status === 'rejected');
+  if (failures.length > 0) {
+    throw new Error(`${failures.length} operations failed in this generation`);
   }
 }

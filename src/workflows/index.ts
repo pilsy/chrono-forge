@@ -11,3 +11,4 @@ export const interceptors: WorkflowInterceptorsFactory = () => ({
 
 export * from './Workflow';
 export * from './StatefulWorkflow';
+export * from './DSLInterpreter';
