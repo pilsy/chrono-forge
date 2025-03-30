@@ -1,7 +1,8 @@
 import { Temporal } from '../../workflows';
 import * as workflow from '@temporalio/workflow';
-import { ShouldExecuteStateful } from './ShouldExecuteStateful';
+import { StatefulWorkflow } from '../../workflows/StatefulWorkflow';
 import { schemas } from '../testSchemas';
+import { Property } from '../../decorators';
 
 /**
  * Test workflow that extends ShouldExecuteStateful and implements the onContinue method
@@ -12,7 +13,24 @@ import { schemas } from '../testSchemas';
   schemas,
   saveStateToMemo: true
 })
-export class ShouldImplementStatefulOnContinue extends ShouldExecuteStateful {
+export class ShouldImplementStatefulOnContinue extends StatefulWorkflow {
+  @Property()
+  protected counter: number = 0;
+
+  /**
+   * Main execution method for the workflow
+   */
+  protected async execute(): Promise<unknown> {
+    this.counter++;
+
+    // Force continue-as-new after 3 iterations for testing
+    if (this.iteration >= 3) {
+      this.shouldContinueAsNew = true;
+    }
+
+    return { id: this.id, counter: this.counter, iteration: this.iteration };
+  }
+
   /**
    * Custom continue-as-new implementation
    * This method will be called when the workflow reaches its maximum iterations

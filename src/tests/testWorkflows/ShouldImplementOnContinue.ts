@@ -52,16 +52,19 @@ export class ShouldImplementOnContinue extends Workflow<
    * Custom continue-as-new implementation
    * This method will be called when the workflow reaches its maximum iterations
    */
-  protected async onContinue(): Promise<void> {
+  protected async onContinue(): Promise<Record<string, unknown>> {
     const continueFn = workflow.makeContinueAsNewFunc({
       workflowType: String(this.options.workflowType),
       memo: workflow.workflowInfo().memo,
       searchAttributes: workflow.workflowInfo().searchAttributes
     });
 
-    await continueFn({
+    const params = {
       id: this.id,
       counter: this.counter + 100 // Add 100 to counter to demonstrate custom logic
-    });
+    };
+    
+    await continueFn(params);
+    return params;
   }
 }

@@ -82,10 +82,10 @@ export function Temporal(options?: TemporalOptions) {
       'extraOptions',
       `
       return async function ${workflowName}(...args) {
-        extraOptions.workflowType = '${workflowName}';
         const instance = new constructor(args[0], extraOptions);
 
         try {
+          instance.workflowType = '${workflowName}';
           await instance.bindEventHandlers();
           await instance.emitAsync('setup');
           await instance.emitAsync('hooks');
@@ -146,6 +146,8 @@ export function Temporal(options?: TemporalOptions) {
  * @template O - Type of configuration options for the workflow.
  */
 export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
+  protected workflowType!: string;
+
   /**
    * Map to keep track of child workflow handles.
    * Uses LRU cache to efficiently manage a large number of child workflow references
@@ -409,7 +411,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    * If implemented, this method will be called when the workflow reaches its maximum iterations.
    * @returns A promise that resolves when the continue-as-new process is complete.
    */
-  protected onContinue?(): Promise<void>;
+  protected onContinue?(): Promise<Record<string, unknown>>;
 
   /**
    * Core method to manage workflow execution and its lifecycle.
@@ -498,26 +500,15 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     await workflow.condition(() => workflow.allHandlersFinished(), '30 seconds');
 
     const continueFn = workflow.makeContinueAsNewFunc({
-      workflowType: String(this.options.workflowType),
+      workflowType: String(this.workflowType),
       memo: workflow.workflowInfo().memo,
       searchAttributes: workflow.workflowInfo().searchAttributes
     });
 
-    // Default parameters for continue-as-new
-    const defaultParams = {
-      ...Object.keys(this.params).reduce(
-        (params, key: string) => ({
-          ...params, // @ts-ignore
-          [key]: this[key]
-        }),
-        {}
-      )
-    };
-
     // If onContinue is defined, call it to get custom parameters, otherwise throw error
     if (typeof this.onContinue === 'function') {
-      const customParams = await this.onContinue();
-      await continueFn(customParams || defaultParams);
+      const customArgs = await this.onContinue();
+      await continueFn(customArgs || this.args);
     } else {
       throw new Error(`No onContinue method found in ${this.constructor.name}. Cannot continue as new.`);
     }

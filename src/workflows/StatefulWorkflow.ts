@@ -513,7 +513,7 @@ export abstract class StatefulWorkflow<
    * If implemented, this method will be called when the workflow reaches its maximum iterations.
    * @returns A promise that resolves when the continue-as-new process is complete.
    */
-  protected onContinue?(): Promise<void>;
+  protected onContinue?(): Promise<Record<string, unknown>>;
 
   /**
    * Optional method that can be implemented by extending classes to load data from external sources.
@@ -2638,7 +2638,7 @@ export abstract class StatefulWorkflow<
     await workflow.condition(() => workflow.allHandlersFinished(), '30 seconds');
 
     const continueFn = workflow.makeContinueAsNewFunc({
-      workflowType: String(this.options.workflowType),
+      workflowType: String(this.workflowType),
       memo: workflow.workflowInfo().memo,
       searchAttributes: workflow.workflowInfo().searchAttributes
     });
