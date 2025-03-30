@@ -12,7 +12,6 @@ import schemas from './testSchemas';
 import { limitRecursion } from '../utils';
 import { readFileSync, writeFileSync } from 'fs';
 import { detailedDiff } from 'deep-object-diff';
-import { entityDifferences } from '../utils/entityDifferences';
 
 const sleep = async (duration = 1000) =>
   new Promise((resolve) => {
@@ -97,10 +96,6 @@ describe('StateManager', () => {
       console.time('detailedDiff');
       detailedDiff(website_1_state, stateManager.state);
       console.timeEnd('detailedDiff');
-
-      console.time('entityDifferences');
-      entityDifferences(website_1_state, stateManager.state);
-      console.timeEnd('entityDifferences');
     });
   });
 

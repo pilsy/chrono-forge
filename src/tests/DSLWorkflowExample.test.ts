@@ -63,7 +63,7 @@ describe('DSLWorkflowExample', () => {
 
     // Verify execution result reflects the activity result
     const variables = await handle.query('getVariables');
-    expect(variables.apiResponse).toBe('http_response_data');
+    expect(variables.apiResponse).toBe('httpResult');
   });
 
   it('should execute a DSL workflow with a sequence of activities', async () => {
@@ -113,9 +113,9 @@ describe('DSLWorkflowExample', () => {
 
     // Verify the variables have been updated with activity results
     const variables = await handle.query('getVariables');
-    expect(variables.rawData).toBe('http_response_data');
-    expect(variables.formattedData).toBe('formatted_http_response_data');
-    expect(variables.finalResult).toBe('processed_formatted_http_response_data');
+    expect(variables.rawData).toBe('httpResult');
+    expect(variables.formattedData).toBe('formattedData');
+    expect(variables.finalResult).toBe('processedResult');
   });
 
   it('should allow updating the DSL during execution via signal', async () => {

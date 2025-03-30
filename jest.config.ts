@@ -9,8 +9,13 @@ const config: Config.InitialOptions = {
   clearMocks: true,
   collectCoverage: true,
   coverageDirectory: 'coverage',
-  coveragePathIgnorePatterns: [],
+  coveragePathIgnorePatterns: [
+    '/node_modules/',
+    '<rootDir>/src/utils/instrumentation.ts',
+    '<rootDir>/src/tests/testWorkflows/'
+  ],
   coverageProvider: 'babel',
+  coverageReporters: ['json', 'lcov', 'text', 'clover'],
   testEnvironmentOptions: {
     nodeOptions: ['--expose-gc']
   },

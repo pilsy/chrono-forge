@@ -1,5 +1,5 @@
 import { ContinueAsNew } from '../../decorators';
-import { StatefulWorkflow, Temporal, Workflow } from '../../workflows';
+import { StatefulWorkflow, Temporal } from '../../workflows';
 import * as workflow from '@temporalio/workflow';
 
 @Temporal()
@@ -16,7 +16,9 @@ export class ContinueAsNewAfterMaxIterations extends StatefulWorkflow {
     this.log.info('handleMaxIterations');
     const continueFn = workflow.makeContinueAsNewFunc({
       workflowType: String(this.options.workflowType),
-      memo: workflow.workflowInfo().memo,
+      memo: {
+        ...workflow.workflowInfo().memo
+      },
       searchAttributes: workflow.workflowInfo().searchAttributes
     });
 
