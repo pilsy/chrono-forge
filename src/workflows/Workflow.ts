@@ -9,7 +9,8 @@ import {
   QUERY_METADATA_KEY,
   SIGNAL_METADATA_KEY,
   EVENTS_METADATA_KEY,
-  HOOKS_METADATA_KEY
+  HOOKS_METADATA_KEY,
+  STEP_METADATA_KEY
 } from '../decorators';
 import { Duration } from '@temporalio/common';
 import { LRUCacheWithDelete } from 'mnemonist';
@@ -162,6 +163,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   private _signalsBound = false;
   private _queriesBound = false;
   private _propertiesBound = false;
+  private _stepsBound = false;
 
   /**
    * Workflow logging instance provided by Temporal.
@@ -203,6 +205,13 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    * Signal handlers allow external systems to trigger actions within the workflow.
    */
   protected signalHandlers: { [key: string]: (args: any[]) => Promise<void> } = {};
+
+  /**
+   * Handlers for workflow steps.
+   * Maps step names to their handler functions.
+   * Step handlers allow external systems to trigger actions within the workflow.
+   */
+  protected stepHandlers: { [key: string]: (args: any[]) => Promise<void> } = {};
 
   /**
    * Determines whether the workflow is a long running continueAsNew type workflow or a short lived one.
@@ -602,6 +611,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       this._signalsBound = false;
       this._queriesBound = false;
       this._propertiesBound = false;
+      this._stepsBound = false;
     } catch (error) {
       this.log.error(`Error cleaning up event listeners: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -808,6 +818,39 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       }
     }
     this._signalsBound = true;
+  }
+
+  /**
+   * Bind step handlers for the workflow.
+   *
+   * This method finds all methods decorated with @Step and registers them as
+   * workflow step handlers. These steps can then be used by the DSL interpreter.
+   */
+  @On('init')
+  protected bindSteps() {
+    if (this._stepsBound) {
+      return;
+    }
+
+    // Get steps from metadata instead of constructor._steps
+    const steps = this.collectMetadata(STEP_METADATA_KEY, this.constructor.prototype);
+
+    for (const step of steps) {
+      if (typeof (this as any)[step.method] === 'function') {
+        const handler = (this as any)[step.method].bind(this);
+        this.stepHandlers[step.name] = handler;
+      }
+    }
+
+    this._stepsBound = true;
+  }
+
+  /**
+   * Get all registered step handlers.
+   * This method is used by the DSL interpreter to access available steps.
+   */
+  protected getStepHandlers(): Record<string, (...args: any[]) => Promise<any>> {
+    return this.stepHandlers;
   }
 
   /**

@@ -1,3 +1,6 @@
+import 'reflect-metadata';
+import { STEP_METADATA_KEY } from './metadata';
+
 export interface StepOptions {
   /**
    * Custom name for the step. If not provided, the method name will be used.
@@ -125,16 +128,14 @@ interface WorkflowInstance {
 export const Step = (options: StepOptions = {}) => {
   return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
     const stepName = options.name ?? propertyKey;
-    if (!target.constructor._steps) {
-      target.constructor._steps = [];
-    }
 
     // Store the original method
     const originalMethod = descriptor.value;
 
     // Replace the method with a wrapped version that handles retries and timeouts
     descriptor.value = async function (this: WorkflowInstance, ...args: any[]) {
-      const stepMetadata = target.constructor._steps.find((s: StepMetadata) => s.name === stepName);
+      const steps = Reflect.getMetadata(STEP_METADATA_KEY, target) || [];
+      const stepMetadata = steps.find((s: StepMetadata) => s.name === stepName);
 
       try {
         let result;
@@ -201,8 +202,9 @@ export const Step = (options: StepOptions = {}) => {
       }
     };
 
-    // Add step metadata to the class
-    target.constructor._steps.push({
+    // Add step metadata using reflection
+    const steps = Reflect.getMetadata(STEP_METADATA_KEY, target) || [];
+    steps.push({
       name: stepName,
       method: propertyKey,
       on: options.on,
@@ -214,6 +216,7 @@ export const Step = (options: StepOptions = {}) => {
       onError: options.onError,
       executed: false
     });
+    Reflect.defineMetadata(STEP_METADATA_KEY, steps, target);
 
     return descriptor;
   };

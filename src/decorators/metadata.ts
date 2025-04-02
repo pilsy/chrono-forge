@@ -7,3 +7,4 @@ export const EVENTS_METADATA_KEY = Symbol('events');
 export const HOOKS_METADATA_KEY = Symbol('hooks');
 export const ACTIONS_METADATA_KEY = Symbol('actions');
 export const VALIDATOR_METADATA_KEY = Symbol('validators');
+export const STEP_METADATA_KEY = Symbol('step');

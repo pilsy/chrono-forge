@@ -33,12 +33,11 @@ export class DSLWorkflowExample extends Workflow {
    */
   async execute(initialDSL?: DSLDefinition): Promise<any> {
     try {
-      // Use provided DSLDefinition or the default one
       this.dsl = initialDSL || this.dsl;
       this.status = 'running';
 
-      // Execute the DSLDefinition with both activities and workflow steps
-      this.executionResult = await DSLInterpreter(this.dsl);
+      // Pass the step handlers to the DSL interpreter
+      this.executionResult = await DSLInterpreter(this.dsl, undefined, this.getStepHandlers());
 
       this.status = 'completed';
       return this.executionResult;
