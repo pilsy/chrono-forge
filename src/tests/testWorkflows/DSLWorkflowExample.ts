@@ -3,6 +3,7 @@ import { Temporal } from '../../workflows';
 import { Query, Signal } from '../../decorators';
 import { DSLInterpreter, DSL } from '../../workflows/DSLInterpreter';
 import { sleep } from '@temporalio/workflow';
+import { Duration } from '@temporalio/common';
 
 /**
  * Example workflow that demonstrates how to use the DSLInterpreter
@@ -83,7 +84,7 @@ export class DSLWorkflowExample extends Workflow {
   /**
    * Simple workflow step that just sleeps for a specified time
    */
-  async sleepStep(sleepTimeMs: string): Promise<string> {
+  async sleepStep(sleepTimeMs: Duration): Promise<string> {
     await sleep(sleepTimeMs);
     return `slept for ${sleepTimeMs}ms`;
   }
