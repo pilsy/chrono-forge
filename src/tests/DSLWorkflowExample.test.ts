@@ -37,16 +37,17 @@ describe('DSLWorkflowExample', () => {
   });
 
   it('should execute a DSL workflow with a simple activity', async () => {
-    // Create a simple DSL definition
     const simpleDSL: DSL = {
       variables: {
         apiUrl: 'https://api.example.com/data'
       },
-      root: {
-        activity: {
-          name: 'makeHTTPRequest',
-          arguments: ['apiUrl'],
-          result: 'apiResponse'
+      plan: {
+        execute: {
+          activity: {
+            name: 'makeHTTPRequest',
+            arguments: ['apiUrl'],
+            result: 'apiResponse'
+          }
         }
       }
     };
@@ -67,33 +68,38 @@ describe('DSLWorkflowExample', () => {
   });
 
   it('should execute a DSL workflow with a sequence of activities', async () => {
-    // Create a DSL with sequential activities
     const sequentialDSL: DSL = {
       variables: {
         apiUrl: 'https://api.example.com/data'
       },
-      root: {
+      plan: {
         sequence: {
           elements: [
             {
-              activity: {
-                name: 'makeHTTPRequest',
-                arguments: ['apiUrl'],
-                result: 'rawData'
+              execute: {
+                activity: {
+                  name: 'makeHTTPRequest',
+                  arguments: ['apiUrl'],
+                  result: 'rawData'
+                }
               }
             },
             {
-              activity: {
-                name: 'formatData',
-                arguments: ['rawData'],
-                result: 'formattedData'
+              execute: {
+                activity: {
+                  name: 'formatData',
+                  arguments: ['rawData'],
+                  result: 'formattedData'
+                }
               }
             },
             {
-              activity: {
-                name: 'processResult',
-                arguments: ['formattedData'],
-                result: 'finalResult'
+              execute: {
+                activity: {
+                  name: 'processResult',
+                  arguments: ['formattedData'],
+                  result: 'finalResult'
+                }
               }
             }
           ]
@@ -119,16 +125,17 @@ describe('DSLWorkflowExample', () => {
   });
 
   it('should execute a DSL workflow with a workflow step', async () => {
-    // Create a DSL with a workflow step
     const stepDSL: DSL = {
       variables: {
         inputData: 'test_data'
       },
-      root: {
-        step: {
-          name: 'transformData',
-          arguments: ['inputData'],
-          result: 'transformedData'
+      plan: {
+        execute: {
+          step: {
+            name: 'transformData',
+            arguments: ['inputData'],
+            result: 'transformedData'
+          }
         }
       }
     };
@@ -149,33 +156,38 @@ describe('DSLWorkflowExample', () => {
   });
 
   it('should execute a sequence of workflow steps', async () => {
-    // Create a DSL with sequential steps
     const sequentialStepsDSL: DSL = {
       variables: {
         inputData: 'valid_data'
       },
-      root: {
+      plan: {
         sequence: {
           elements: [
             {
-              step: {
-                name: 'transformData',
-                arguments: ['inputData'],
-                result: 'transformedData'
+              execute: {
+                step: {
+                  name: 'transformData',
+                  arguments: ['inputData'],
+                  result: 'transformedData'
+                }
               }
             },
             {
-              step: {
-                name: 'validateData',
-                arguments: ['transformedData'],
-                result: 'isValid'
+              execute: {
+                step: {
+                  name: 'validateData',
+                  arguments: ['transformedData'],
+                  result: 'isValid'
+                }
               }
             },
             {
-              step: {
-                name: 'formatOutput',
-                arguments: ['transformedData', 'true'],
-                result: 'finalOutput'
+              execute: {
+                step: {
+                  name: 'formatOutput',
+                  arguments: ['transformedData', 'true'],
+                  result: 'finalOutput'
+                }
               }
             }
           ]
@@ -201,40 +213,47 @@ describe('DSLWorkflowExample', () => {
   });
 
   it('should execute a mix of activities and workflow steps', async () => {
-    // Create a DSL with a mix of activities and steps
     const mixedDSL: DSL = {
       variables: {
         apiUrl: 'https://api.example.com/data'
       },
-      root: {
+      plan: {
         sequence: {
           elements: [
             {
-              activity: {
-                name: 'makeHTTPRequest',
-                arguments: ['apiUrl'],
-                result: 'apiData'
+              execute: {
+                activity: {
+                  name: 'makeHTTPRequest',
+                  arguments: ['apiUrl'],
+                  result: 'apiData'
+                }
               }
             },
             {
-              step: {
-                name: 'transformData',
-                arguments: ['apiData'],
-                result: 'transformedData'
+              execute: {
+                step: {
+                  name: 'transformData',
+                  arguments: ['apiData'],
+                  result: 'transformedData'
+                }
               }
             },
             {
-              step: {
-                name: 'validateData',
-                arguments: ['transformedData'],
-                result: 'isValid'
+              execute: {
+                step: {
+                  name: 'validateData',
+                  arguments: ['transformedData'],
+                  result: 'isValid'
+                }
               }
             },
             {
-              activity: {
-                name: 'processResult',
-                arguments: ['transformedData', 'isValid'],
-                result: 'finalResult'
+              execute: {
+                activity: {
+                  name: 'processResult',
+                  arguments: ['transformedData', 'isValid'],
+                  result: 'finalResult'
+                }
               }
             }
           ]
@@ -261,15 +280,15 @@ describe('DSLWorkflowExample', () => {
   });
 
   it('should allow updating the DSL during execution via signal', async () => {
-    // Start with a simple workflow that has a long waiting activity
-    // This will give us time to send signals before the workflow completes
     const initialDSL: DSL = {
       variables: { waitTime: '5000' },
-      root: {
-        activity: {
-          name: 'waitForDuration',
-          arguments: ['waitTime'],
-          result: 'waitResult'
+      plan: {
+        execute: {
+          activity: {
+            name: 'waitForDuration',
+            arguments: ['waitTime'],
+            result: 'waitResult'
+          }
         }
       }
     };
@@ -296,20 +315,22 @@ describe('DSLWorkflowExample', () => {
 
     // Verify that the DSL was updated
     const updatedDSL = await handle.query('getDSL');
-    expect(updatedDSL.root.sequence.elements.length).toBe(2);
-    expect(updatedDSL.root.sequence.elements[0].activity.name).toBe('makeHTTPRequest');
-    expect(updatedDSL.root.sequence.elements[1].activity.name).toBe('formatData');
+    expect(updatedDSL.plan.sequence.elements.length).toBe(2);
+    expect(updatedDSL.plan.sequence.elements[0].execute.activity.name).toBe('makeHTTPRequest');
+    expect(updatedDSL.plan.sequence.elements[1].execute.activity.name).toBe('formatData');
   });
 
   it('should update an entire DSL via signal', async () => {
     // Start with a simple waiting activity to keep the workflow running
     const initialDSL: DSL = {
       variables: { waitTime: '5000' },
-      root: {
-        activity: {
-          name: 'waitForDuration',
-          arguments: ['waitTime'],
-          result: 'waitResult'
+      plan: {
+        execute: {
+          activity: {
+            name: 'waitForDuration',
+            arguments: ['waitTime'],
+            result: 'waitResult'
+          }
         }
       }
     };
@@ -324,7 +345,7 @@ describe('DSLWorkflowExample', () => {
       variables: {
         inputData: 'initial_value'
       },
-      root: {
+      plan: {
         sequence: {
           elements: [
             {
@@ -345,18 +366,20 @@ describe('DSLWorkflowExample', () => {
     // Verify the DSL was updated
     const updatedDSL = await handle.query('getDSL');
     expect(updatedDSL.variables.inputData).toBe('initial_value');
-    expect(updatedDSL.root.sequence.elements[0].activity.name).toBe('processResult');
+    expect(updatedDSL.plan.sequence.elements[0].activity.name).toBe('processResult');
   });
 
   it('should add workflow steps via signals', async () => {
     // Start with a simple waiting activity to keep the workflow running
     const initialDSL: DSL = {
       variables: { waitTime: '5000' },
-      root: {
-        activity: {
-          name: 'waitForDuration',
-          arguments: ['waitTime'],
-          result: 'waitResult'
+      plan: {
+        execute: {
+          activity: {
+            name: 'waitForDuration',
+            arguments: ['waitTime'],
+            result: 'waitResult'
+          }
         }
       }
     };
@@ -385,46 +408,51 @@ describe('DSLWorkflowExample', () => {
 
     // Verify that steps were added to the DSL
     const updatedDSL = await handle.query('getDSL');
-    expect(updatedDSL.root.sequence.elements.length).toBe(2);
-    expect(updatedDSL.root.sequence.elements[0].step.name).toBe('transformData');
-    expect(updatedDSL.root.sequence.elements[1].step.name).toBe('validateData');
+    expect(updatedDSL.plan.sequence.elements.length).toBe(2);
+    expect(updatedDSL.plan.sequence.elements[0].execute.step.name).toBe('transformData');
+    expect(updatedDSL.plan.sequence.elements[1].execute.step.name).toBe('validateData');
   });
 
   it('should execute a parallel combination of activities and steps', async () => {
-    // Create a DSL with parallel activities and steps
     const parallelDSL: DSL = {
       variables: {
         apiUrl: 'https://api.example.com/data',
         initialData: 'raw_input'
       },
-      root: {
+      plan: {
         sequence: {
           elements: [
             {
               parallel: {
                 branches: [
                   {
-                    activity: {
-                      name: 'makeHTTPRequest',
-                      arguments: ['apiUrl'],
-                      result: 'apiData'
+                    execute: {
+                      activity: {
+                        name: 'makeHTTPRequest',
+                        arguments: ['apiUrl'],
+                        result: 'apiData'
+                      }
                     }
                   },
                   {
-                    step: {
-                      name: 'transformData',
-                      arguments: ['initialData'],
-                      result: 'transformedData'
+                    execute: {
+                      step: {
+                        name: 'transformData',
+                        arguments: ['initialData'],
+                        result: 'transformedData'
+                      }
                     }
                   }
                 ]
               }
             },
             {
-              step: {
-                name: 'formatOutput',
-                arguments: ['transformedData', 'true'],
-                result: 'finalOutput'
+              execute: {
+                step: {
+                  name: 'formatOutput',
+                  arguments: ['transformedData', 'true'],
+                  result: 'finalOutput'
+                }
               }
             }
           ]
@@ -455,14 +483,16 @@ describe('DSLWorkflowExample', () => {
       variables: {
         waitTime: '30000' // 3 seconds wait time
       },
-      root: {
+      plan: {
         sequence: {
           elements: [
             {
-              activity: {
-                name: 'waitForDuration',
-                arguments: ['waitTime'],
-                result: 'waitResult'
+              execute: {
+                activity: {
+                  name: 'waitForDuration',
+                  arguments: ['waitTime'],
+                  result: 'waitResult'
+                }
               }
             }
           ]
@@ -491,14 +521,16 @@ describe('DSLWorkflowExample', () => {
       variables: {
         sleepTime: '30000' // 30 seconds sleep time
       },
-      root: {
+      plan: {
         sequence: {
           elements: [
             {
-              step: {
-                name: 'sleepStep',
-                arguments: ['sleepTime'],
-                result: 'sleepResult'
+              execute: {
+                step: {
+                  name: 'sleepStep',
+                  arguments: ['sleepTime'],
+                  result: 'sleepResult'
+                }
               }
             }
           ]

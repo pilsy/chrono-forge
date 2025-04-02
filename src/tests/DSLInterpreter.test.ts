@@ -20,10 +20,12 @@ describe('DSLInterpreter', () => {
     // Create a simple DSL with a single activity
     const dsl: DSL = {
       variables: {},
-      root: {
-        activity: {
-          name: 'makeHTTPRequest',
-          result: 'httpResult'
+      plan: {
+        execute: {
+          activity: {
+            name: 'makeHTTPRequest',
+            result: 'httpResult'
+          }
         }
       }
     };
@@ -39,27 +41,33 @@ describe('DSLInterpreter', () => {
     // Create a DSL with a sequence of activities
     const dsl: DSL = {
       variables: {},
-      root: {
+      plan: {
         sequence: {
           elements: [
             {
-              activity: {
-                name: 'makeHTTPRequest',
-                result: 'httpResult'
+              execute: {
+                activity: {
+                  name: 'makeHTTPRequest',
+                  result: 'httpResult'
+                }
               }
             },
             {
-              activity: {
-                name: 'formatData',
-                arguments: ['httpResult'],
-                result: 'formattedData'
+              execute: {
+                activity: {
+                  name: 'formatData',
+                  arguments: ['httpResult'],
+                  result: 'formattedData'
+                }
               }
             },
             {
-              activity: {
-                name: 'processResult',
-                arguments: ['formattedData'],
-                result: 'finalResult'
+              execute: {
+                activity: {
+                  name: 'processResult',
+                  arguments: ['formattedData'],
+                  result: 'finalResult'
+                }
               }
             }
           ]
@@ -81,19 +89,23 @@ describe('DSLInterpreter', () => {
     // Create a DSL with parallel activities
     const dsl: DSL = {
       variables: {},
-      root: {
+      plan: {
         parallel: {
           branches: [
             {
-              activity: {
-                name: 'parallelTask1',
-                result: 'result1'
+              execute: {
+                activity: {
+                  name: 'parallelTask1',
+                  result: 'result1'
+                }
               }
             },
             {
-              activity: {
-                name: 'parallelTask2',
-                result: 'result2'
+              execute: {
+                activity: {
+                  name: 'parallelTask2',
+                  result: 'result2'
+                }
               }
             }
           ]
@@ -112,39 +124,47 @@ describe('DSLInterpreter', () => {
     // Create a complex DSL with nested sequences and parallel branches
     const dsl: DSL = {
       variables: {},
-      root: {
+      plan: {
         sequence: {
           elements: [
             {
-              activity: {
-                name: 'makeHTTPRequest',
-                result: 'httpResult'
+              execute: {
+                activity: {
+                  name: 'makeHTTPRequest',
+                  result: 'httpResult'
+                }
               }
             },
             {
               parallel: {
                 branches: [
                   {
-                    activity: {
-                      name: 'formatData',
-                      arguments: ['httpResult'],
-                      result: 'formattedData'
+                    execute: {
+                      activity: {
+                        name: 'formatData',
+                        arguments: ['httpResult'],
+                        result: 'formattedData'
+                      }
                     }
                   },
                   {
-                    activity: {
-                      name: 'slowOperation',
-                      result: 'slowResult'
+                    execute: {
+                      activity: {
+                        name: 'slowOperation',
+                        result: 'slowResult'
+                      }
                     }
                   }
                 ]
               }
             },
             {
-              activity: {
-                name: 'combineResults',
-                arguments: ['formattedData', 'slowResult'],
-                result: 'finalResult'
+              execute: {
+                activity: {
+                  name: 'combineResults',
+                  arguments: ['formattedData', 'slowResult'],
+                  result: 'finalResult'
+                }
               }
             }
           ]
@@ -173,27 +193,33 @@ describe('DSLInterpreter', () => {
       variables: {
         staticValue: 'someConstant'
       },
-      root: {
+      plan: {
         sequence: {
           elements: [
             {
-              activity: {
-                name: 'makeHTTPRequest',
-                result: 'httpData'
+              execute: {
+                activity: {
+                  name: 'makeHTTPRequest',
+                  result: 'httpData'
+                }
               }
             },
             {
-              activity: {
-                name: 'formatData',
-                arguments: ['httpData'],
-                result: 'formattedData'
+              execute: {
+                activity: {
+                  name: 'formatData',
+                  arguments: ['httpData'],
+                  result: 'formattedData'
+                }
               }
             },
             {
-              activity: {
-                name: 'complexOperation',
-                arguments: ['formattedData', 'staticValue'],
-                result: 'complexResult'
+              execute: {
+                activity: {
+                  name: 'complexOperation',
+                  arguments: ['formattedData', 'staticValue'],
+                  result: 'complexResult'
+                }
               }
             }
           ]
@@ -216,11 +242,13 @@ describe('DSLInterpreter', () => {
         predefinedValue: 'initialValue',
         apiKey: 'secret-key'
       },
-      root: {
-        activity: {
-          name: 'makeHTTPRequest',
-          arguments: ['apiKey'],
-          result: 'httpResult'
+      plan: {
+        execute: {
+          activity: {
+            name: 'makeHTTPRequest',
+            arguments: ['apiKey'],
+            result: 'httpResult'
+          }
         }
       }
     };
@@ -238,10 +266,12 @@ describe('DSLInterpreter', () => {
     // Create a DSL that stores the result
     const dsl: DSL = {
       variables: {},
-      root: {
-        activity: {
-          name: 'makeHTTPRequest',
-          result: 'apiResponse'
+      plan: {
+        execute: {
+          activity: {
+            name: 'makeHTTPRequest',
+            result: 'apiResponse'
+          }
         }
       }
     };
@@ -266,15 +296,17 @@ describe('DSLInterpreter', () => {
       variables: {
         initialParam: 'startValue'
       },
-      root: {
+      plan: {
         sequence: {
           elements: [
             // First get API data
             {
-              activity: {
-                name: 'makeHTTPRequest',
-                arguments: ['initialParam'],
-                result: 'rawData'
+              execute: {
+                activity: {
+                  name: 'makeHTTPRequest',
+                  arguments: ['initialParam'],
+                  result: 'rawData'
+                }
               }
             },
             // Then process in parallel
@@ -282,17 +314,21 @@ describe('DSLInterpreter', () => {
               parallel: {
                 branches: [
                   {
-                    activity: {
-                      name: 'formatData',
-                      arguments: ['rawData'],
-                      result: 'formattedOutput'
+                    execute: {
+                      activity: {
+                        name: 'formatData',
+                        arguments: ['rawData'],
+                        result: 'formattedOutput'
+                      }
                     }
                   },
                   {
-                    activity: {
-                      name: 'processResult',
-                      arguments: ['rawData'],
-                      result: 'processedOutput'
+                    execute: {
+                      activity: {
+                        name: 'processResult',
+                        arguments: ['rawData'],
+                        result: 'processedOutput'
+                      }
                     }
                   }
                 ]
@@ -300,10 +336,12 @@ describe('DSLInterpreter', () => {
             },
             // Finally combine the results
             {
-              activity: {
-                name: 'combineResults',
-                arguments: ['formattedOutput', 'processedOutput'],
-                result: 'finalOutput'
+              execute: {
+                activity: {
+                  name: 'combineResults',
+                  arguments: ['formattedOutput', 'processedOutput'],
+                  result: 'finalOutput'
+                }
               }
             }
           ]
@@ -328,10 +366,12 @@ describe('DSLInterpreter', () => {
   it('should handle empty variables object', async () => {
     const dsl: DSL = {
       variables: {},
-      root: {
-        activity: {
-          name: 'makeHTTPRequest',
-          result: 'httpResult'
+      plan: {
+        execute: {
+          activity: {
+            name: 'makeHTTPRequest',
+            result: 'httpResult'
+          }
         }
       }
     };
@@ -345,10 +385,12 @@ describe('DSLInterpreter', () => {
 
     const dsl: DSL = {
       variables: {},
-      root: {
-        activity: {
-          name: 'makeHTTPRequest'
-          // No result specified
+      plan: {
+        execute: {
+          activity: {
+            name: 'makeHTTPRequest'
+            // No result specified
+          }
         }
       }
     };
@@ -366,13 +408,15 @@ describe('DSLInterpreter', () => {
 
     const dsl: DSL = {
       variables: {},
-      root: {
+      plan: {
         sequence: {
           elements: [
             {
-              activity: {
-                name: 'makeHTTPRequest',
-                result: 'httpResult'
+              execute: {
+                activity: {
+                  name: 'makeHTTPRequest',
+                  result: 'httpResult'
+                }
               }
             },
             {
@@ -382,26 +426,32 @@ describe('DSLInterpreter', () => {
                     sequence: {
                       elements: [
                         {
-                          activity: {
-                            name: 'formatData',
-                            arguments: ['httpResult'],
-                            result: 'formattedData'
+                          execute: {
+                            activity: {
+                              name: 'formatData',
+                              arguments: ['httpResult'],
+                              result: 'formattedData'
+                            }
                           }
                         },
                         {
-                          activity: {
-                            name: 'processResult',
-                            arguments: ['formattedData'],
-                            result: 'processedData'
+                          execute: {
+                            activity: {
+                              name: 'processResult',
+                              arguments: ['formattedData'],
+                              result: 'processedData'
+                            }
                           }
                         }
                       ]
                     }
                   },
                   {
-                    activity: {
-                      name: 'slowOperation',
-                      result: 'slowResult'
+                    execute: {
+                      activity: {
+                        name: 'slowOperation',
+                        result: 'slowResult'
+                      }
                     }
                   }
                 ]
@@ -429,11 +479,13 @@ describe('DSLInterpreter', () => {
         staticArg1: 'value1',
         staticArg2: 'value2'
       },
-      root: {
-        activity: {
-          name: 'combineResults',
-          arguments: ['staticArg1', 'staticArg2'],
-          result: 'combinedStaticResult'
+      plan: {
+        execute: {
+          activity: {
+            name: 'combineResults',
+            arguments: ['staticArg1', 'staticArg2'],
+            result: 'combinedStaticResult'
+          }
         }
       }
     };
@@ -448,20 +500,24 @@ describe('DSLInterpreter', () => {
 
     const dsl: DSL = {
       variables: {},
-      root: {
+      plan: {
         sequence: {
           elements: [
             {
-              activity: {
-                name: 'makeHTTPRequest',
-                result: 'condition'
+              execute: {
+                activity: {
+                  name: 'makeHTTPRequest',
+                  result: 'condition'
+                }
               }
             },
             {
-              activity: {
-                name: 'conditionalTask',
-                arguments: ['condition'],
-                result: 'conditionalResult'
+              execute: {
+                activity: {
+                  name: 'conditionalTask',
+                  arguments: ['condition'],
+                  result: 'conditionalResult'
+                }
               }
             }
           ]
@@ -483,40 +539,48 @@ describe('DSLInterpreter', () => {
 
     const dsl: DSL = {
       variables: {},
-      root: {
+      plan: {
         sequence: {
           elements: [
             {
-              activity: {
-                name: 'makeHTTPRequest',
-                result: 'httpData'
+              execute: {
+                activity: {
+                  name: 'makeHTTPRequest',
+                  result: 'httpData'
+                }
               }
             },
             {
               parallel: {
                 branches: [
                   {
-                    activity: {
-                      name: 'formatData',
-                      arguments: ['httpData'],
-                      result: 'formattedData'
+                    execute: {
+                      activity: {
+                        name: 'formatData',
+                        arguments: ['httpData'],
+                        result: 'formattedData'
+                      }
                     }
                   },
                   {
-                    activity: {
-                      name: 'processResult',
-                      arguments: ['httpData'],
-                      result: 'processedData'
+                    execute: {
+                      activity: {
+                        name: 'processResult',
+                        arguments: ['httpData'],
+                        result: 'processedData'
+                      }
                     }
                   }
                 ]
               }
             },
             {
-              activity: {
-                name: 'combineResults',
-                arguments: ['formattedData', 'processedData'],
-                result: 'finalData'
+              execute: {
+                activity: {
+                  name: 'combineResults',
+                  arguments: ['formattedData', 'processedData'],
+                  result: 'finalData'
+                }
               }
             }
           ]
@@ -536,11 +600,13 @@ describe('DSLInterpreter', () => {
     // Create a DSL that directly references itself
     const dsl: DSL = {
       variables: {},
-      root: {
-        activity: {
-          name: 'makeHTTPRequest',
-          arguments: ['circularRef'], // This creates a circular dependency
-          result: 'circularRef' // by using the same name for input and output
+      plan: {
+        execute: {
+          activity: {
+            name: 'makeHTTPRequest',
+            arguments: ['circularRef'], // This creates a circular dependency
+            result: 'circularRef' // by using the same name for input and output
+          }
         }
       }
     };
@@ -574,11 +640,13 @@ describe('DSLInterpreter', () => {
     it('should execute a DSL with step invocation', async () => {
       const dsl: DSL = {
         variables: { input: 'test_data' },
-        root: {
-          step: {
-            name: 'processData',
-            arguments: ['input'],
-            result: 'processedResult'
+        plan: {
+          execute: {
+            step: {
+              name: 'processData',
+              arguments: ['input'],
+              result: 'processedResult'
+            }
           }
         }
       };
@@ -617,25 +685,25 @@ describe('DSLInterpreter', () => {
 
       // The DSL should have the correct structure
       expect(dsl.variables).toEqual({ initialValue: 'test' });
-      expect(dsl.root.sequence).toBeDefined();
+      expect(dsl.plan.sequence).toBeDefined();
 
       // Should have 3 elements in correct execution order
-      expect(dsl.root.sequence.elements.length).toBe(3);
+      expect(dsl.plan.sequence.elements.length).toBe(3);
 
       // Check first element is step1
-      const firstElement = dsl.root.sequence.elements[0];
-      expect('step' in firstElement).toBe(true);
-      if ('step' in firstElement) {
-        expect(firstElement.step.name).toBe('processData');
-        expect(firstElement.step.result).toBe('step1');
+      const firstElement = dsl.plan.sequence.elements[0];
+      expect('execute' in firstElement).toBe(true);
+      if ('execute' in firstElement) {
+        expect(firstElement.execute.step?.name).toBe('processData');
+        expect(firstElement.execute.step?.result).toBe('step1');
       }
 
       // Check second element is step2
-      const secondElement = dsl.root.sequence.elements[1];
-      expect('step' in secondElement).toBe(true);
-      if ('step' in secondElement) {
-        expect(secondElement.step.name).toBe('validateInput');
-        expect(secondElement.step.result).toBe('step2');
+      const secondElement = dsl.plan.sequence.elements[1];
+      expect('execute' in secondElement).toBe(true);
+      if ('execute' in secondElement) {
+        expect(secondElement.execute.step?.name).toBe('validateInput');
+        expect(secondElement.execute.step?.result).toBe('step2');
       }
     });
 
@@ -666,13 +734,13 @@ describe('DSLInterpreter', () => {
       const dsl = convertStepsToDSL(stepMetadata, { input: 'test_data' });
 
       // Add an argument to step1 in the generated DSL
-      const firstElement = dsl.root.sequence.elements[0];
-      if ('step' in firstElement) {
-        firstElement.step.arguments = ['input'];
+      const firstElement = dsl.plan.sequence.elements[0];
+      if ('execute' in firstElement && firstElement.execute.step) {
+        firstElement.execute.step.arguments = ['input'];
       }
 
       // The second generation should contain a parallel execution of step2 and step3
-      const secondGeneration = dsl.root.sequence.elements[1];
+      const secondGeneration = dsl.plan.sequence.elements[1];
       expect('parallel' in secondGeneration).toBe(true);
 
       if ('parallel' in secondGeneration) {
@@ -680,8 +748,8 @@ describe('DSLInterpreter', () => {
 
         // One branch should be step2, the other step3
         const branchNames = secondGeneration.parallel.branches
-          .filter((branch) => 'step' in branch)
-          .map((branch) => ('step' in branch ? branch.step.result : ''));
+          .filter((branch) => 'execute' in branch && branch.execute.step)
+          .map((branch) => ('execute' in branch ? branch.execute.step?.result : ''));
 
         expect(branchNames).toContain('step2');
         expect(branchNames).toContain('step3');
@@ -702,28 +770,34 @@ describe('DSLInterpreter', () => {
 
       const dsl: DSL = {
         variables: { input: 'original_data' },
-        root: {
+        plan: {
           sequence: {
             elements: [
               {
-                step: {
-                  name: 'processData',
-                  arguments: ['input'],
-                  result: 'processedData'
+                execute: {
+                  step: {
+                    name: 'processData',
+                    arguments: ['input'],
+                    result: 'processedData'
+                  }
                 }
               },
               {
-                step: {
-                  name: 'validateInput',
-                  arguments: ['processedData'],
-                  result: 'isValid'
+                execute: {
+                  step: {
+                    name: 'validateInput',
+                    arguments: ['processedData'],
+                    result: 'isValid'
+                  }
                 }
               },
               {
-                step: {
-                  name: 'transformResult',
-                  arguments: ['processedData', 'isValid'],
-                  result: 'finalResult'
+                execute: {
+                  step: {
+                    name: 'transformResult',
+                    arguments: ['processedData', 'isValid'],
+                    result: 'finalResult'
+                  }
                 }
               }
             ]
@@ -749,27 +823,33 @@ describe('DSLInterpreter', () => {
 
       const dsl: DSL = {
         variables: {},
-        root: {
+        plan: {
           sequence: {
             elements: [
               {
-                activity: {
-                  name: 'fetchData',
-                  result: 'rawData'
+                execute: {
+                  activity: {
+                    name: 'fetchData',
+                    result: 'rawData'
+                  }
                 }
               },
               {
-                step: {
-                  name: 'processData',
-                  arguments: ['rawData'],
-                  result: 'processedData'
+                execute: {
+                  step: {
+                    name: 'processData',
+                    arguments: ['rawData'],
+                    result: 'processedData'
+                  }
                 }
               },
               {
-                activity: {
-                  name: 'saveData',
-                  arguments: ['processedData'],
-                  result: 'saveResult'
+                execute: {
+                  activity: {
+                    name: 'saveData',
+                    arguments: ['processedData'],
+                    result: 'saveResult'
+                  }
                 }
               }
             ]
@@ -789,14 +869,16 @@ describe('DSLInterpreter', () => {
     it('should throw error if step depends on missing result', async () => {
       const dsl: DSL = {
         variables: {},
-        root: {
+        plan: {
           sequence: {
             elements: [
               {
-                step: {
-                  name: 'processData',
-                  arguments: ['nonExistentData'], // This data doesn't exist
-                  result: 'processedData'
+                execute: {
+                  step: {
+                    name: 'processData',
+                    arguments: ['nonExistentData'],
+                    result: 'processedData'
+                  }
                 }
               }
             ]
@@ -816,7 +898,7 @@ describe('DSLInterpreter', () => {
       const dsl = convertStepsToDSL([], { testVar: 'value' });
 
       expect(dsl.variables).toEqual({ testVar: 'value' });
-      expect(dsl.root.sequence.elements).toEqual([]);
+      expect(dsl.plan.sequence.elements).toEqual([]);
     });
 
     it('should handle circular dependencies', () => {
@@ -850,17 +932,17 @@ describe('DSLInterpreter', () => {
       const dsl = convertStepsToDSL(steps);
 
       // Should have sequence elements for each generation
-      expect(dsl.root.sequence.elements.length).toBeGreaterThan(0);
+      expect(dsl.plan.sequence.elements.length).toBeGreaterThan(0);
 
       // The last element should contain step4
-      const lastGenElement = dsl.root.sequence.elements[dsl.root.sequence.elements.length - 1];
+      const lastGenElement = dsl.plan.sequence.elements[dsl.plan.sequence.elements.length - 1];
       let containsStep4 = false;
 
-      if ('step' in lastGenElement) {
-        containsStep4 = lastGenElement.step.result === 'step4';
+      if ('execute' in lastGenElement && lastGenElement.execute.step) {
+        containsStep4 = lastGenElement.execute.step.result === 'step4';
       } else if ('parallel' in lastGenElement) {
         containsStep4 = lastGenElement.parallel.branches.some(
-          (branch) => 'step' in branch && branch.step.result === 'step4'
+          (branch) => 'execute' in branch && branch.execute.step?.result === 'step4'
         );
       }
 

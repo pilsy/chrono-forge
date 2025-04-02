@@ -14,7 +14,7 @@ export class DSLWorkflowExample extends Workflow {
   // The DSL definition that will be executed
   private dsl: DSL = {
     variables: {},
-    root: {
+    plan: {
       sequence: {
         elements: []
       }
@@ -103,18 +103,18 @@ export class DSLWorkflowExample extends Workflow {
    */
   @Signal()
   async addActivity(activity: { name: string; arguments?: string[]; result?: string }): Promise<void> {
-    // Make sure we have a sequence to add to
-    if (!this.dsl.root || !('sequence' in this.dsl.root)) {
-      this.dsl.root = {
+    if (!this.dsl.plan || !('sequence' in this.dsl.plan)) {
+      this.dsl.plan = {
         sequence: {
           elements: []
         }
       };
     }
 
-    // Add the activity to the sequence
-    (this.dsl.root.sequence.elements as any[]).push({
-      activity
+    (this.dsl.plan.sequence.elements as any[]).push({
+      execute: {
+        activity
+      }
     });
   }
 
@@ -123,18 +123,18 @@ export class DSLWorkflowExample extends Workflow {
    */
   @Signal()
   async addStep(step: { name: string; arguments?: string[]; result?: string }): Promise<void> {
-    // Make sure we have a sequence to add to
-    if (!this.dsl.root || !('sequence' in this.dsl.root)) {
-      this.dsl.root = {
+    if (!this.dsl.plan || !('sequence' in this.dsl.plan)) {
+      this.dsl.plan = {
         sequence: {
           elements: []
         }
       };
     }
 
-    // Add the step to the sequence
-    (this.dsl.root.sequence.elements as any[]).push({
-      step
+    (this.dsl.plan.sequence.elements as any[]).push({
+      execute: {
+        step
+      }
     });
   }
 

@@ -1,16 +1,26 @@
 import { proxyActivities } from '@temporalio/workflow';
 import { DirectedGraph } from 'eventemitter3-graphology';
-import { hasCycle, topologicalSort, topologicalGenerations } from 'graphology-dag';
+import { hasCycle, topologicalGenerations } from 'graphology-dag';
 import { StepMetadata } from '../decorators/Step';
 
 export type DSL = {
   variables: Record<string, unknown>;
-  root: Statement;
+  plan: Statement;
 };
 
 type Sequence = {
   elements: Statement[];
-  level?: number;
+};
+
+type Parallel = {
+  branches: Statement[];
+};
+
+type Execute = {
+  code?: string;
+  step?: StepInvocation;
+  activity?: ActivityInvocation;
+  workflow?: WorkflowInvocation;
 };
 
 type ActivityInvocation = {
@@ -27,24 +37,14 @@ type WorkflowInvocation = {
   group?: number;
 };
 
-type WorkflowStep = {
+type StepInvocation = {
   name: string;
   arguments?: string[];
   result?: string;
   group?: number;
 };
 
-type Parallel = {
-  branches: Statement[];
-  level?: number;
-};
-
-type Statement =
-  | { activity: ActivityInvocation }
-  | { workflow: WorkflowInvocation }
-  | { sequence: Sequence }
-  | { parallel: Parallel }
-  | { step: WorkflowStep };
+type Statement = { sequence: Sequence } | { parallel: Parallel } | { execute: Execute };
 
 export async function DSLInterpreter(
   dsl: DSL,
@@ -60,7 +60,7 @@ export async function DSLInterpreter(
   const steps = injectedSteps || {};
 
   const bindings = dsl.variables as Record<string, string>;
-  const graph = buildDependencyGraph(dsl.root, bindings);
+  const graph = buildDependencyGraph(dsl.plan, bindings);
 
   return await executeGraphByGenerations(graph, bindings, acts, steps);
 }
@@ -70,7 +70,7 @@ type ExecuteInput = {
   steps?: Record<string, (input: unknown) => Promise<unknown>>;
 };
 
-function buildDependencyGraph(root: Statement, bindings: Record<string, string | undefined>): DirectedGraph {
+function buildDependencyGraph(plan: Statement, bindings: Record<string, string | undefined>): DirectedGraph {
   const graph = new DirectedGraph();
 
   // Helper function to create node execution logic
@@ -129,12 +129,17 @@ function buildDependencyGraph(root: Statement, bindings: Record<string, string |
   };
 
   const processStatement = (statement: Statement) => {
-    if ('activity' in statement) {
-      const { name, arguments: args = [], result } = statement.activity;
-      addNodeAndDependencies('activity', name, args, result);
-    } else if ('step' in statement) {
-      const { name, arguments: args = [], result } = statement.step;
-      addNodeAndDependencies('step', name, args, result);
+    if ('execute' in statement) {
+      if (statement.execute.activity) {
+        const { name, arguments: args = [], result } = statement.execute.activity;
+        addNodeAndDependencies('activity', name, args, result);
+      } else if (statement.execute.step) {
+        const { name, arguments: args = [], result } = statement.execute.step;
+        addNodeAndDependencies('step', name, args, result);
+      } else if (statement.execute.code) {
+        // Handle code execution if needed
+        console.warn('Code execution not implemented');
+      }
     } else if ('sequence' in statement) {
       statement.sequence.elements.forEach(processStatement);
     } else if ('parallel' in statement) {
@@ -142,7 +147,7 @@ function buildDependencyGraph(root: Statement, bindings: Record<string, string |
     }
   };
 
-  processStatement(root);
+  processStatement(plan);
 
   // Check for cycles
   if (hasCycle(graph)) {
@@ -228,7 +233,7 @@ async function executeGenerationWithErrorHandling(
  */
 export function convertStepsToDSL(steps: StepMetadata[], initialVariables: Record<string, unknown> = {}): DSL {
   if (!steps || steps.length === 0) {
-    return { variables: initialVariables, root: { sequence: { elements: [] } } };
+    return { variables: initialVariables, plan: { sequence: { elements: [] } } };
   }
 
   // Create a graph to determine dependencies
@@ -280,9 +285,11 @@ export function convertStepsToDSL(steps: StepMetadata[], initialVariables: Recor
       const stepMeta = steps.find((s) => s.name === stepName);
       if (stepMeta) {
         dslElements.push({
-          step: {
-            name: stepMeta.method, // Use the method name for execution
-            result: stepName // Use the step name as the result identifier
+          execute: {
+            step: {
+              name: stepMeta.method, // Use the method name for execution
+              result: stepName // Use the step name as the result identifier
+            }
           }
         });
       }
@@ -294,9 +301,11 @@ export function convertStepsToDSL(steps: StepMetadata[], initialVariables: Recor
         const stepMeta = steps.find((s) => s.name === stepName);
         if (stepMeta) {
           parallelBranches.push({
-            step: {
-              name: stepMeta.method,
-              result: stepName
+            execute: {
+              step: {
+                name: stepMeta.method,
+                result: stepName
+              }
             }
           });
         }
@@ -313,7 +322,7 @@ export function convertStepsToDSL(steps: StepMetadata[], initialVariables: Recor
   // Return the completed DSL
   return {
     variables: initialVariables,
-    root: {
+    plan: {
       sequence: {
         elements: dslElements
       }
