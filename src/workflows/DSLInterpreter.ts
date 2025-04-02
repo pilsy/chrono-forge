@@ -3,51 +3,56 @@ import { DirectedGraph } from 'eventemitter3-graphology';
 import { hasCycle, topologicalGenerations } from 'graphology-dag';
 import { StepMetadata } from '../decorators/Step';
 
-export type DSL = {
+export type DSLDefinition = {
   variables: Record<string, unknown>;
   plan: Statement;
 };
 
-type Sequence = {
+export type Statement = {
+  condition?: (dsl: DSLDefinition) => Promise<boolean>;
+  retries?: number;
+  timeout?: number;
+  required?: boolean;
+} & ({ sequence: Sequence } | { parallel: Parallel } | { execute: Execute });
+
+export type Sequence = {
   elements: Statement[];
 };
 
-type Parallel = {
+export type Parallel = {
   branches: Statement[];
 };
 
-type Execute = {
+export type Execute = {
   code?: string;
   step?: StepInvocation;
   activity?: ActivityInvocation;
   workflow?: WorkflowInvocation;
 };
 
-type ActivityInvocation = {
+export type ActivityInvocation = {
   name: string;
   arguments?: string[];
   result?: string;
   group?: number;
 };
 
-type WorkflowInvocation = {
+export type WorkflowInvocation = {
   name: string;
   arguments?: string[];
   result?: string;
   group?: number;
 };
 
-type StepInvocation = {
+export type StepInvocation = {
   name: string;
   arguments?: string[];
   result?: string;
   group?: number;
 };
-
-type Statement = { sequence: Sequence } | { parallel: Parallel } | { execute: Execute };
 
 export async function DSLInterpreter(
-  dsl: DSL,
+  dsl: DSLDefinition,
   injectedActivities?: Record<string, (...args: string[]) => Promise<string | undefined>>,
   injectedSteps?: Record<string, (...args: string[]) => Promise<string | undefined>>
 ): Promise<unknown> {
@@ -226,12 +231,15 @@ async function executeGenerationWithErrorHandling(
 }
 
 /**
- * Adapter function to convert StepMetadata from the @Step decorator into DSL format
+ * Adapter function to convert StepMetadata from the @Step decorator into DSLDefinition format
  *
  * @param steps Array of step metadata from a Workflow class
- * @returns DSL object representing the workflow steps
+ * @returns DSLDefinition object representing the workflow steps
  */
-export function convertStepsToDSL(steps: StepMetadata[], initialVariables: Record<string, unknown> = {}): DSL {
+export function convertStepsToDSL(
+  steps: StepMetadata[],
+  initialVariables: Record<string, unknown> = {}
+): DSLDefinition {
   if (!steps || steps.length === 0) {
     return { variables: initialVariables, plan: { sequence: { elements: [] } } };
   }
@@ -275,7 +283,7 @@ export function convertStepsToDSL(steps: StepMetadata[], initialVariables: Recor
   // Get the execution order by generations
   const generations = topologicalGenerations(graph);
 
-  // Convert generations to DSL structure
+  // Convert generations to DSLDefinition structure
   const dslElements: Statement[] = [];
 
   for (const generation of generations) {
@@ -319,7 +327,7 @@ export function convertStepsToDSL(steps: StepMetadata[], initialVariables: Recor
     }
   }
 
-  // Return the completed DSL
+  // Return the completed DSLDefinition
   return {
     variables: initialVariables,
     plan: {

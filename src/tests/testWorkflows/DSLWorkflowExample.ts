@@ -1,7 +1,7 @@
 import { Workflow } from '../../workflows';
 import { Temporal } from '../../workflows';
-import { Query, Signal } from '../../decorators';
-import { DSLInterpreter, DSL } from '../../workflows/DSLInterpreter';
+import { Query, Signal, Step } from '../../decorators';
+import { DSLInterpreter, DSLDefinition } from '../../workflows/DSLInterpreter';
 import { sleep } from '@temporalio/workflow';
 import { Duration } from '@temporalio/common';
 
@@ -11,8 +11,8 @@ import { Duration } from '@temporalio/common';
  */
 @Temporal()
 export class DSLWorkflowExample extends Workflow {
-  // The DSL definition that will be executed
-  private dsl: DSL = {
+  // The DSLDefinition definition that will be executed
+  private dsl: DSLDefinition = {
     variables: {},
     plan: {
       sequence: {
@@ -28,25 +28,17 @@ export class DSLWorkflowExample extends Workflow {
   protected status: 'idle' | 'running' | 'completed' | 'error' = 'idle';
   private error: Error | null = null;
 
-  // Step functions that can be referenced in the DSL
-  private workflowSteps: Record<string, (...args: any[]) => Promise<any>> = {
-    transformData: this.transformData.bind(this),
-    validateData: this.validateData.bind(this),
-    formatOutput: this.formatOutput.bind(this),
-    sleepStep: this.sleepStep.bind(this)
-  };
-
   /**
    * Main workflow execution method
    */
-  async execute(initialDSL?: DSL): Promise<any> {
+  async execute(initialDSL?: DSLDefinition): Promise<any> {
     try {
-      // Use provided DSL or the default one
+      // Use provided DSLDefinition or the default one
       this.dsl = initialDSL || this.dsl;
       this.status = 'running';
 
-      // Execute the DSL with both activities and workflow steps
-      this.executionResult = await DSLInterpreter(this.dsl, undefined, this.workflowSteps);
+      // Execute the DSLDefinition with both activities and workflow steps
+      this.executionResult = await DSLInterpreter(this.dsl);
 
       this.status = 'completed';
       return this.executionResult;
@@ -60,6 +52,7 @@ export class DSLWorkflowExample extends Workflow {
   /**
    * Workflow step to transform data
    */
+  @Step()
   async transformData(data: string): Promise<string> {
     return `transformed_${data}`;
   }
@@ -67,6 +60,7 @@ export class DSLWorkflowExample extends Workflow {
   /**
    * Workflow step to validate data
    */
+  @Step()
   async validateData(data: string): Promise<boolean> {
     return data.includes('valid') || data.includes('transformed');
   }
@@ -74,6 +68,7 @@ export class DSLWorkflowExample extends Workflow {
   /**
    * Workflow step to format output
    */
+  @Step()
   async formatOutput(data: string, isValid: boolean | string): Promise<string> {
     console.log('formatOutput', data, isValid);
     // Convert string 'true' to boolean true if needed
@@ -84,22 +79,23 @@ export class DSLWorkflowExample extends Workflow {
   /**
    * Simple workflow step that just sleeps for a specified time
    */
+  @Step()
   async sleepStep(sleepTimeMs: Duration): Promise<string> {
     await sleep(sleepTimeMs);
     return `slept for ${sleepTimeMs}ms`;
   }
 
   /**
-   * Signal to update the DSL definition during workflow execution
+   * Signal to update the DSLDefinition definition during workflow execution
    */
   @Signal()
-  async updateDSL(newDSL: DSL): Promise<void> {
-    // Update the DSL - this will be used on next execution
+  async updateDSL(newDSL: DSLDefinition): Promise<void> {
+    // Update the DSLDefinition - this will be used on next execution
     this.dsl = newDSL;
   }
 
   /**
-   * Signal to add a new activity to the DSL sequence
+   * Signal to add a new activity to the DSLDefinition sequence
    */
   @Signal()
   async addActivity(activity: { name: string; arguments?: string[]; result?: string }): Promise<void> {
@@ -119,7 +115,7 @@ export class DSLWorkflowExample extends Workflow {
   }
 
   /**
-   * Signal to add a new workflow step to the DSL sequence
+   * Signal to add a new workflow step to the DSLDefinition sequence
    */
   @Signal()
   async addStep(step: { name: string; arguments?: string[]; result?: string }): Promise<void> {
@@ -139,10 +135,10 @@ export class DSLWorkflowExample extends Workflow {
   }
 
   /**
-   * Query to get the current DSL definition
+   * Query to get the current DSLDefinition definition
    */
   @Query()
-  getDSL(): DSL {
+  getDSL(): DSLDefinition {
     return this.dsl;
   }
 
