@@ -364,17 +364,10 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     this.args = args;
     this.options = options;
 
-    // @TODO this needs better thought out, it's not a good idea to bind properties from the args
-    // Initialize properties from args if it's an object
-    // if (args && typeof args === 'object') {
-    //   const properties = this.collectMetadata(PROPERTY_METADATA_KEY, this.constructor.prototype);
-    //   for (const { propertyKey } of properties) {
-    //     if (propertyKey !== 'data' && propertyKey in args) {
-    //       this.log.info(`Initializing property ${propertyKey} with value ${args[propertyKey as keyof P]}`);
-    //       (this as any)[propertyKey] = args[propertyKey as keyof P];
-    //     }
-    //   }
-    // }
+    if (args && typeof args === 'object') {
+      // @ts-ignore
+      this.status = this.args?.status ?? 'running';
+    }
   }
 
   /**

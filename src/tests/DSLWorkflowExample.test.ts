@@ -56,7 +56,7 @@ describe('DSLWorkflowExample', () => {
     const handle = await execute('DSLWorkflowExample', 'start', simpleDSL);
 
     // Wait for completion
-    await sleep(2500);
+    await sleep(5000);
 
     // Check workflow status
     const status = await handle.query('getStatus');
@@ -111,7 +111,7 @@ describe('DSLWorkflowExample', () => {
     const handle = await execute('DSLWorkflowExample', 'start', sequentialDSL);
 
     // Wait for completion
-    await sleep(2000);
+    await sleep(5000);
 
     // Check workflow status
     const status = await handle.query('getStatus');

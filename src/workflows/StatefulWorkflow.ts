@@ -1002,8 +1002,6 @@ export abstract class StatefulWorkflow<
       this.stateManager.state = memo.state;
     }
 
-    this.status = this.params?.status ?? 'running';
-
     this.apiUrl = this.params?.apiUrl ?? options?.apiUrl;
     this.apiToken = this.params?.apiToken;
   }
