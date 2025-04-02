@@ -34,6 +34,12 @@ declare global {
 
 global.activities = {
   // @ts-ignore
+  waitForDuration: jest.fn().mockImplementation(async (duration) => {
+    const ms = parseInt(duration, 10);
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    return 'waitResult';
+  }),
+  // @ts-ignore
   makeHTTPRequest: jest.fn().mockResolvedValue('httpResult'), // @ts-ignore
   formatData: jest.fn().mockResolvedValue('formattedData'), // @ts-ignore
   processResult: jest.fn().mockResolvedValue('processedResult'), // @ts-ignore
@@ -45,7 +51,9 @@ global.activities = {
   errorProneActivity: jest.fn().mockRejectedValue(new Error('Activity failed')), // @ts-ignore
   conditionalTask: jest
     .fn()
-    .mockImplementation((condition) => Promise.resolve(condition === 'true' ? 'condition met' : 'condition not met'))
+    .mockImplementation((condition) => Promise.resolve(condition === 'true' ? 'condition met' : 'condition not met')),
+  // @ts-ignore
+  processLargeFile: jest.fn().mockResolvedValue('processedResult')
 };
 
 global.tracer = initTracer('temporal_worker', 'local', 'http://localhost:4317/v1/traces')?.tracer;

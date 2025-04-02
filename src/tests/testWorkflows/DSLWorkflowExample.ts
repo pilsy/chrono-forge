@@ -2,6 +2,7 @@ import { Workflow } from '../../workflows';
 import { Temporal } from '../../workflows';
 import { Query, Signal } from '../../decorators';
 import { DSLInterpreter, DSL } from '../../workflows/DSLInterpreter';
+import { sleep } from '@temporalio/workflow';
 
 /**
  * Example workflow that demonstrates how to use the DSLInterpreter
@@ -26,6 +27,14 @@ export class DSLWorkflowExample extends Workflow {
   protected status: 'idle' | 'running' | 'completed' | 'error' = 'idle';
   private error: Error | null = null;
 
+  // Step functions that can be referenced in the DSL
+  private workflowSteps: Record<string, (...args: any[]) => Promise<any>> = {
+    transformData: this.transformData.bind(this),
+    validateData: this.validateData.bind(this),
+    formatOutput: this.formatOutput.bind(this),
+    sleepStep: this.sleepStep.bind(this)
+  };
+
   /**
    * Main workflow execution method
    */
@@ -35,8 +44,8 @@ export class DSLWorkflowExample extends Workflow {
       this.dsl = initialDSL || this.dsl;
       this.status = 'running';
 
-      // Execute the DSL
-      this.executionResult = await DSLInterpreter(this.dsl);
+      // Execute the DSL with both activities and workflow steps
+      this.executionResult = await DSLInterpreter(this.dsl, undefined, this.workflowSteps);
 
       this.status = 'completed';
       return this.executionResult;
@@ -45,6 +54,38 @@ export class DSLWorkflowExample extends Workflow {
       this.error = err as Error;
       throw err;
     }
+  }
+
+  /**
+   * Workflow step to transform data
+   */
+  async transformData(data: string): Promise<string> {
+    return `transformed_${data}`;
+  }
+
+  /**
+   * Workflow step to validate data
+   */
+  async validateData(data: string): Promise<boolean> {
+    return data.includes('valid') || data.includes('transformed');
+  }
+
+  /**
+   * Workflow step to format output
+   */
+  async formatOutput(data: string, isValid: boolean | string): Promise<string> {
+    console.log('formatOutput', data, isValid);
+    // Convert string 'true' to boolean true if needed
+    const validFlag = isValid === 'true' || isValid === true;
+    return validFlag ? `formatted_${data}` : 'invalid_data';
+  }
+
+  /**
+   * Simple workflow step that just sleeps for a specified time
+   */
+  async sleepStep(sleepTimeMs: string): Promise<string> {
+    await sleep(sleepTimeMs);
+    return `slept for ${sleepTimeMs}ms`;
   }
 
   /**
@@ -77,6 +118,26 @@ export class DSLWorkflowExample extends Workflow {
   }
 
   /**
+   * Signal to add a new workflow step to the DSL sequence
+   */
+  @Signal()
+  async addStep(step: { name: string; arguments?: string[]; result?: string }): Promise<void> {
+    // Make sure we have a sequence to add to
+    if (!this.dsl.root || !('sequence' in this.dsl.root)) {
+      this.dsl.root = {
+        sequence: {
+          elements: []
+        }
+      };
+    }
+
+    // Add the step to the sequence
+    (this.dsl.root.sequence.elements as any[]).push({
+      step
+    });
+  }
+
+  /**
    * Query to get the current DSL definition
    */
   @Query()
@@ -89,6 +150,7 @@ export class DSLWorkflowExample extends Workflow {
    */
   @Query()
   getStatus(): { status: string; error: string | null } {
+    console.log(this);
     return {
       status: this.status,
       error: this.error ? this.error.message : null
