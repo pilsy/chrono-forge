@@ -107,7 +107,11 @@ describe('StatefulWorkflow', () => {
   describe('ContinueAsNew', () => {
     it('Should continue as new', async () => {
       const data = { id: uuid4() };
-      const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
+      const handle = await execute(workflows.ShouldImplementStatefulOnContinue, {
+        id: data.id,
+        entityName: 'User',
+        data
+      });
       await sleep();
 
       const state = await handle.query('state');

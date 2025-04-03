@@ -83,10 +83,10 @@ export function Temporal(options?: TemporalOptions) {
       'extraOptions',
       `
       return async function ${workflowName}(...args) {
-        extraOptions.workflowType = '${workflowName}';
         const instance = new constructor(args[0], extraOptions);
 
         try {
+          instance.workflowType = '${workflowName}';
           await instance.bindEventHandlers();
           await instance.emitAsync('setup');
           await instance.emitAsync('hooks');
@@ -147,6 +147,8 @@ export function Temporal(options?: TemporalOptions) {
  * @template O - Type of configuration options for the workflow.
  */
 export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
+  protected workflowType!: string;
+
   /**
    * Map to keep track of child workflow handles.
    * Uses LRU cache to efficiently manage a large number of child workflow references
@@ -407,6 +409,13 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   protected abstract execute(...args: unknown[]): Promise<unknown>;
 
   /**
+   * Optional method that can be implemented by subclasses to define custom continue-as-new behavior.
+   * If implemented, this method will be called when the workflow reaches its maximum iterations.
+   * @returns A promise that resolves when the continue-as-new process is complete.
+   */
+  protected onContinue?(): Promise<Record<string, unknown>>;
+
+  /**
    * Core method to manage workflow execution and its lifecycle.
    *
    * This method implements the main execution loop of the workflow, handling:
@@ -487,18 +496,23 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    * by waiting for all handlers to finish and then calling the appropriate continueAsNew method.
    *
    * @returns {Promise<void>} Resolves when the continueAsNew process is complete.
-   * @throws {Error} If no method decorated with @ContinueAsNew is found.
+   * @throws {Error} If no onContinue method is found.
    */
   protected async handleMaxIterations(): Promise<void> {
     await workflow.condition(() => workflow.allHandlersFinished(), '30 seconds');
 
-    const continueAsNewMethod = (this as any)._continueAsNewMethod;
-    if (continueAsNewMethod && typeof (this as any)[continueAsNewMethod] === 'function') {
-      return await (this as any)[continueAsNewMethod]();
+    const continueFn = workflow.makeContinueAsNewFunc({
+      workflowType: String(this.workflowType),
+      memo: workflow.workflowInfo().memo,
+      searchAttributes: workflow.workflowInfo().searchAttributes
+    });
+
+    // If onContinue is defined, call it to get custom parameters, otherwise throw error
+    if (typeof this.onContinue === 'function') {
+      const customArgs = await this.onContinue();
+      await continueFn(customArgs || this.args);
     } else {
-      throw new Error(
-        `No method decorated with @ContinueAsNew found in ${this.constructor.name}. Cannot continue as new.`
-      );
+      throw new Error(`No onContinue method found in ${this.constructor.name}. Cannot continue as new.`);
     }
   }
 

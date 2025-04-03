@@ -509,6 +509,13 @@ export abstract class StatefulWorkflow<
   protected conditionTimeout: Duration | undefined = undefined;
 
   /**
+   * Optional method that can be implemented by subclasses to define custom continue-as-new behavior.
+   * If implemented, this method will be called when the workflow reaches its maximum iterations.
+   * @returns A promise that resolves when the continue-as-new process is complete.
+   */
+  protected onContinue?(): Promise<Record<string, unknown>>;
+
+  /**
    * Optional method that can be implemented by extending classes to load data from external sources.
    * This method is called automatically when pendingUpdate is true.
    *
@@ -550,19 +557,10 @@ export abstract class StatefulWorkflow<
   protected abstract execute(args?: unknown, options?: TemporalOptions): Promise<unknown>;
 
   /**
-   * The `apiToken` property is used to store the API token for this workflow, which may interact
-   * with external systems requiring authentication. This property is memoized, meaning its value
-   * is preserved between workflow runs for consistency and reliability.
+   * Sets the API token for the workflow.
+   * This token is used for authenticating API requests made by the workflow.
    *
-   * ### Characteristics:
-   * - **Visibility**: Protected - Accessible within the class and subclasses.
-   * - **Assignable**: By design, this property is not directly settable (`set: false`), ensuring
-   *   that changes are made through controlled methods such as signals, preserving data integrity.
-   * - **Memoization**: This property is memoized with the key `'apiToken'`, allowing its value to
-   *   persist across different workflow executions.
-   *
-   * This property is essential for workflows that need secure and authenticated interactions
-   * with external services.
+   * @param apiToken - The API token to set.
    */
   @Property({ set: false, memo: 'apiToken' })
   protected apiToken?: string;
@@ -2635,31 +2633,34 @@ export abstract class StatefulWorkflow<
    * - Uses type assertions to access internal properties due to TypeScript limitations
    */
   protected async handleMaxIterations(): Promise<void> {
-    // @ts-ignore
-    const continueAsNewMethod = (this as any)._continueAsNewMethod || this.continueAsNewHandler;
     await workflow.condition(() => workflow.allHandlersFinished(), '30 seconds');
 
-    if (continueAsNewMethod && typeof (this as any)[continueAsNewMethod] === 'function') {
-      return await (this as any)[continueAsNewMethod]();
-    } else {
-      const continueFn = workflow.makeContinueAsNewFunc({
-        workflowType: String(this.options.workflowType),
-        memo: workflow.workflowInfo().memo,
-        searchAttributes: workflow.workflowInfo().searchAttributes
-      });
+    const continueFn = workflow.makeContinueAsNewFunc({
+      workflowType: String(this.workflowType),
+      memo: workflow.workflowInfo().memo,
+      searchAttributes: workflow.workflowInfo().searchAttributes
+    });
 
-      await continueFn({
-        state: this.state,
-        status: this.status,
-        subscriptions: this.subscriptions,
-        ...Object.keys(this.params).reduce(
-          (params, key: string) => ({
-            ...params, // @ts-ignore
-            [key]: this[key]
-          }),
-          {}
-        )
-      });
+    // Default parameters for continue-as-new
+    const defaultParams = {
+      state: this.state,
+      status: this.status,
+      subscriptions: this.subscriptions,
+      ...Object.keys(this.params).reduce(
+        (params, key: string) => ({
+          ...params, // @ts-ignore
+          [key]: this[key]
+        }),
+        {}
+      )
+    };
+
+    // If onContinue is defined, call it to get custom parameters, otherwise use defaults
+    if (typeof this.onContinue === 'function') {
+      const customParams = await this.onContinue();
+      await continueFn(customParams || defaultParams);
+    } else {
+      await continueFn(defaultParams);
     }
   }
 
