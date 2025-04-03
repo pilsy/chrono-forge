@@ -125,7 +125,7 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
     for (const arg of args) {
       if ((graph.hasNode(arg) || bindings[arg] !== undefined) && !graph.hasEdge(arg, nodeId)) {
         try {
-          graph.addEdge(arg, nodeId);
+          graph.addDirectedEdge(arg, nodeId);
         } catch (e) {
           // Edge might already exist
         }
