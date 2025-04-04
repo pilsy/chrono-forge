@@ -1086,6 +1086,7 @@ export abstract class StatefulWorkflow<
         }
 
         if (!this.isInTerminalState()) {
+          await this.processState();
           this.result = await this.execute();
         }
 
@@ -1354,7 +1355,6 @@ export abstract class StatefulWorkflow<
    * - Logs a debug message indicating the start of the state processing.
    * - If there are any pending changes, it triggers the `stateManager` to process these changes.
    */
-  @Before('execute')
   protected async processState(): Promise<void> {
     this.log.debug(`processState`);
 

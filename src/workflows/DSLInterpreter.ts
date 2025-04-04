@@ -71,8 +71,8 @@ export async function DSLInterpreter(
 }
 
 type ExecuteInput = {
-  activities: Record<string, (...args: any[]) => Promise<any>>;
   steps?: Record<string, (input: unknown) => Promise<unknown>>;
+  activities: Record<string, (...args: any[]) => Promise<any>>;
 };
 
 function buildDependencyGraph(plan: Statement, bindings: Record<string, string | undefined>): DirectedGraph {
