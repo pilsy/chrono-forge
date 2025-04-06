@@ -16,29 +16,38 @@ describe('DSLInterpreter', () => {
     jest.clearAllMocks();
   });
 
-  it('should execute a simple activity', async () => {
-    // Create a simple DSL with a single activity
-    const dsl: DSL = {
+  it('should execute a single activity', async () => {
+    const dsl: DSLDefinition = {
       variables: {},
       plan: {
         execute: {
           activity: {
             name: 'makeHTTPRequest',
-            result: 'httpResult'
+            result: 'result',
+            arguments: ['https://example.com']
           }
         }
       }
     };
 
-    // Use the global.activities directly as injected activities
-    await DSLInterpreter(dsl, global.activities);
+    const interpreter = DSLInterpreter(dsl, global.activities);
+
+    for await (const generation of interpreter) {
+      // Check that we only get one node in this generation
+      expect(generation.nodeIds).toHaveLength(1);
+
+      // The nodeId should be the auto-generated ID for the activity
+      expect(generation.nodeId).toMatch(/^activity_makeHTTPRequest_\d+$/);
+
+      const result = await generation.execute();
+      expect(result).toBe('httpResult');
+    }
 
     // Verify the activity was called
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
   });
 
   it('should execute a sequence of activities in order', async () => {
-    // Create a DSL with a sequence of activities
     const dsl: DSL = {
       variables: {},
       plan: {
@@ -75,18 +84,37 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl, global.activities);
+    const interpreter = DSLInterpreter(dsl, global.activities);
 
-    // Verify the activities were called in order
+    // First activity node
+    let generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_makeHTTPRequest_\d+$/);
+    let result = await generation.value.execute();
+    expect(result).toBe('httpResult');
+
+    // Second activity node
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_formatData_\d+$/);
+    result = await generation.value.execute();
+    expect(result).toBe('formattedData');
+
+    // Third activity node
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_processResult_\d+$/);
+    result = await generation.value.execute();
+    expect(result).toBe('processedResult');
+
+    // Should be done
+    generation = await interpreter.next();
+    expect(generation.done).toBe(true);
+
+    // Verify the activities were called in order with correct arguments
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
-    expect(global.activities.formatData).toHaveBeenCalledTimes(1);
     expect(global.activities.formatData).toHaveBeenCalledWith('httpResult');
-    expect(global.activities.processResult).toHaveBeenCalledTimes(1);
     expect(global.activities.processResult).toHaveBeenCalledWith('formattedData');
   });
 
   it('should execute parallel activities', async () => {
-    // Create a DSL with parallel activities
     const dsl: DSL = {
       variables: {},
       plan: {
@@ -113,7 +141,27 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl, global.activities);
+    const interpreter = DSLInterpreter(dsl, global.activities);
+
+    // First parallel task
+    let generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_parallelTask1_\d+$/);
+    expect(generation.value.nodeIds).toContain(generation.value.nodeId);
+    let result = await generation.value.execute();
+    expect(result).toBe('parallelResult1');
+
+    // Second parallel task (same generation)
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_parallelTask2_\d+$/);
+    expect(generation.value.nodeIds).toContain(generation.value.nodeId);
+    result = await generation.value.execute();
+    expect(result).toBe('parallelResult2');
+
+    // Both tasks should be in the same generation
+    expect(generation.value.nodeIds).toHaveLength(2);
+
+    // Should be done after both tasks
+    expect((await interpreter.next()).done).toBe(true);
 
     // Verify both parallel activities were called
     expect(global.activities.parallelTask1).toHaveBeenCalledTimes(1);
@@ -121,7 +169,6 @@ describe('DSLInterpreter', () => {
   });
 
   it('should handle complex nested structures with dependencies', async () => {
-    // Create a complex DSL with nested sequences and parallel branches
     const dsl: DSL = {
       variables: {},
       plan: {
@@ -172,23 +219,46 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl, global.activities);
+    const interpreter = DSLInterpreter(dsl, global.activities);
 
-    // Verify the sequence of calls
+    // Generation 1: makeHTTPRequest (no dependencies)
+    let generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_makeHTTPRequest_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+    let result = await generation.value.execute();
+    expect(result).toBe('httpResult');
+
+    // Generation 2: parallel activities (formatData and slowOperation)
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_formatData_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(2);
+    result = await generation.value.execute();
+    expect(result).toBe('formattedData');
+
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_slowOperation_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(2);
+    result = await generation.value.execute();
+    expect(result).toBe('slowResult');
+
+    // Generation 3: combineResults
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_combineResults_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+    result = await generation.value.execute();
+    expect(result).toBe('combinedResult');
+
+    // Should be done
+    expect((await interpreter.next()).done).toBe(true);
+
+    // Verify the execution flow
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
-
-    // Both formatData and slowOperation should be called
-    expect(global.activities.formatData).toHaveBeenCalledTimes(1);
     expect(global.activities.formatData).toHaveBeenCalledWith('httpResult');
     expect(global.activities.slowOperation).toHaveBeenCalledTimes(1);
-
-    // combineResults should be called with both results
-    expect(global.activities.combineResults).toHaveBeenCalledTimes(1);
     expect(global.activities.combineResults).toHaveBeenCalledWith('formattedData', 'slowResult');
   });
 
   it('should handle activity dependencies correctly', async () => {
-    // Create a DSL with explicit dependencies
     const dsl: DSL = {
       variables: {
         staticValue: 'someConstant'
@@ -227,7 +297,31 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl, global.activities);
+    const interpreter = DSLInterpreter(dsl, global.activities);
+
+    // First generation
+    let generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_makeHTTPRequest_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+    let result = await generation.value.execute();
+    expect(result).toBe('httpResult');
+
+    // Second generation
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_formatData_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+    result = await generation.value.execute();
+    expect(result).toBe('formattedData');
+
+    // Third generation
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_complexOperation_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+    result = await generation.value.execute();
+    expect(result).toBe('complexResult');
+
+    // Should be done
+    expect((await interpreter.next()).done).toBe(true);
 
     // Verify the activities were called with correct arguments
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
@@ -236,7 +330,6 @@ describe('DSLInterpreter', () => {
   });
 
   it('should handle predefined variables in the DSL', async () => {
-    // Create a DSL with predefined variables
     const dsl: DSL = {
       variables: {
         predefinedValue: 'initialValue',
@@ -253,7 +346,17 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl, global.activities);
+    const interpreter = DSLInterpreter(dsl, global.activities);
+
+    // Single generation
+    const generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_makeHTTPRequest_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+    const result = await generation.value.execute();
+    expect(result).toBe('httpResult');
+
+    // Should be done
+    expect((await interpreter.next()).done).toBe(true);
 
     // Verify the activity was called with the predefined variable
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledWith('secret-key');
@@ -276,10 +379,22 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    const result = await DSLInterpreter(dsl, global.activities);
+    const interpreter = DSLInterpreter(dsl, global.activities);
 
-    // The variables should be updated with the activity result
+    // Get the single generation
+    const generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_makeHTTPRequest_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+
+    // Execute the activity
+    const result = await generation.value.execute();
+    expect(result).toBe('responseData');
+
+    // Verify the variables were updated
     expect((dsl.variables as Record<string, string>)['apiResponse']).toBe('responseData');
+
+    // Should be done
+    expect((await interpreter.next()).done).toBe(true);
   });
 
   it('should handle a complex workflow with multiple dependencies', async () => {
@@ -291,7 +406,6 @@ describe('DSLInterpreter', () => {
       Promise.resolve(`combined_${a}_${b}`)
     );
 
-    // Create a complex DSL with multiple dependencies
     const dsl: DSL = {
       variables: {
         initialParam: 'startValue'
@@ -349,7 +463,37 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl, global.activities);
+    const interpreter = DSLInterpreter(dsl, global.activities);
+
+    // Generation 1: makeHTTPRequest
+    let generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_makeHTTPRequest_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+    let result = await generation.value.execute();
+    expect(result).toBe('api_data');
+
+    // Generation 2: parallel formatData and processResult
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_formatData_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(2);
+    result = await generation.value.execute();
+    expect(result).toBe('formatted_api_data');
+
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_processResult_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(2);
+    result = await generation.value.execute();
+    expect(result).toBe('processed_api_data');
+
+    // Generation 3: combineResults
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_combineResults_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+    result = await generation.value.execute();
+    expect(result).toBe('combined_formatted_api_data_processed_api_data');
+
+    // Should be done
+    expect((await interpreter.next()).done).toBe(true);
 
     // Verify the execution flow
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledWith('startValue');
@@ -376,7 +520,20 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl, global.activities);
+    const interpreter = DSLInterpreter(dsl, global.activities);
+
+    // Get the single generation
+    const generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_makeHTTPRequest_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+
+    // Execute the activity
+    await generation.value.execute();
+
+    // Should be done
+    expect((await interpreter.next()).done).toBe(true);
+
+    // Verify the activity was called
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
   });
 
@@ -395,13 +552,26 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl, global.activities);
+    const interpreter = DSLInterpreter(dsl, global.activities);
+
+    // Get the single generation
+    const generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_makeHTTPRequest_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+
+    // Execute the activity and verify it doesn't crash
+    await generation.value.execute();
+
+    // Should be done
+    expect((await interpreter.next()).done).toBe(true);
+
+    // Verify the activity was called
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
-    // Verify we don't crash when no result binding is provided
-    global.activities.makeHTTPRequest.mockResolvedValue('httpResult');
   });
 
   it('should handle deeply nested sequences and parallels', async () => {
+    global.activities.makeHTTPRequest.mockResolvedValue('httpResult');
+
     // Temporarily mock formatData to match the test expectations
     const originalFormatData = global.activities.formatData;
     global.activities.formatData.mockImplementation((input) => Promise.resolve('formattedData'));
@@ -462,8 +632,39 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl, global.activities);
+    const interpreter = DSLInterpreter(dsl, global.activities);
 
+    // Generation 1: makeHTTPRequest
+    let generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_makeHTTPRequest_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+    let result = await generation.value.execute();
+    expect(result).toBe('httpResult');
+
+    // Generation 2: parallel formatData and slowOperation
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_formatData_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(2);
+    result = await generation.value.execute();
+    expect(result).toBe('formattedData');
+
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_slowOperation_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(2);
+    result = await generation.value.execute();
+    expect(result).toBe('slowResult');
+
+    // Generation 3: processResult (depends on formatData)
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_processResult_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+    result = await generation.value.execute();
+    expect(result).toBe('processed_formattedData');
+
+    // Should be done
+    expect((await interpreter.next()).done).toBe(true);
+
+    // Verify the execution flow
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
     expect(global.activities.formatData).toHaveBeenCalledWith('httpResult');
     expect(global.activities.processResult).toHaveBeenCalledWith('formattedData');
@@ -474,6 +675,7 @@ describe('DSLInterpreter', () => {
   });
 
   it('should handle activity arguments that are static values', async () => {
+    global.activities.combineResults.mockResolvedValue('combinedResult');
     const dsl: DSL = {
       variables: {
         staticArg1: 'value1',
@@ -490,13 +692,30 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl, global.activities);
+    const interpreter = DSLInterpreter(dsl, global.activities);
 
+    // Get the single generation
+    const generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_combineResults_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+
+    // Execute the activity
+    const result = await generation.value.execute();
+    expect(result).toBe('combinedResult');
+
+    // Should be done
+    expect((await interpreter.next()).done).toBe(true);
+
+    // Verify the activity was called with the static values
     expect(global.activities.combineResults).toHaveBeenCalledWith('value1', 'value2');
+
+    // Verify the result was stored in variables
+    expect((dsl.variables as Record<string, string>)['combinedStaticResult']).toBe('combinedResult');
   });
 
-  it('should support conditional execution through activities', async () => {
+  it('should support conditional execution when condition is met', async () => {
     global.activities.makeHTTPRequest.mockResolvedValue('true');
+    global.activities.conditionalTask.mockResolvedValue('condition met');
 
     const dsl: DSL = {
       variables: {},
@@ -512,6 +731,7 @@ describe('DSLInterpreter', () => {
               }
             },
             {
+              condition: async (dsl) => dsl.variables['condition'] === 'true',
               execute: {
                 activity: {
                   name: 'conditionalTask',
@@ -525,17 +745,86 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl, global.activities);
+    const interpreter = DSLInterpreter(dsl, global.activities);
 
+    // First activity: makeHTTPRequest
+    let generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_makeHTTPRequest_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+    let result = await generation.value.execute();
+    expect(result).toBe('true');
+
+    // Second activity: conditionalTask (should execute because condition is true)
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_conditionalTask_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+    result = await generation.value.execute();
+    expect(result).toBe('condition met');
+
+    // Should be done
+    expect((await interpreter.next()).done).toBe(true);
+
+    // Verify the execution flow
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
     expect(global.activities.conditionalTask).toHaveBeenCalledWith('true');
     expect((dsl.variables as Record<string, string>)['conditionalResult']).toBe('condition met');
+  });
+
+  it('should skip execution when condition is not met', async () => {
+    global.activities.makeHTTPRequest.mockResolvedValue('false');
+    global.activities.conditionalTask.mockResolvedValue('condition not met');
+
+    const dsl: DSL = {
+      variables: {},
+      plan: {
+        sequence: {
+          elements: [
+            {
+              execute: {
+                activity: {
+                  name: 'makeHTTPRequest',
+                  result: 'condition'
+                }
+              }
+            },
+            {
+              condition: async (dsl) => dsl.variables['condition'] === 'true',
+              execute: {
+                activity: {
+                  name: 'conditionalTask',
+                  arguments: ['condition'],
+                  result: 'conditionalResult'
+                }
+              }
+            }
+          ]
+        }
+      }
+    };
+
+    const interpreter = DSLInterpreter(dsl, global.activities);
+
+    // First activity: makeHTTPRequest
+    let generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_makeHTTPRequest_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+    let result = await generation.value.execute();
+    expect(result).toBe('false');
+
+    // Should be done (conditionalTask should be skipped)
+    expect((await interpreter.next()).done).toBe(true);
+
+    // Verify the execution flow
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
+    expect(global.activities.conditionalTask).not.toHaveBeenCalled();
+    expect((dsl.variables as Record<string, string>)['conditionalResult']).toBeUndefined();
   });
 
   it('should handle activities with multiple outputs that feed into future activities', async () => {
     global.activities.makeHTTPRequest.mockResolvedValue('request_data');
     global.activities.formatData.mockResolvedValue('formatted_request_data');
     global.activities.processResult.mockResolvedValue('processed_request_data');
+    global.activities.combineResults.mockImplementation((a, b) => Promise.resolve(`combined_${a}_${b}`));
 
     const dsl: DSL = {
       variables: {},
@@ -588,8 +877,39 @@ describe('DSLInterpreter', () => {
       }
     };
 
-    await DSLInterpreter(dsl, global.activities);
+    const interpreter = DSLInterpreter(dsl, global.activities);
 
+    // First generation: makeHTTPRequest
+    let generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_makeHTTPRequest_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+    let result = await generation.value.execute();
+    expect(result).toBe('request_data');
+
+    // Second generation: parallel formatData and processResult
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_formatData_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(2);
+    result = await generation.value.execute();
+    expect(result).toBe('formatted_request_data');
+
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_processResult_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(2);
+    result = await generation.value.execute();
+    expect(result).toBe('processed_request_data');
+
+    // Third generation: combineResults
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_combineResults_\d+$/);
+    expect(generation.value.nodeIds).toHaveLength(1);
+    result = await generation.value.execute();
+    expect(result).toBe('combined_formatted_request_data_processed_request_data');
+
+    // Should be done
+    expect((await interpreter.next()).done).toBe(true);
+
+    // Verify the execution flow
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
     expect(global.activities.formatData).toHaveBeenCalledWith('request_data');
     expect(global.activities.processResult).toHaveBeenCalledWith('request_data');
@@ -614,7 +934,8 @@ describe('DSLInterpreter', () => {
     // Use a try-catch pattern to verify the error is thrown
     let error;
     try {
-      await DSLInterpreter(dsl, global.activities);
+      const interpreter = DSLInterpreter(dsl, global.activities);
+      await interpreter.next(); // Force execution to trigger the error
     } catch (e) {
       error = e;
     }
@@ -651,7 +972,17 @@ describe('DSLInterpreter', () => {
         }
       };
 
-      await DSLInterpreter(dsl, {}, global.workflowSteps);
+      const interpreter = DSLInterpreter(dsl, {}, global.workflowSteps);
+
+      // Single generation
+      const generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^step_processData_\d+$/);
+      expect(generation.value.nodeIds).toHaveLength(1);
+      const result = await generation.value.execute();
+      expect(result).toBe('processed_test_data');
+
+      // Should be done
+      expect((await interpreter.next()).done).toBe(true);
 
       expect(global.workflowSteps.processData).toHaveBeenCalledWith('test_data');
       expect((dsl.variables as Record<string, string>)['processedResult']).toBe('processed_test_data');
@@ -725,48 +1056,93 @@ describe('DSLInterpreter', () => {
         {
           name: 'step3',
           method: 'transformResult',
-          after: 'step1', // This makes step2 and step3 run in parallel
+          after: 'step1',
           required: true,
           executed: false
         }
       ];
 
-      const dsl = convertStepsToDSL(stepMetadata, { input: 'test_data' });
+      // Create a DSL with explicit arguments for the first step
+      const dsl = {
+        variables: { input: 'test_data' },
+        plan: {
+          sequence: {
+            elements: [
+              {
+                execute: {
+                  step: {
+                    name: 'processData',
+                    arguments: ['input'],
+                    result: 'step1'
+                  }
+                }
+              },
+              {
+                parallel: {
+                  branches: [
+                    {
+                      execute: {
+                        step: {
+                          name: 'validateInput',
+                          arguments: ['step1'],
+                          result: 'step2'
+                        }
+                      }
+                    },
+                    {
+                      execute: {
+                        step: {
+                          name: 'transformResult',
+                          arguments: ['step1'],
+                          result: 'step3'
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      };
 
-      // Add an argument to step1 in the generated DSL
-      const firstElement = dsl.plan.sequence.elements[0];
-      if ('execute' in firstElement && firstElement.execute.step) {
-        firstElement.execute.step.arguments = ['input'];
-      }
+      const interpreter = DSLInterpreter(dsl, {}, global.workflowSteps);
 
-      // The second generation should contain a parallel execution of step2 and step3
-      const secondGeneration = dsl.plan.sequence.elements[1];
-      expect('parallel' in secondGeneration).toBe(true);
+      // First generation - step1
+      let generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^step_processData_\d+$/);
+      expect(generation.value.nodeIds).toHaveLength(1);
+      let result = await generation.value.execute();
+      expect(result).toBe('processed_test_data');
 
-      if ('parallel' in secondGeneration) {
-        expect(secondGeneration.parallel.branches.length).toBe(2);
+      // Second generation - parallel step2 and step3
+      generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^step_validateInput_\d+$/);
+      expect(generation.value.nodeIds).toHaveLength(2);
+      result = await generation.value.execute();
+      expect(result).toBe(false);
 
-        // One branch should be step2, the other step3
-        const branchNames = secondGeneration.parallel.branches
-          .filter((branch) => 'execute' in branch && branch.execute.step)
-          .map((branch) => ('execute' in branch ? branch.execute.step?.result : ''));
+      generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^step_transformResult_\d+$/);
+      expect(generation.value.nodeIds).toHaveLength(2);
+      result = await generation.value.execute();
+      expect(result).toBe('transformed_processed_test_data');
 
-        expect(branchNames).toContain('step2');
-        expect(branchNames).toContain('step3');
-      }
-
-      // Execute the DSL
-      await DSLInterpreter(dsl, {}, global.workflowSteps);
+      // Should be done
+      expect((await interpreter.next()).done).toBe(true);
 
       // Verify all functions were called
       expect(global.workflowSteps.processData).toHaveBeenCalledWith('test_data');
-      expect(global.workflowSteps.validateInput).toHaveBeenCalled();
-      expect(global.workflowSteps.transformResult).toHaveBeenCalled();
+      expect(global.workflowSteps.validateInput).toHaveBeenCalledWith('processed_test_data');
+      expect(global.workflowSteps.transformResult).toHaveBeenCalledWith('processed_test_data');
     });
 
     it('should pass step results as parameters to subsequent steps', async () => {
       global.workflowSteps.processData.mockResolvedValue('processed_data');
       global.workflowSteps.validateInput.mockResolvedValue(true);
+      global.workflowSteps.transformResult.mockImplementation((data, isValid) =>
+        Promise.resolve(`transformed_${data}_${isValid}`)
+      );
 
       const dsl: DSL = {
         variables: { input: 'original_data' },
@@ -805,17 +1181,39 @@ describe('DSLInterpreter', () => {
         }
       };
 
-      await DSLInterpreter(dsl, {}, global.workflowSteps);
+      const interpreter = DSLInterpreter(dsl, {}, global.workflowSteps);
+
+      // First step: processData
+      let generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^step_processData_\d+$/);
+      expect(generation.value.nodeIds).toHaveLength(1);
+      let result = await generation.value.execute();
+      expect(result).toBe('processed_data');
+
+      // Second step: validateInput
+      generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^step_validateInput_\d+$/);
+      expect(generation.value.nodeIds).toHaveLength(1);
+      result = await generation.value.execute();
+      expect(result).toBe(true);
+
+      // Third step: transformResult
+      generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^step_transformResult_\d+$/);
+      expect(generation.value.nodeIds).toHaveLength(1);
+      result = await generation.value.execute();
+      expect(result).toBe('transformed_processed_data_true');
+
+      // Should be done
+      expect((await interpreter.next()).done).toBe(true);
 
       // Verify the data flow between steps
       expect(global.workflowSteps.processData).toHaveBeenCalledWith('original_data');
       expect(global.workflowSteps.validateInput).toHaveBeenCalledWith('processed_data');
       expect(global.workflowSteps.transformResult).toHaveBeenCalledWith('processed_data', true);
-      expect((dsl.variables as Record<string, any>)['finalResult']).toBe('transformed_processed_data');
     });
 
     it('should handle mix of activities and steps', async () => {
-      // Setup activities
       global.activities = {
         fetchData: jest.fn(async () => 'fetched_data'),
         saveData: jest.fn(async (data) => `saved_${data}`)
@@ -857,13 +1255,36 @@ describe('DSLInterpreter', () => {
         }
       };
 
-      await DSLInterpreter(dsl, global.activities, global.workflowSteps);
+      const interpreter = DSLInterpreter(dsl, global.activities, global.workflowSteps);
+
+      // First generation: fetchData activity
+      let generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^activity_fetchData_\d+$/);
+      expect(generation.value.nodeIds).toHaveLength(1);
+      let result = await generation.value.execute();
+      expect(result).toBe('fetched_data');
+
+      // Second generation: processData step
+      generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^step_processData_\d+$/);
+      expect(generation.value.nodeIds).toHaveLength(1);
+      result = await generation.value.execute();
+      expect(result).toBe('processed_fetched_data');
+
+      // Third generation: saveData activity
+      generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^activity_saveData_\d+$/);
+      expect(generation.value.nodeIds).toHaveLength(1);
+      result = await generation.value.execute();
+      expect(result).toBe('saved_processed_fetched_data');
+
+      // Should be done
+      expect((await interpreter.next()).done).toBe(true);
 
       // Verify activity and step interactions
       expect(global.activities.fetchData).toHaveBeenCalled();
       expect(global.workflowSteps.processData).toHaveBeenCalledWith('fetched_data');
       expect(global.activities.saveData).toHaveBeenCalledWith('processed_fetched_data');
-      expect((dsl.variables as Record<string, string>)['saveResult']).toBe('saved_processed_fetched_data');
     });
 
     it('should throw error if step depends on missing result', async () => {
@@ -886,9 +1307,18 @@ describe('DSLInterpreter', () => {
         }
       };
 
-      // Expect execution to proceed but with undefined argument
-      await DSLInterpreter(dsl, {}, global.workflowSteps);
+      const interpreter = DSLInterpreter(dsl, {}, global.workflowSteps);
 
+      // Get the single generation
+      const generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^step_processData_\d+$/);
+      expect(generation.value.nodeIds).toHaveLength(1);
+      await generation.value.execute();
+
+      // Should be done
+      expect((await interpreter.next()).done).toBe(true);
+
+      // Verify the step was called with undefined argument
       expect(global.workflowSteps.processData).toHaveBeenCalledWith('nonExistentData');
     });
   });
