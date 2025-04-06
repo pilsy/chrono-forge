@@ -12,7 +12,7 @@ import { Duration } from '@temporalio/common';
 @Temporal()
 export class DSLWorkflowExample extends Workflow {
   // The DSLDefinition definition that will be executed
-  private dsl: DSLDefinition = {
+  dsl: DSLDefinition = {
     variables: {},
     plan: {
       sequence: {
@@ -36,15 +36,28 @@ export class DSLWorkflowExample extends Workflow {
       this.dsl = initialDSL || this.dsl;
       this.status = 'running';
 
-      // Pass the step handlers to the DSL interpreter
-      this.executionResult = await DSLInterpreter(this.dsl, undefined, this.getStepHandlers());
+      const interpreter = DSLInterpreter(this.dsl, undefined, this.getStepHandlers());
+
+      // Handle each generation from the interpreter
+      for await (const generation of interpreter) {
+        this.emitAsync('generation', {
+          nodeId: generation.nodeId,
+          nodeIds: generation.nodeIds
+        });
+
+        // Execute the current generation and store result
+        const result = await generation.execute();
+        if (result !== undefined) {
+          this.executionResult = result;
+        }
+      }
 
       this.status = 'completed';
       return this.executionResult;
-    } catch (err) {
+    } catch (error) {
       this.status = 'error';
-      this.error = err as Error;
-      throw err;
+      this.error = error as Error;
+      throw error;
     }
   }
 

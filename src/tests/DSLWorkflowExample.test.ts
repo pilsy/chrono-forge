@@ -5,6 +5,7 @@ import { v4 as uuid4 } from 'uuid';
 import { DSLWorkflowExample } from './testWorkflows/DSLWorkflowExample';
 import { DSL } from '../workflows/DSLInterpreter';
 import { setup } from './setup';
+import { DSLDefinition } from '../workflows/DSLInterpreter';
 
 describe('DSLWorkflowExample', () => {
   let execute;
@@ -12,6 +13,12 @@ describe('DSLWorkflowExample', () => {
   beforeAll(async () => {
     await setup();
     jest.setTimeout(30000);
+  });
+
+  afterAll(async () => {
+    await global.shutdown();
+    // @ts-ignore
+    global.workflowCoverage.mergeIntoGlobalCoverage();
   });
 
   beforeEach(() => {
@@ -30,14 +37,8 @@ describe('DSLWorkflowExample', () => {
     };
   });
 
-  afterAll(async () => {
-    await global.shutdown();
-    // @ts-ignore
-    global.workflowCoverage.mergeIntoGlobalCoverage();
-  });
-
   it('should execute a DSL workflow with a simple activity', async () => {
-    const simpleDSL: DSL = {
+    const simpleDSL: DSLDefinition = {
       variables: {
         apiUrl: 'https://api.example.com/data'
       },
@@ -52,17 +53,12 @@ describe('DSLWorkflowExample', () => {
       }
     };
 
-    // Start the workflow with the DSL
     const handle = await execute('DSLWorkflowExample', 'start', simpleDSL);
+    await sleep(1000);
 
-    // Wait for completion
-    await sleep(5000);
-
-    // Check workflow status
     const status = await handle.query('getStatus');
     expect(status.status).toBe('completed');
 
-    // Verify execution result reflects the activity result
     const variables = await handle.query('getVariables');
     expect(variables.apiResponse).toBe('httpResult');
   });
@@ -156,7 +152,7 @@ describe('DSLWorkflowExample', () => {
   });
 
   it('should execute a sequence of workflow steps', async () => {
-    const sequentialStepsDSL: DSL = {
+    const sequentialStepsDSL: DSLDefinition = {
       variables: {
         inputData: 'valid_data'
       },
@@ -182,10 +178,11 @@ describe('DSLWorkflowExample', () => {
               }
             },
             {
+              condition: async (dsl) => dsl.variables['isValid'] === true,
               execute: {
                 step: {
                   name: 'formatOutput',
-                  arguments: ['transformedData', 'true'],
+                  arguments: ['transformedData', 'isValid'],
                   result: 'finalOutput'
                 }
               }
@@ -195,17 +192,12 @@ describe('DSLWorkflowExample', () => {
       }
     };
 
-    // Start the workflow with the sequential steps DSL
     const handle = await execute('DSLWorkflowExample', 'start', sequentialStepsDSL);
-
-    // Wait for completion
     await sleep(2000);
 
-    // Check workflow status
     const status = await handle.query('getStatus');
     expect(status.status).toBe('completed');
 
-    // Verify the variables have been updated with step results
     const variables = await handle.query('getVariables');
     expect(variables.transformedData).toBe('transformed_valid_data');
     expect(variables.isValid).toBe(true);
@@ -413,8 +405,8 @@ describe('DSLWorkflowExample', () => {
     expect(updatedDSL.plan.sequence.elements[1].execute.step.name).toBe('validateData');
   });
 
-  it('should execute a parallel combination of activities and steps', async () => {
-    const parallelDSL: DSL = {
+  it('should execute parallel activities and steps', async () => {
+    const parallelDSL: DSLDefinition = {
       variables: {
         apiUrl: 'https://api.example.com/data',
         initialData: 'raw_input'
@@ -460,17 +452,12 @@ describe('DSLWorkflowExample', () => {
       }
     };
 
-    // Start the workflow with the parallel DSL
     const handle = await execute('DSLWorkflowExample', 'start', parallelDSL);
-
-    // Wait for completion
     await sleep(2000);
 
-    // Check workflow status
     const status = await handle.query('getStatus');
     expect(status.status).toBe('completed');
 
-    // Verify the variables have been updated with both activity and step results
     const variables = await handle.query('getVariables');
     expect(variables.apiData).toBe('httpResult');
     expect(variables.transformedData).toBe('transformed_raw_input');
@@ -519,7 +506,7 @@ describe('DSLWorkflowExample', () => {
     // Create a DSL with a long-running workflow step
     const longRunningStepDSL: DSL = {
       variables: {
-        sleepTime: '30000' // 30 seconds sleep time
+        sleepTime: 30000 // 30 seconds sleep time
       },
       plan: {
         sequence: {
