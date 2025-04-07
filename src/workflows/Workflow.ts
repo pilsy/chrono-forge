@@ -494,7 +494,6 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
             }
           } while (this.currentGeneration);
 
-          console.log(JSON.stringify(this.dsl, null, 2));
           return result;
         }
       } catch (error) {
