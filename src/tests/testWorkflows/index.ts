@@ -16,3 +16,4 @@ export { ShouldSignalWithStartAndArguments } from './ShouldSignalWithStartAndArg
 export { ShouldImplementOnContinue } from './ShouldImplementOnContinue';
 export { ShouldImplementStatefulOnContinue } from './ShouldImplementStatefulOnContinue';
 export { DSLWorkflowExample } from './DSLWorkflowExample';
+export { ShouldExecuteSteps } from './ShouldExecuteSteps';

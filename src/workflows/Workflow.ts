@@ -14,6 +14,7 @@ import {
 } from '../decorators';
 import { Duration } from '@temporalio/common';
 import { LRUCacheWithDelete } from 'mnemonist';
+import { DSLInterpreter, DSLDefinition, DSLGeneration, convertStepsToDSL } from './DSLInterpreter';
 
 /**
  * Options for configuring a Temporal Workflow.
@@ -34,6 +35,12 @@ export interface TemporalOptions {
    * Workers listening on this task queue will be able to execute this workflow.
    */
   taskQueue?: string;
+
+  /**
+   * Activity functions to use with the DSL interpreter.
+   * If not provided, will use default activity proxy.
+   */
+  activities?: Record<string, (...args: string[]) => Promise<string | undefined>>;
 
   /**
    * Additional arbitrary options.
@@ -68,7 +75,13 @@ export interface TemporalOptions {
  */
 export function Temporal(options?: TemporalOptions) {
   return function (constructor: any) {
-    const { name: optionalName, taskQueue, tracerName = 'temporal_worker', ...extraOptions } = options || {};
+    const {
+      name: optionalName,
+      taskQueue,
+      activities,
+      tracerName = 'temporal_worker',
+      ...extraOptions
+    } = options || {};
     const workflowName: string = optionalName ?? constructor.name;
 
     if (!(constructor.prototype instanceof Workflow)) {
@@ -81,9 +94,10 @@ export function Temporal(options?: TemporalOptions) {
       'workflow',
       'constructor',
       'extraOptions',
+      'activities',
       `
       return async function ${workflowName}(...args) {
-        const instance = new constructor(args[0], extraOptions);
+        const instance = new constructor(args[0], { ...extraOptions, activities });
 
         try {
           instance.workflowType = '${workflowName}';
@@ -121,7 +135,7 @@ export function Temporal(options?: TemporalOptions) {
         }
       }
     `
-    )(workflow, constructor, extraOptions);
+    )(workflow, constructor, extraOptions, activities);
 
     return construct;
   };
@@ -166,6 +180,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   private _queriesBound = false;
   private _propertiesBound = false;
   private _stepsBound = false;
+  protected dsl!: DSLDefinition;
 
   /**
    * Workflow logging instance provided by Temporal.
@@ -213,7 +228,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    * Maps step names to their handler functions.
    * Step handlers allow external systems to trigger actions within the workflow.
    */
-  protected stepHandlers: { [key: string]: (args: any[]) => Promise<void> } = {};
+  protected stepHandlers: Record<string, (...args: string[]) => Promise<string | undefined>> = {};
 
   /**
    * Determines whether the workflow is a long running continueAsNew type workflow or a short lived one.
@@ -369,6 +384,8 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     if (args && typeof args === 'object') {
       // @ts-ignore
       this.status = this.args?.status ?? 'running';
+      // @ts-ignore
+      this.dsl = this.args?.dsl ?? undefined;
     }
   }
 
@@ -397,23 +414,106 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   }
 
   /**
-   * Abstract method to execute the workflow logic.
-   *
-   * This method must be implemented by concrete workflow classes to define the
-   * actual business logic of the workflow. It will be called repeatedly during
-   * workflow execution until a terminal state is reached or the workflow continues as new.
-   *
-   * @param args - Arguments required for execution.
-   * @returns {Promise<unknown>} Result of the workflow execution.
-   */
-  protected abstract execute(...args: unknown[]): Promise<unknown>;
-
-  /**
    * Optional method that can be implemented by subclasses to define custom continue-as-new behavior.
    * If implemented, this method will be called when the workflow reaches its maximum iterations.
    * @returns A promise that resolves when the continue-as-new process is complete.
    */
   protected onContinue?(): Promise<Record<string, unknown>>;
+
+  /**
+   * Base method to execute the workflow logic using DSL.
+   *
+   * This method executes the workflow's DSL definition if one exists.
+   * Subclasses can override this method to provide custom logic,
+   * and can optionally call super.execute() to run the DSL steps.
+   *
+   * @param args - Arguments required for execution.
+   * @returns {Promise<unknown>} Result of the workflow execution.
+   */
+  protected interpreter: AsyncGenerator<DSLGeneration, void, unknown> | undefined;
+  protected currentGeneration: DSLGeneration | undefined;
+
+  protected async execute(...args: unknown[]): Promise<unknown> {
+    if (this.dsl && this.interpreter) {
+      try {
+        if (this.continueAsNew) {
+          // For continueAsNew workflows, process just one generation per call
+          if (!this.currentGeneration) {
+            const next = await this.interpreter.next();
+            if (next.done) {
+              this.status = 'completed';
+              return this.result;
+            }
+            this.currentGeneration = next.value;
+          }
+
+          // Execute the current generation
+          const result = await this.currentGeneration.execute();
+
+          // After execution, get the next generation for the next iteration
+          const next = await this.interpreter.next();
+          if (next.done) {
+            this.currentGeneration = undefined;
+            this.status = 'completed';
+          } else {
+            this.currentGeneration = next.value;
+          }
+          return result;
+        } else {
+          // For non-continueAsNew workflows, process all generations in a single call
+          let result;
+          let next;
+
+          // Process all generations until done
+          do {
+            // Get the next generation if we don't have one
+            if (!this.currentGeneration) {
+              next = await this.interpreter.next();
+              if (next.done) {
+                this.status = 'completed';
+                return this.result;
+              }
+              this.currentGeneration = next.value;
+            }
+
+            // Execute the current generation
+            result = await this.currentGeneration.execute();
+
+            // Get the next generation for the next iteration
+            next = await this.interpreter.next();
+            if (next.done) {
+              this.currentGeneration = undefined;
+              this.status = 'completed';
+            } else {
+              this.currentGeneration = next.value;
+            }
+
+            // Check if workflow has been paused, cancelled, or otherwise interrupted
+            if (this.status !== 'running') {
+              break;
+            }
+          } while (this.currentGeneration);
+
+          console.log(JSON.stringify(this.dsl, null, 2));
+          return result;
+        }
+      } catch (error) {
+        this.log.error(`Error executing generation ${this.currentGeneration?.nodeId}: ${error}`);
+        throw error;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Checks if there are more nodes to execute in the DSL.
+   * This is used in the workflow condition to determine if execution should continue.
+   *
+   * @returns {boolean} True if there is a current generation to execute, false otherwise.
+   */
+  protected hasMoreNodesToExecute(): boolean {
+    return !!this.currentGeneration;
+  }
 
   /**
    * Core method to manage workflow execution and its lifecycle.
@@ -839,25 +939,36 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       return;
     }
 
-    // Get steps from metadata instead of constructor._steps
     const steps = this.collectMetadata(STEP_METADATA_KEY, this.constructor.prototype);
 
-    for (const step of steps) {
-      if (typeof (this as any)[step.method] === 'function') {
-        const handler = (this as any)[step.method].bind(this);
-        this.stepHandlers[step.name] = handler;
+    if (steps.length) {
+      for (const step of steps) {
+        if (typeof (this as any)[step.method] === 'function') {
+          const handler = (this as any)[step.method].bind(this);
+          this.stepHandlers[step.name] = async (...args: string[]): Promise<string | undefined> => {
+            return await handler(...args);
+          };
+        }
+      }
+
+      if (!this.dsl) {
+        this.dsl = convertStepsToDSL(steps, {});
       }
     }
 
     this._stepsBound = true;
   }
 
-  /**
-   * Get all registered step handlers.
-   * This method is used by the DSL interpreter to access available steps.
-   */
-  protected getStepHandlers(): Record<string, (...args: any[]) => Promise<any>> {
-    return this.stepHandlers;
+  @On('init')
+  protected initDSL() {
+    if (this.dsl && !this.interpreter) {
+      this.interpreter = DSLInterpreter(
+        this.dsl,
+        // @ts-ignore
+        this.options?.activities,
+        this.stepHandlers
+      );
+    }
   }
 
   /**

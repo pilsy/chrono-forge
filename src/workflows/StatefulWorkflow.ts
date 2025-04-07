@@ -540,23 +540,6 @@ export abstract class StatefulWorkflow<
   }
 
   /**
-   * Abstract method that represents the core logic to be executed by the workflow.
-   *
-   * This method must be implemented by any subclass extending `StatefulWorkflow`. It is the
-   * central piece where the workflow's specific operations and tasks are defined.
-   *
-   * Implementations of this method will define how the workflow should behave in its execution
-   * cycle. This is typically where the main business logic resides.
-   *
-   * @param args - Optional arguments that may be passed to the workflow.
-   * @param options - Additional execution options that may affect the workflow behavior.
-   * @returns {Promise<unknown>}
-   * - A promise that resolves with the result of the workflow's execution. The return value
-   *   may vary depending on the specific workflow implementation.
-   */
-  protected abstract execute(args?: unknown, options?: TemporalOptions): Promise<unknown>;
-
-  /**
    * Sets the API token for the workflow.
    * This token is used for authenticating API requests made by the workflow.
    *

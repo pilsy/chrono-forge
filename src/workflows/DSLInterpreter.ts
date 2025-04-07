@@ -34,24 +34,21 @@ export type ActivityInvocation = {
   name: string;
   arguments?: string[];
   result?: string;
-  group?: number;
 };
 
 export type WorkflowInvocation = {
   name: string;
   arguments?: string[];
   result?: string;
-  group?: number;
 };
 
 export type StepInvocation = {
   name: string;
   arguments?: string[];
   result?: string;
-  group?: number;
 };
 
-type DSLGeneration = {
+export type DSLGeneration = {
   nodeId: string;
   graph: DirectedGraph;
   bindings: Record<string, string>;
@@ -102,13 +99,7 @@ export async function* DSLInterpreter(
         acts,
         steps,
         nodeIds: generation,
-        execute: async () => {
-          const result = await node.execute({ activities: acts, steps });
-          if (node.result) {
-            dsl.variables[node.result] = result;
-          }
-          return result;
-        }
+        execute: async () => await node.execute({ activities: acts, steps })
       };
     }
   }

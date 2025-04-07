@@ -248,4 +248,53 @@ describe('Workflow', () => {
       await handle.signal('cancel');
     });
   });
+
+  describe('Step Execution', () => {
+    it('Should execute steps in the correct order', async () => {
+      const result = await execute(workflows.ShouldExecuteSteps, 'execute');
+      expect(result).toBe('afterParallel');
+    });
+
+    it('Should respect step dependencies defined with after', async () => {
+      const handle = await execute(workflows.ShouldExecuteSteps, 'start');
+      await sleep(1000);
+
+      // The workflow should have completed all steps in sequence
+      const result = await handle.result();
+      expect(result).toBe('afterParallel');
+    });
+
+    it('Should execute steps in parallel when they have the same dependency', async () => {
+      const handle = await execute(workflows.ShouldExecuteSteps, 'start');
+      await sleep(5000); // Give enough time for all steps to complete
+
+      const results = await handle.query('getResults');
+
+      // Verify stepOne executed before parallel steps
+      expect(results.indexOf('stepOne')).toBeLessThan(results.indexOf('parallelA'));
+      expect(results.indexOf('stepOne')).toBeLessThan(results.indexOf('parallelB'));
+
+      // Verify afterParallel executed after both parallel steps
+      expect(results.indexOf('parallelA')).toBeLessThan(results.indexOf('afterParallel'));
+      expect(results.indexOf('parallelB')).toBeLessThan(results.indexOf('afterParallel'));
+
+      // Verify the workflow completed successfully
+      const finalResult = await handle.result();
+      expect(finalResult).toBe('afterParallel');
+    });
+
+    it('Should handle steps with multiple dependencies', async () => {
+      const handle = await execute(workflows.ShouldExecuteSteps, 'start');
+      await sleep(5000);
+
+      const results = await handle.query('getResults');
+
+      // Check that afterParallel only runs after both parallel steps
+      expect(results.indexOf('parallelA')).toBeLessThan(results.indexOf('afterParallel'));
+      expect(results.indexOf('parallelB')).toBeLessThan(results.indexOf('afterParallel'));
+
+      // Verify the final result
+      expect(await handle.result()).toBe('afterParallel');
+    });
+  });
 });
