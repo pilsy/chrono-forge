@@ -952,7 +952,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       }
 
       if (!this.dsl) {
-        this.dsl = convertStepsToDSL(steps, {});
+        this.dsl = convertStepsToDSL(steps, {}, this);
       }
     }
 
@@ -962,6 +962,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   @On('init')
   protected initDSL() {
     if (this.dsl && !this.interpreter) {
+      this.dsl.variables.workflow = this;
       this.interpreter = DSLInterpreter(
         this.dsl,
         // @ts-ignore

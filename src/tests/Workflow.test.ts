@@ -252,7 +252,7 @@ describe('Workflow', () => {
   describe('Step Execution', () => {
     it('Should execute steps in the correct order', async () => {
       const result = await execute(workflows.ShouldExecuteSteps, 'execute');
-      expect(result).toBe('afterParallel');
+      expect(result).toBe('afterConditional');
     });
 
     it('Should respect step dependencies defined with after', async () => {
@@ -261,7 +261,7 @@ describe('Workflow', () => {
 
       // The workflow should have completed all steps in sequence
       const result = await handle.result();
-      expect(result).toBe('afterParallel');
+      expect(result).toBe('afterConditional');
     });
 
     it('Should execute steps in parallel when they have the same dependency', async () => {
@@ -280,7 +280,7 @@ describe('Workflow', () => {
 
       // Verify the workflow completed successfully
       const finalResult = await handle.result();
-      expect(finalResult).toBe('afterParallel');
+      expect(finalResult).toBe('afterConditional');
     });
 
     it('Should handle steps with multiple dependencies', async () => {
@@ -294,7 +294,92 @@ describe('Workflow', () => {
       expect(results.indexOf('parallelB')).toBeLessThan(results.indexOf('afterParallel'));
 
       // Verify the final result
-      expect(await handle.result()).toBe('afterParallel');
+      expect(await handle.result()).toBe('afterConditional');
+    });
+  });
+
+  describe('Conditional Step Execution', () => {
+    it('Should execute conditional steps when condition is met', async () => {
+      const handle = await execute(workflows.ShouldExecuteSteps, 'start');
+      // By default, shouldRunConditional is true
+      await sleep(5000); // Give enough time for all steps to complete
+
+      const results = await handle.query('getResults');
+
+      // Verify the conditional step was executed
+      expect(results).toContain('conditionalStep');
+
+      // Verify the step after the conditional step was executed
+      expect(results).toContain('afterConditional');
+
+      // Verify the execution order
+      expect(results.indexOf('stepTwo')).toBeLessThan(results.indexOf('conditionalStep'));
+      expect(results.indexOf('conditionalStep')).toBeLessThan(results.indexOf('afterConditional'));
+
+      // Verify the query explicitly for conditional execution
+      expect(await handle.query('wasConditionalExecuted')).toBe(true);
+
+      // Verify workflow completed successfully
+      const finalResult = await handle.result();
+      expect(finalResult).toBe('afterConditional');
+    });
+
+    it('Should skip conditional steps when condition is not met', async () => {
+      const handle = await execute(workflows.ShouldExecuteSteps, 'start');
+
+      // Set the condition to false
+      await handle.signal('setShouldRunConditional', false);
+      await sleep(5000); // Give enough time for all steps to complete
+
+      const results = await handle.query('getResults');
+
+      // Verify the conditional step was not executed
+      expect(results).not.toContain('conditionalStep');
+
+      // Even though afterConditional might still be in the results, it should run after non-conditional steps
+      if (results.includes('afterConditional')) {
+        expect(results.indexOf('alwaysRun')).toBeLessThan(results.indexOf('afterConditional'));
+      }
+
+      // Verify the alwaysRun step was still executed
+      expect(results).toContain('alwaysRun');
+
+      // Verify the query explicitly for conditional execution
+      expect(await handle.query('wasConditionalExecuted')).toBe(false);
+
+      // Verify workflow still completed successfully
+      const finalResult = await handle.result();
+      expect(finalResult).toBe('afterConditional');
+    });
+
+    it('Should handle mixed conditional and unconditional branches', async () => {
+      const handle = await execute(workflows.ShouldExecuteSteps, 'start');
+      // Set the condition to false
+      await handle.signal('setShouldRunConditional', false);
+      await sleep(5000);
+
+      const results = await handle.query('getResults');
+
+      // Conditional branch should not run
+      expect(results).not.toContain('conditionalStep');
+
+      // Even though afterConditional might still be in the results, it should run after non-conditional steps
+      if (results.includes('afterConditional')) {
+        expect(results.indexOf('alwaysRun')).toBeLessThan(results.indexOf('afterConditional'));
+      }
+
+      // Unconditional branches should run
+      expect(results).toContain('stepOne');
+      expect(results).toContain('stepTwo');
+      expect(results).toContain('stepThree');
+      expect(results).toContain('alwaysRun');
+      expect(results).toContain('parallelA');
+      expect(results).toContain('parallelB');
+      expect(results).toContain('afterParallel');
+
+      // Verify correct ordering of unconditional steps
+      expect(results.indexOf('stepTwo')).toBeLessThan(results.indexOf('alwaysRun'));
+      expect(results.indexOf('stepOne')).toBeLessThan(results.indexOf('parallelA'));
     });
   });
 });

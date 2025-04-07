@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
-import { DSLInterpreter, DSL, convertStepsToDSL } from '../workflows/DSLInterpreter';
+import { DSLInterpreter, DSLDefinition, convertStepsToDSL } from '../workflows/DSLInterpreter';
 import { StepMetadata } from '../decorators/Step';
 
 // Mock the @temporalio/workflow module
@@ -48,7 +48,7 @@ describe('DSLInterpreter', () => {
   });
 
   it('should execute a sequence of activities in order', async () => {
-    const dsl: DSL = {
+    const dsl: DSLDefinition = {
       variables: {},
       plan: {
         sequence: {
@@ -115,7 +115,7 @@ describe('DSLInterpreter', () => {
   });
 
   it('should execute parallel activities', async () => {
-    const dsl: DSL = {
+    const dsl: DSLDefinition = {
       variables: {},
       plan: {
         parallel: {
@@ -169,7 +169,7 @@ describe('DSLInterpreter', () => {
   });
 
   it('should handle complex nested structures with dependencies', async () => {
-    const dsl: DSL = {
+    const dsl: DSLDefinition = {
       variables: {},
       plan: {
         sequence: {
@@ -259,7 +259,7 @@ describe('DSLInterpreter', () => {
   });
 
   it('should handle activity dependencies correctly', async () => {
-    const dsl: DSL = {
+    const dsl: DSLDefinition = {
       variables: {
         staticValue: 'someConstant'
       },
@@ -330,7 +330,7 @@ describe('DSLInterpreter', () => {
   });
 
   it('should handle predefined variables in the DSL', async () => {
-    const dsl: DSL = {
+    const dsl: DSLDefinition = {
       variables: {
         predefinedValue: 'initialValue',
         apiKey: 'secret-key'
@@ -367,7 +367,7 @@ describe('DSLInterpreter', () => {
     global.activities.makeHTTPRequest.mockResolvedValue('responseData');
 
     // Create a DSL that stores the result
-    const dsl: DSL = {
+    const dsl: DSLDefinition = {
       variables: {},
       plan: {
         execute: {
@@ -406,7 +406,7 @@ describe('DSLInterpreter', () => {
       Promise.resolve(`combined_${a}_${b}`)
     );
 
-    const dsl: DSL = {
+    const dsl: DSLDefinition = {
       variables: {
         initialParam: 'startValue'
       },
@@ -508,7 +508,7 @@ describe('DSLInterpreter', () => {
   });
 
   it('should handle empty variables object', async () => {
-    const dsl: DSL = {
+    const dsl: DSLDefinition = {
       variables: {},
       plan: {
         execute: {
@@ -540,7 +540,7 @@ describe('DSLInterpreter', () => {
   it('should handle activities without result binding', async () => {
     global.activities.makeHTTPRequest.mockResolvedValue('noBindingResult');
 
-    const dsl: DSL = {
+    const dsl: DSLDefinition = {
       variables: {},
       plan: {
         execute: {
@@ -576,7 +576,7 @@ describe('DSLInterpreter', () => {
     const originalFormatData = global.activities.formatData;
     global.activities.formatData.mockImplementation((input) => Promise.resolve('formattedData'));
 
-    const dsl: DSL = {
+    const dsl: DSLDefinition = {
       variables: {},
       plan: {
         sequence: {
@@ -676,7 +676,7 @@ describe('DSLInterpreter', () => {
 
   it('should handle activity arguments that are static values', async () => {
     global.activities.combineResults.mockResolvedValue('combinedResult');
-    const dsl: DSL = {
+    const dsl: DSLDefinition = {
       variables: {
         staticArg1: 'value1',
         staticArg2: 'value2'
@@ -717,7 +717,7 @@ describe('DSLInterpreter', () => {
     global.activities.makeHTTPRequest.mockResolvedValue('true');
     global.activities.conditionalTask.mockResolvedValue('condition met');
 
-    const dsl: DSL = {
+    const dsl: DSLDefinition = {
       variables: {},
       plan: {
         sequence: {
@@ -774,7 +774,7 @@ describe('DSLInterpreter', () => {
     global.activities.makeHTTPRequest.mockResolvedValue('false');
     global.activities.conditionalTask.mockResolvedValue('condition not met');
 
-    const dsl: DSL = {
+    const dsl: DSLDefinition = {
       variables: {},
       plan: {
         sequence: {
@@ -788,7 +788,7 @@ describe('DSLInterpreter', () => {
               }
             },
             {
-              condition: async (dsl) => dsl.variables['condition'] === 'true',
+              when: ({ condition }) => condition === 'true',
               execute: {
                 activity: {
                   name: 'conditionalTask',
@@ -808,16 +808,17 @@ describe('DSLInterpreter', () => {
     let generation = await interpreter.next();
     expect(generation.value.nodeId).toMatch(/^activity_makeHTTPRequest_\d+$/);
     expect(generation.value.nodeIds).toHaveLength(1);
-    let result = await generation.value.execute();
-    expect(result).toBe('false');
+    await generation.value.execute();
 
-    // Should be done (conditionalTask should be skipped)
-    expect((await interpreter.next()).done).toBe(true);
+    // Second activity should be skipped due to condition not being met
+    // The interpreter should not yield a generation for the conditional task
+    generation = await interpreter.next();
+    expect(generation.done).toBe(true);
 
     // Verify the execution flow
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
     expect(global.activities.conditionalTask).not.toHaveBeenCalled();
-    expect((dsl.variables as Record<string, string>)['conditionalResult']).toBeUndefined();
+    expect(dsl.variables['conditionalResult']).toBeUndefined();
   });
 
   it('should handle activities with multiple outputs that feed into future activities', async () => {
@@ -826,7 +827,7 @@ describe('DSLInterpreter', () => {
     global.activities.processResult.mockResolvedValue('processed_request_data');
     global.activities.combineResults.mockImplementation((a, b) => Promise.resolve(`combined_${a}_${b}`));
 
-    const dsl: DSL = {
+    const dsl: DSLDefinition = {
       variables: {},
       plan: {
         sequence: {
@@ -918,7 +919,7 @@ describe('DSLInterpreter', () => {
 
   it('should throw an error if there is a circular dependency', async () => {
     // Create a DSL that directly references itself
-    const dsl: DSL = {
+    const dsl: DSLDefinition = {
       variables: {},
       plan: {
         execute: {
@@ -945,6 +946,215 @@ describe('DSLInterpreter', () => {
     expect(error.message).toContain('Circular dependency detected');
   });
 
+  it('should handle waitFor conditions with timeout', async () => {
+    global.activities.makeHTTPRequest.mockResolvedValue('httpResult');
+
+    const dsl: DSLDefinition = {
+      variables: { ready: false },
+      plan: {
+        execute: {
+          activity: {
+            name: 'makeHTTPRequest',
+            result: 'result',
+            arguments: ['https://example.com']
+          }
+        },
+        waitFor: [({ ready }) => ready === true, 5] // 5 second timeout
+      }
+    };
+
+    // Simulate condition becoming true after delay
+    setTimeout(() => {
+      dsl.variables.ready = true;
+    }, 1000);
+
+    const interpreter = DSLInterpreter(dsl, global.activities);
+    const generation = await interpreter.next();
+
+    const result = await generation.value.execute();
+    expect(result).toBe('httpResult');
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('should skip node when waitFor condition times out', async () => {
+    const dsl: DSLDefinition = {
+      variables: { ready: false },
+      plan: {
+        execute: {
+          activity: {
+            name: 'makeHTTPRequest',
+            result: 'result'
+          }
+        },
+        waitFor: [({ ready }) => ready === true, 1] // 1 second timeout - moved to correct level
+      }
+    };
+
+    const interpreter = DSLInterpreter(dsl, global.activities);
+    const generation = await interpreter.next();
+
+    console.log(generation);
+
+    // The node should be skipped due to timeout
+    // The interpreter should not yield a generation for this node
+    expect(generation.done).toBe(true);
+    expect(global.activities.makeHTTPRequest).not.toHaveBeenCalled();
+    expect(dsl.variables.result).toBeUndefined();
+  });
+
+  it('should execute foreach loop with array access', async () => {
+    const dsl: DSLDefinition = {
+      variables: {
+        items: [{ url: 'http://example1.com' }, { url: 'http://example2.com' }]
+      },
+      plan: {
+        foreach: {
+          items: 'items',
+          item: 'currentItem',
+          body: {
+            execute: {
+              activity: {
+                name: 'makeHTTPRequest',
+                arguments: ['currentItem'],
+                result: 'result'
+              }
+            }
+          }
+        }
+      }
+    };
+
+    const interpreter = DSLInterpreter(dsl, global.activities);
+    const generation = await interpreter.next();
+    await generation.value.execute();
+
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledWith({ url: 'http://example1.com' });
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledWith({ url: 'http://example2.com' });
+  });
+
+  it('should execute while loop until condition is met', async () => {
+    let counter = 0;
+    const dsl: DSLDefinition = {
+      variables: { count: 0 },
+      plan: {
+        while: {
+          condition: async (variables) => variables.count < 3,
+          body: {
+            execute: {
+              activity: {
+                name: 'incrementCounter',
+                result: 'count'
+              }
+            }
+          }
+        }
+      }
+    };
+
+    // Mock incrementCounter to increase the count
+    global.activities.incrementCounter = jest.fn().mockImplementation(() => {
+      counter++;
+      dsl.variables.count = counter;
+      return counter;
+    });
+
+    const interpreter = DSLInterpreter(dsl, global.activities);
+    const generation = await interpreter.next();
+    await generation.value.execute();
+
+    expect(global.activities.incrementCounter).toHaveBeenCalledTimes(3);
+    expect(dsl.variables.count).toBe(3);
+  });
+
+  it('should execute do-while loop at least once', async () => {
+    const dsl: DSLDefinition = {
+      variables: { count: 10 }, // Start with condition already false
+      plan: {
+        doWhile: {
+          body: {
+            execute: {
+              activity: {
+                name: 'makeHTTPRequest',
+                result: 'result'
+              }
+            }
+          },
+          condition: async (variables) => variables.count < 1
+        }
+      }
+    };
+
+    const interpreter = DSLInterpreter(dsl, global.activities);
+    const generation = await interpreter.next();
+    await generation.value.execute();
+
+    // Should be called exactly once despite condition being false initially
+    expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('should handle error in condition evaluation', async () => {
+    const dsl: DSLDefinition = {
+      variables: {},
+      plan: {
+        execute: {
+          activity: {
+            name: 'makeHTTPRequest',
+            result: 'result'
+          }
+        },
+        when: () => {
+          throw new Error('Condition evaluation failed');
+        }
+      }
+    };
+
+    const interpreter = DSLInterpreter(dsl, global.activities);
+    const generation = await interpreter.next();
+    expect(generation.done).toBe(true);
+
+    // Activity should be skipped due to condition error
+    expect(global.activities.makeHTTPRequest).not.toHaveBeenCalled();
+  });
+
+  it('should skip dependent nodes when parent is skipped', async () => {
+    const dsl: DSLDefinition = {
+      variables: {},
+      plan: {
+        sequence: {
+          elements: [
+            {
+              execute: {
+                activity: {
+                  name: 'makeHTTPRequest',
+                  result: 'parentResult'
+                }
+              },
+              when: () => false
+            },
+            {
+              execute: {
+                activity: {
+                  name: 'formatData',
+                  arguments: ['parentResult'],
+                  result: 'childResult'
+                }
+              }
+            }
+          ]
+        }
+      }
+    };
+
+    const interpreter = DSLInterpreter(dsl, global.activities);
+
+    // Parent task generation
+    let generation = await interpreter.next();
+
+    expect(generation.done).toBe(true);
+    expect(global.activities.makeHTTPRequest).not.toHaveBeenCalled();
+    expect(global.activities.formatData).not.toHaveBeenCalled();
+  });
+
   describe('Step Integration', () => {
     beforeEach(() => {
       // Reset all mocks before each test
@@ -959,7 +1169,7 @@ describe('DSLInterpreter', () => {
     });
 
     it('should execute a DSL with step invocation', async () => {
-      const dsl: DSL = {
+      const dsl: DSLDefinition = {
         variables: { input: 'test_data' },
         plan: {
           execute: {
@@ -1144,7 +1354,7 @@ describe('DSLInterpreter', () => {
         Promise.resolve(`transformed_${data}_${isValid}`)
       );
 
-      const dsl: DSL = {
+      const dsl: DSLDefinition = {
         variables: { input: 'original_data' },
         plan: {
           sequence: {
@@ -1219,7 +1429,7 @@ describe('DSLInterpreter', () => {
         saveData: jest.fn(async (data) => `saved_${data}`)
       };
 
-      const dsl: DSL = {
+      const dsl: DSLDefinition = {
         variables: {},
         plan: {
           sequence: {
@@ -1288,7 +1498,7 @@ describe('DSLInterpreter', () => {
     });
 
     it('should throw error if step depends on missing result', async () => {
-      const dsl: DSL = {
+      const dsl: DSLDefinition = {
         variables: {},
         plan: {
           sequence: {

@@ -11,7 +11,7 @@ export interface StepOptions {
    * Condition function that determines if this step should be executed.
    * The step will only run if this function returns true.
    */
-  on?: () => boolean;
+  condition?: () => boolean;
 
   /**
    * Steps that should be executed before this step.
@@ -55,7 +55,7 @@ export interface StepOptions {
 export interface StepMetadata {
   name: string;
   method: string;
-  on?: () => boolean;
+  condition?: () => boolean;
   before?: string | string[];
   after?: string | string[];
   retries?: number;
@@ -103,7 +103,7 @@ interface WorkflowInstance {
  *
  *   @Step({
  *     after: ['step1', 'step2'],
- *     on: () => this.someCondition,
+ *     condition: () => this.someCondition,
  *     onError: (err) => console.error('Step failed:', err)
  *   })
  *   async conditionalStep() {
@@ -207,7 +207,7 @@ export const Step = (options: StepOptions = {}) => {
     steps.push({
       name: stepName,
       method: propertyKey,
-      on: options.on,
+      condition: options.condition,
       before: options.before,
       after: options.after,
       retries: options.retries || 0,
@@ -240,7 +240,7 @@ export const Step = (options: StepOptions = {}) => {
  *     if (!step) continue;
  *
  *     // Skip if condition function returns false
- *     if (step.on && !step.on.call(this)) {
+ *     if (step.condition && !step.condition.call(this)) {
  *       this.log?.debug(`Skipping step '${stepName}' because condition returned false`);
  *       continue;
  *     }
