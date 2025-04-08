@@ -1116,7 +1116,49 @@ describe('DSLInterpreter', () => {
     expect(global.activities.makeHTTPRequest).not.toHaveBeenCalled();
   });
 
-  it('should skip dependent nodes when parent is skipped', async () => {
+  it('should skip dependent nodes when parent is skipped but required', async () => {
+    const dsl: DSLDefinition = {
+      variables: {},
+      plan: {
+        sequence: {
+          elements: [
+            {
+              execute: {
+                activity: {
+                  name: 'makeHTTPRequest',
+                  result: 'parentResult'
+                }
+              },
+              when: () => false,
+              required: true
+            },
+            {
+              execute: {
+                activity: {
+                  name: 'formatData',
+                  arguments: ['parentResult'],
+                  result: 'childResult'
+                }
+              }
+            }
+          ]
+        }
+      }
+    };
+
+    const interpreter = DSLInterpreter(dsl, global.activities);
+
+    // Parent task generation
+    let generation = await interpreter.next();
+
+    expect(generation.done).toBe(true);
+    expect(global.activities.makeHTTPRequest).not.toHaveBeenCalled();
+    expect(global.activities.formatData).not.toHaveBeenCalled();
+  });
+
+  it('should not skip dependent nodes when parent is skipped but not required', async () => {
+    global.activities.formatData.mockResolvedValue('formattedData');
+
     const dsl: DSLDefinition = {
       variables: {},
       plan: {
@@ -1149,10 +1191,171 @@ describe('DSLInterpreter', () => {
 
     // Parent task generation
     let generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_formatData_\d+$/);
+    let result = await generation.value.execute();
+    expect(result).toBe('formattedData');
+
+    generation = await interpreter.next();
 
     expect(generation.done).toBe(true);
     expect(global.activities.makeHTTPRequest).not.toHaveBeenCalled();
-    expect(global.activities.formatData).not.toHaveBeenCalled();
+    expect(global.activities.formatData).toHaveBeenCalled();
+  });
+
+  it('should handle conditions on sequence blocks', async () => {
+    // Mock activities
+    const activities = {
+      activity1: jest.fn().mockResolvedValue('result1'),
+      activity2: jest.fn().mockResolvedValue('result2')
+    };
+
+    // Test case 1: Condition is true
+    const dslTrue: DSLDefinition = {
+      variables: { flag: true },
+      plan: {
+        sequence: {
+          when: ({ flag }) => flag === true,
+          elements: [
+            {
+              execute: {
+                activity: {
+                  name: 'activity1',
+                  result: 'result1'
+                }
+              }
+            },
+            {
+              execute: {
+                activity: {
+                  name: 'activity2',
+                  arguments: ['result1'],
+                  result: 'result2'
+                }
+              }
+            }
+          ]
+        }
+      }
+    };
+
+    let interpreter = DSLInterpreter(dslTrue, activities);
+
+    // First activity should execute
+    let generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_activity1_\d+$/);
+    await generation.value.execute();
+    expect(activities.activity1).toHaveBeenCalled();
+
+    // Second activity should execute
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_activity2_\d+$/);
+    await generation.value.execute();
+    expect(activities.activity2).toHaveBeenCalledWith('result1');
+
+    // Should be done
+    expect((await interpreter.next()).done).toBe(true);
+
+    // Reset mocks
+    activities.activity1.mockClear();
+    activities.activity2.mockClear();
+
+    // Test case 2: Condition is false
+    const dslFalse: DSLDefinition = {
+      variables: { flag: false },
+      plan: {
+        sequence: {
+          when: ({ flag }) => flag === true,
+          elements: [
+            {
+              execute: {
+                activity: {
+                  name: 'activity1',
+                  result: 'result1'
+                }
+              }
+            },
+            {
+              execute: {
+                activity: {
+                  name: 'activity2',
+                  arguments: ['result1'],
+                  result: 'result2'
+                }
+              }
+            }
+          ]
+        }
+      }
+    };
+
+    interpreter = DSLInterpreter(dslFalse, activities);
+
+    // No activities should execute when condition is false
+    generation = await interpreter.next();
+    // The interpreter will still generate nodes, but they should be skipped
+    expect(generation.value.nodeId).toMatch(/^sequence_control_\d+$/);
+    await generation.value.execute();
+
+    // The next generation should be done
+    generation = await interpreter.next();
+    expect(generation.done).toBe(true);
+    expect(activities.activity1).not.toHaveBeenCalled();
+    expect(activities.activity2).not.toHaveBeenCalled();
+  });
+
+  it('should handle waitFor on sequence blocks', async () => {
+    const activities = {
+      activity1: jest.fn().mockResolvedValue('result1'),
+      activity2: jest.fn().mockResolvedValue('result2')
+    };
+
+    const dsl: DSLDefinition = {
+      variables: { ready: false },
+      plan: {
+        sequence: {
+          waitFor: [({ ready }) => ready === true, 1], // 1 second timeout
+          elements: [
+            {
+              execute: {
+                activity: {
+                  name: 'activity1',
+                  result: 'result1'
+                }
+              }
+            },
+            {
+              execute: {
+                activity: {
+                  name: 'activity2',
+                  result: 'result2'
+                }
+              }
+            }
+          ]
+        }
+      }
+    };
+
+    const interpreter = DSLInterpreter(dsl, activities);
+
+    // Set ready to true after a delay
+    setTimeout(() => {
+      dsl.variables.ready = true;
+    }, 100);
+
+    // Activities should execute after condition is met
+    let generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_activity1_\d+$/);
+    await generation.value.execute();
+    expect(activities.activity1).toHaveBeenCalled();
+
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_activity2_\d+$/);
+    await generation.value.execute();
+    expect(activities.activity2).toHaveBeenCalled();
+
+    // Should be done
+    expect((await interpreter.next()).done).toBe(true);
   });
 
   describe('Step Integration', () => {

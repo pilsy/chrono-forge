@@ -123,12 +123,20 @@ export async function* DSLInterpreter(
 
       // Check if any dependencies were skipped
       const dependencies = graph.inNeighbors(nodeId);
-      const anyDependencySkipped = dependencies.some((depId) => skippedNodes.has(depId));
+      const anyRequiredDependencySkipped = dependencies.some((depId) => {
+        if (!skippedNodes.has(depId)) {
+          return false;
+        }
 
-      if (anyDependencySkipped) {
-        // Skip this node if any dependency was skipped
+        // Check if the dependency is required
+        const depNode = graph.getNodeAttributes(depId);
+        return depNode?.required === true;
+      });
+
+      if (anyRequiredDependencySkipped) {
+        // Skip this node if any required dependency was skipped
         skippedNodes.add(nodeId);
-        console.log(`Skipping node ${nodeId} because a dependency was skipped`);
+        console.log(`Skipping node ${nodeId} because a required dependency was skipped`);
         continue;
       }
 
@@ -301,10 +309,7 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
     name: string,
     args: string[],
     result?: string,
-    when?: (variables: Record<string, unknown>, plan: Statement) => boolean,
-    waitFor?:
-      | ((variables: Record<string, unknown>, plan: Statement) => boolean)
-      | [(variables: Record<string, unknown>, plan: Statement) => boolean, number]
+    statement?: Statement
   ): string => {
     const nodeId = `${type}_${name}_${autoIncrementId++}`;
     graph.addNode(nodeId, {
@@ -312,9 +317,10 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
       name,
       args,
       result,
-      when,
-      waitFor,
-      execute: createExecuteFunction(type, nodeId, name, args, result, when, waitFor)
+      when: statement?.when,
+      waitFor: statement?.waitFor,
+      required: statement?.required,
+      execute: createExecuteFunction(type, nodeId, name, args, result, statement?.when, statement?.waitFor)
     });
 
     // Add edges from nodes that have results matching our arguments
@@ -342,10 +348,10 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
 
       if (statement.execute.activity) {
         const { name, arguments: args = [], result } = statement.execute.activity;
-        nodeId = addNodeAndDependencies('activity', name, args, result, statement.when, statement.waitFor);
+        nodeId = addNodeAndDependencies('activity', name, args, result, statement);
       } else if (statement.execute.step) {
         const { name, arguments: args = [], result } = statement.execute.step;
-        nodeId = addNodeAndDependencies('step', name, args, result, statement.when, statement.waitFor);
+        nodeId = addNodeAndDependencies('step', name, args, result, statement);
       }
 
       // Always add dependency on previous node in sequence
