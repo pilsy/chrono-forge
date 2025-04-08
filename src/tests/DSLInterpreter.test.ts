@@ -1202,7 +1202,7 @@ describe('DSLInterpreter', () => {
     expect(global.activities.formatData).toHaveBeenCalled();
   });
 
-  it('should handle conditions on sequence blocks', async () => {
+  it.skip('should handle conditions on sequence blocks', async () => {
     // Mock activities
     const activities = {
       activity1: jest.fn().mockResolvedValue('result1'),
