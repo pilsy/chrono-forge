@@ -23,7 +23,7 @@ export class DSLWorkflowExample extends Workflow {
    * Signal to add a new activity to the DSLDefinition sequence
    */
   @Signal()
-  async addActivity(activity: { name: string; arguments?: string[]; result?: string }): Promise<void> {
+  async addActivity(activity: { name: string; with?: string[]; result?: string }): Promise<void> {
     if (!this.dsl.plan || !('sequence' in this.dsl.plan)) {
       this.dsl.plan = {
         sequence: {
@@ -43,7 +43,7 @@ export class DSLWorkflowExample extends Workflow {
    * Signal to add a new workflow step to the DSLDefinition sequence
    */
   @Signal()
-  async addStep(step: { name: string; arguments?: string[]; result?: string }): Promise<void> {
+  async addStep(step: { name: string; with?: string[]; result?: string }): Promise<void> {
     if (!this.dsl.plan || !('sequence' in this.dsl.plan)) {
       this.dsl.plan = {
         sequence: {

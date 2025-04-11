@@ -180,6 +180,8 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   private _queriesBound = false;
   private _propertiesBound = false;
   private _stepsBound = false;
+
+  @Property()
   protected dsl!: DSLDefinition;
 
   /**
@@ -961,7 +963,14 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   @On('init')
   protected initDSL() {
     if (this.dsl && !this.interpreter) {
-      this.dsl.variables.workflow = this;
+      Object.defineProperty(this.dsl.variables, 'workflow', {
+        get: () => this,
+        set: () => {
+          throw new Error('workflow is read-only');
+        },
+        enumerable: false,
+        configurable: false
+      });
       this.interpreter = DSLInterpreter(
         this.dsl,
         // @ts-ignore

@@ -23,8 +23,8 @@ describe('DSLInterpreter', () => {
         execute: {
           activity: {
             name: 'makeHTTPRequest',
-            result: 'result',
-            arguments: ['https://example.com']
+            store: 'result',
+            with: ['https://example.com']
           }
         }
       }
@@ -57,7 +57,7 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'makeHTTPRequest',
-                  result: 'httpResult'
+                  store: 'httpResult'
                 }
               }
             },
@@ -65,8 +65,8 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'formatData',
-                  arguments: ['httpResult'],
-                  result: 'formattedData'
+                  with: ['httpResult'],
+                  store: 'formattedData'
                 }
               }
             },
@@ -74,8 +74,8 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'processResult',
-                  arguments: ['formattedData'],
-                  result: 'finalResult'
+                  with: ['formattedData'],
+                  store: 'finalResult'
                 }
               }
             }
@@ -108,7 +108,7 @@ describe('DSLInterpreter', () => {
     generation = await interpreter.next();
     expect(generation.done).toBe(true);
 
-    // Verify the activities were called in order with correct arguments
+    // Verify the activities were called in order with correct with
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
     expect(global.activities.formatData).toHaveBeenCalledWith('httpResult');
     expect(global.activities.processResult).toHaveBeenCalledWith('formattedData');
@@ -124,7 +124,7 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'parallelTask1',
-                  result: 'result1'
+                  store: 'result1'
                 }
               }
             },
@@ -132,7 +132,7 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'parallelTask2',
-                  result: 'result2'
+                  store: 'result2'
                 }
               }
             }
@@ -178,7 +178,7 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'makeHTTPRequest',
-                  result: 'httpResult'
+                  store: 'httpResult'
                 }
               }
             },
@@ -189,8 +189,8 @@ describe('DSLInterpreter', () => {
                     execute: {
                       activity: {
                         name: 'formatData',
-                        arguments: ['httpResult'],
-                        result: 'formattedData'
+                        with: ['httpResult'],
+                        store: 'formattedData'
                       }
                     }
                   },
@@ -198,7 +198,7 @@ describe('DSLInterpreter', () => {
                     execute: {
                       activity: {
                         name: 'slowOperation',
-                        result: 'slowResult'
+                        store: 'slowResult'
                       }
                     }
                   }
@@ -209,8 +209,8 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'combineResults',
-                  arguments: ['formattedData', 'slowResult'],
-                  result: 'finalResult'
+                  with: ['formattedData', 'slowResult'],
+                  store: 'finalResult'
                 }
               }
             }
@@ -270,7 +270,7 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'makeHTTPRequest',
-                  result: 'httpData'
+                  store: 'httpData'
                 }
               }
             },
@@ -278,8 +278,8 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'formatData',
-                  arguments: ['httpData'],
-                  result: 'formattedData'
+                  with: ['httpData'],
+                  store: 'formattedData'
                 }
               }
             },
@@ -287,8 +287,8 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'complexOperation',
-                  arguments: ['formattedData', 'staticValue'],
-                  result: 'complexResult'
+                  with: ['formattedData', 'staticValue'],
+                  store: 'complexResult'
                 }
               }
             }
@@ -323,7 +323,7 @@ describe('DSLInterpreter', () => {
     // Should be done
     expect((await interpreter.next()).done).toBe(true);
 
-    // Verify the activities were called with correct arguments
+    // Verify the activities were called with correct with
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
     expect(global.activities.formatData).toHaveBeenCalledWith('httpResult');
     expect(global.activities.complexOperation).toHaveBeenCalledWith('formattedData', 'someConstant');
@@ -339,8 +339,8 @@ describe('DSLInterpreter', () => {
         execute: {
           activity: {
             name: 'makeHTTPRequest',
-            arguments: ['apiKey'],
-            result: 'httpResult'
+            with: ['apiKey'],
+            store: 'httpResult'
           }
         }
       }
@@ -373,7 +373,7 @@ describe('DSLInterpreter', () => {
         execute: {
           activity: {
             name: 'makeHTTPRequest',
-            result: 'apiResponse'
+            store: 'apiResponse'
           }
         }
       }
@@ -418,8 +418,8 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'makeHTTPRequest',
-                  arguments: ['initialParam'],
-                  result: 'rawData'
+                  with: ['initialParam'],
+                  store: 'rawData'
                 }
               }
             },
@@ -431,8 +431,8 @@ describe('DSLInterpreter', () => {
                     execute: {
                       activity: {
                         name: 'formatData',
-                        arguments: ['rawData'],
-                        result: 'formattedOutput'
+                        with: ['rawData'],
+                        store: 'formattedOutput'
                       }
                     }
                   },
@@ -440,8 +440,8 @@ describe('DSLInterpreter', () => {
                     execute: {
                       activity: {
                         name: 'processResult',
-                        arguments: ['rawData'],
-                        result: 'processedOutput'
+                        with: ['rawData'],
+                        store: 'processedOutput'
                       }
                     }
                   }
@@ -453,8 +453,8 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'combineResults',
-                  arguments: ['formattedOutput', 'processedOutput'],
-                  result: 'finalOutput'
+                  with: ['formattedOutput', 'processedOutput'],
+                  store: 'finalOutput'
                 }
               }
             }
@@ -514,7 +514,7 @@ describe('DSLInterpreter', () => {
         execute: {
           activity: {
             name: 'makeHTTPRequest',
-            result: 'httpResult'
+            store: 'httpResult'
           }
         }
       }
@@ -585,7 +585,7 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'makeHTTPRequest',
-                  result: 'httpResult'
+                  store: 'httpResult'
                 }
               }
             },
@@ -599,8 +599,8 @@ describe('DSLInterpreter', () => {
                           execute: {
                             activity: {
                               name: 'formatData',
-                              arguments: ['httpResult'],
-                              result: 'formattedData'
+                              with: ['httpResult'],
+                              store: 'formattedData'
                             }
                           }
                         },
@@ -608,8 +608,8 @@ describe('DSLInterpreter', () => {
                           execute: {
                             activity: {
                               name: 'processResult',
-                              arguments: ['formattedData'],
-                              result: 'processedData'
+                              with: ['formattedData'],
+                              store: 'processedData'
                             }
                           }
                         }
@@ -620,7 +620,7 @@ describe('DSLInterpreter', () => {
                     execute: {
                       activity: {
                         name: 'slowOperation',
-                        result: 'slowResult'
+                        store: 'slowResult'
                       }
                     }
                   }
@@ -674,7 +674,7 @@ describe('DSLInterpreter', () => {
     global.activities.formatData = originalFormatData;
   });
 
-  it('should handle activity arguments that are static values', async () => {
+  it('should handle activity with that are static values', async () => {
     global.activities.combineResults.mockResolvedValue('combinedResult');
     const dsl: DSLDefinition = {
       variables: {
@@ -685,8 +685,8 @@ describe('DSLInterpreter', () => {
         execute: {
           activity: {
             name: 'combineResults',
-            arguments: ['staticArg1', 'staticArg2'],
-            result: 'combinedStaticResult'
+            with: ['staticArg1', 'staticArg2'],
+            store: 'combinedStaticResult'
           }
         }
       }
@@ -726,17 +726,17 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'makeHTTPRequest',
-                  result: 'condition'
+                  store: 'condition'
                 }
               }
             },
             {
-              condition: async (dsl) => dsl.variables['condition'] === 'true',
+              when: ({ condition }) => condition === 'true',
               execute: {
                 activity: {
                   name: 'conditionalTask',
-                  arguments: ['condition'],
-                  result: 'conditionalResult'
+                  with: ['condition'],
+                  store: 'conditionalResult'
                 }
               }
             }
@@ -756,6 +756,7 @@ describe('DSLInterpreter', () => {
 
     // Second activity: conditionalTask (should execute because condition is true)
     generation = await interpreter.next();
+    expect(generation.done).toBe(false);
     expect(generation.value.nodeId).toMatch(/^activity_conditionalTask_\d+$/);
     expect(generation.value.nodeIds).toHaveLength(1);
     result = await generation.value.execute();
@@ -783,7 +784,7 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'makeHTTPRequest',
-                  result: 'condition'
+                  store: 'condition'
                 }
               }
             },
@@ -792,8 +793,8 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'conditionalTask',
-                  arguments: ['condition'],
-                  result: 'conditionalResult'
+                  with: ['condition'],
+                  store: 'conditionalResult'
                 }
               }
             }
@@ -836,7 +837,7 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'makeHTTPRequest',
-                  result: 'httpData'
+                  store: 'httpData'
                 }
               }
             },
@@ -847,8 +848,8 @@ describe('DSLInterpreter', () => {
                     execute: {
                       activity: {
                         name: 'formatData',
-                        arguments: ['httpData'],
-                        result: 'formattedData'
+                        with: ['httpData'],
+                        store: 'formattedData'
                       }
                     }
                   },
@@ -856,8 +857,8 @@ describe('DSLInterpreter', () => {
                     execute: {
                       activity: {
                         name: 'processResult',
-                        arguments: ['httpData'],
-                        result: 'processedData'
+                        with: ['httpData'],
+                        store: 'processedData'
                       }
                     }
                   }
@@ -868,8 +869,8 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'combineResults',
-                  arguments: ['formattedData', 'processedData'],
-                  result: 'finalData'
+                  with: ['formattedData', 'processedData'],
+                  store: 'finalData'
                 }
               }
             }
@@ -925,8 +926,8 @@ describe('DSLInterpreter', () => {
         execute: {
           activity: {
             name: 'makeHTTPRequest',
-            arguments: ['circularRef'], // This creates a circular dependency
-            result: 'circularRef' // by using the same name for input and output
+            with: ['circularRef'], // This creates a circular dependency
+            store: 'circularRef' // by using the same name for input and output
           }
         }
       }
@@ -946,7 +947,7 @@ describe('DSLInterpreter', () => {
     expect(error.message).toContain('Circular dependency detected');
   });
 
-  it('should handle waitFor conditions with timeout', async () => {
+  it('should handle wait conditions with timeout', async () => {
     global.activities.makeHTTPRequest.mockResolvedValue('httpResult');
 
     const dsl: DSLDefinition = {
@@ -955,11 +956,11 @@ describe('DSLInterpreter', () => {
         execute: {
           activity: {
             name: 'makeHTTPRequest',
-            result: 'result',
-            arguments: ['https://example.com']
+            store: 'result',
+            with: ['https://example.com']
           }
         },
-        waitFor: [({ ready }) => ready === true, 5] // 5 second timeout
+        wait: [({ ready }) => ready === true, 5] // 5 second timeout
       }
     };
 
@@ -976,17 +977,17 @@ describe('DSLInterpreter', () => {
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('should skip node when waitFor condition times out', async () => {
+  it('should skip node when wait condition times out', async () => {
     const dsl: DSLDefinition = {
       variables: { ready: false },
       plan: {
         execute: {
           activity: {
             name: 'makeHTTPRequest',
-            result: 'result'
+            store: 'result'
           }
         },
-        waitFor: [({ ready }) => ready === true, 1] // 1 second timeout - moved to correct level
+        wait: [({ ready }) => ready === true, 1] // 1 second timeout - moved to correct level
       }
     };
 
@@ -1009,14 +1010,14 @@ describe('DSLInterpreter', () => {
       },
       plan: {
         foreach: {
-          items: 'items',
-          item: 'currentItem',
+          in: 'items',
+          as: 'currentItem',
           body: {
             execute: {
               activity: {
                 name: 'makeHTTPRequest',
-                arguments: ['currentItem'],
-                result: 'result'
+                with: ['currentItem'],
+                store: 'result'
               }
             }
           }
@@ -1043,7 +1044,7 @@ describe('DSLInterpreter', () => {
             execute: {
               activity: {
                 name: 'incrementCounter',
-                result: 'count'
+                store: 'count'
               }
             }
           }
@@ -1075,7 +1076,7 @@ describe('DSLInterpreter', () => {
             execute: {
               activity: {
                 name: 'makeHTTPRequest',
-                result: 'result'
+                store: 'result'
               }
             }
           },
@@ -1099,7 +1100,7 @@ describe('DSLInterpreter', () => {
         execute: {
           activity: {
             name: 'makeHTTPRequest',
-            result: 'result'
+            store: 'result'
           }
         },
         when: () => {
@@ -1126,7 +1127,7 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'makeHTTPRequest',
-                  result: 'parentResult'
+                  store: 'parentResult'
                 }
               },
               when: () => false,
@@ -1136,8 +1137,8 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'formatData',
-                  arguments: ['parentResult'],
-                  result: 'childResult'
+                  with: ['parentResult'],
+                  store: 'childResult'
                 }
               }
             }
@@ -1168,7 +1169,7 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'makeHTTPRequest',
-                  result: 'parentResult'
+                  store: 'parentResult'
                 }
               },
               when: () => false
@@ -1177,8 +1178,8 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'formatData',
-                  arguments: ['parentResult'],
-                  result: 'childResult'
+                  with: ['parentResult'],
+                  store: 'childResult'
                 }
               }
             }
@@ -1220,7 +1221,7 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'activity1',
-                  result: 'result1'
+                  store: 'result1'
                 }
               }
             },
@@ -1228,8 +1229,8 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'activity2',
-                  arguments: ['result1'],
-                  result: 'result2'
+                  with: ['result1'],
+                  store: 'result2'
                 }
               }
             }
@@ -1270,7 +1271,7 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'activity1',
-                  result: 'result1'
+                  store: 'result1'
                 }
               }
             },
@@ -1278,8 +1279,8 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'activity2',
-                  arguments: ['result1'],
-                  result: 'result2'
+                  with: ['result1'],
+                  store: 'result2'
                 }
               }
             }
@@ -1303,7 +1304,7 @@ describe('DSLInterpreter', () => {
     expect(activities.activity2).not.toHaveBeenCalled();
   });
 
-  it('should handle waitFor on sequence blocks', async () => {
+  it('should handle wait on sequence blocks', async () => {
     const activities = {
       activity1: jest.fn().mockResolvedValue('result1'),
       activity2: jest.fn().mockResolvedValue('result2')
@@ -1313,13 +1314,13 @@ describe('DSLInterpreter', () => {
       variables: { ready: false },
       plan: {
         sequence: {
-          waitFor: [({ ready }) => ready === true, 1], // 1 second timeout
+          wait: [({ ready }) => ready === true, 1], // 1 second timeout
           elements: [
             {
               execute: {
                 activity: {
                   name: 'activity1',
-                  result: 'result1'
+                  store: 'result1'
                 }
               }
             },
@@ -1327,7 +1328,7 @@ describe('DSLInterpreter', () => {
               execute: {
                 activity: {
                   name: 'activity2',
-                  result: 'result2'
+                  store: 'result2'
                 }
               }
             }
@@ -1378,8 +1379,8 @@ describe('DSLInterpreter', () => {
           execute: {
             step: {
               name: 'processData',
-              arguments: ['input'],
-              result: 'processedResult'
+              with: ['input'],
+              store: 'processedResult'
             }
           }
         }
@@ -1439,7 +1440,7 @@ describe('DSLInterpreter', () => {
       expect('execute' in firstElement).toBe(true);
       if ('execute' in firstElement) {
         expect(firstElement.execute.step?.name).toBe('processData');
-        expect(firstElement.execute.step?.result).toBe('step1');
+        expect(firstElement.execute.step?.store).toBe('step1');
       }
 
       // Check second element is step2
@@ -1447,7 +1448,7 @@ describe('DSLInterpreter', () => {
       expect('execute' in secondElement).toBe(true);
       if ('execute' in secondElement) {
         expect(secondElement.execute.step?.name).toBe('validateInput');
-        expect(secondElement.execute.step?.result).toBe('step2');
+        expect(secondElement.execute.step?.store).toBe('step2');
       }
     });
 
@@ -1475,7 +1476,7 @@ describe('DSLInterpreter', () => {
         }
       ];
 
-      // Create a DSL with explicit arguments for the first step
+      // Create a DSL with explicit with for the first step
       const dsl = {
         variables: { input: 'test_data' },
         plan: {
@@ -1485,8 +1486,8 @@ describe('DSLInterpreter', () => {
                 execute: {
                   step: {
                     name: 'processData',
-                    arguments: ['input'],
-                    result: 'step1'
+                    with: ['input'],
+                    store: 'step1'
                   }
                 }
               },
@@ -1497,8 +1498,8 @@ describe('DSLInterpreter', () => {
                       execute: {
                         step: {
                           name: 'validateInput',
-                          arguments: ['step1'],
-                          result: 'step2'
+                          with: ['step1'],
+                          store: 'step2'
                         }
                       }
                     },
@@ -1506,8 +1507,8 @@ describe('DSLInterpreter', () => {
                       execute: {
                         step: {
                           name: 'transformResult',
-                          arguments: ['step1'],
-                          result: 'step3'
+                          with: ['step1'],
+                          store: 'step3'
                         }
                       }
                     }
@@ -1566,8 +1567,8 @@ describe('DSLInterpreter', () => {
                 execute: {
                   step: {
                     name: 'processData',
-                    arguments: ['input'],
-                    result: 'processedData'
+                    with: ['input'],
+                    store: 'processedData'
                   }
                 }
               },
@@ -1575,8 +1576,8 @@ describe('DSLInterpreter', () => {
                 execute: {
                   step: {
                     name: 'validateInput',
-                    arguments: ['processedData'],
-                    result: 'isValid'
+                    with: ['processedData'],
+                    store: 'isValid'
                   }
                 }
               },
@@ -1584,8 +1585,8 @@ describe('DSLInterpreter', () => {
                 execute: {
                   step: {
                     name: 'transformResult',
-                    arguments: ['processedData', 'isValid'],
-                    result: 'finalResult'
+                    with: ['processedData', 'isValid'],
+                    store: 'finalResult'
                   }
                 }
               }
@@ -1641,7 +1642,7 @@ describe('DSLInterpreter', () => {
                 execute: {
                   activity: {
                     name: 'fetchData',
-                    result: 'rawData'
+                    store: 'rawData'
                   }
                 }
               },
@@ -1649,8 +1650,8 @@ describe('DSLInterpreter', () => {
                 execute: {
                   step: {
                     name: 'processData',
-                    arguments: ['rawData'],
-                    result: 'processedData'
+                    with: ['rawData'],
+                    store: 'processedData'
                   }
                 }
               },
@@ -1658,8 +1659,8 @@ describe('DSLInterpreter', () => {
                 execute: {
                   activity: {
                     name: 'saveData',
-                    arguments: ['processedData'],
-                    result: 'saveResult'
+                    with: ['processedData'],
+                    store: 'saveResult'
                   }
                 }
               }
@@ -1710,8 +1711,8 @@ describe('DSLInterpreter', () => {
                 execute: {
                   step: {
                     name: 'processData',
-                    arguments: ['nonExistentData'],
-                    result: 'processedData'
+                    with: ['nonExistentData'],
+                    store: 'processedData'
                   }
                 }
               }
@@ -1782,10 +1783,10 @@ describe('DSLInterpreter', () => {
       let containsStep4 = false;
 
       if ('execute' in lastGenElement && lastGenElement.execute.step) {
-        containsStep4 = lastGenElement.execute.step.result === 'step4';
+        containsStep4 = lastGenElement.execute.step.store === 'step4';
       } else if ('parallel' in lastGenElement) {
         containsStep4 = lastGenElement.parallel.branches.some(
-          (branch) => 'execute' in branch && branch.execute.step?.result === 'step4'
+          (branch) => 'execute' in branch && branch.execute.step?.store === 'step4'
         );
       }
 

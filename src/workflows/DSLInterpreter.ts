@@ -1,3 +1,4 @@
+import dottie from 'dottie';
 import { proxyActivities } from '@temporalio/workflow';
 import { DirectedGraph } from 'eventemitter3-graphology';
 import { hasCycle, topologicalGenerations } from 'graphology-dag';
@@ -13,7 +14,7 @@ export type Statement = {
   retries?: number;
   timeout?: number;
   required?: boolean;
-  waitFor?:
+  wait?:
     | ((variables: Record<string, unknown>, plan: Statement) => boolean)
     | [(variables: Record<string, unknown>, plan: Statement) => boolean, number];
 } & (
@@ -23,7 +24,6 @@ export type Statement = {
   | { foreach: ForEach }
   | { while: While }
   | { doWhile: DoWhile }
-  | { condition: DSLCondition }
 );
 
 export type Sequence = {
@@ -43,20 +43,20 @@ export type Execute = {
 
 export type ActivityInvocation = {
   name: string;
-  arguments?: string[];
-  result?: string;
+  with?: string[];
+  store?: string;
 };
 
 export type WorkflowInvocation = {
   name: string;
-  arguments?: string[];
-  result?: string;
+  with?: string[];
+  store?: string;
 };
 
 export type StepInvocation = {
   name: string;
-  arguments?: string[];
-  result?: string;
+  with?: string[];
+  store?: string;
 };
 
 export type DSLGeneration = {
@@ -70,8 +70,8 @@ export type DSLGeneration = {
 };
 
 export type ForEach = {
-  items: string;
-  item: string;
+  in: string;
+  as: string;
   body: Statement;
 };
 
@@ -85,9 +85,12 @@ export type DoWhile = {
   condition: (variables: Record<string, unknown>, plan: Statement) => boolean;
 };
 
-export type DSLCondition = {
-  predicate: string;
-  timeout?: number;
+// Consolidate execution context type
+type ExecutionContext = {
+  activities: Record<string, (...args: any[]) => Promise<any>>;
+  steps: Record<string, (input: unknown) => Promise<unknown>> | undefined;
+  variables: Record<string, unknown>;
+  plan: Statement;
 };
 
 export async function* DSLInterpreter(
@@ -157,11 +160,11 @@ export async function* DSLInterpreter(
         }
       }
 
-      // Handle waitFor if it exists
-      if (node.waitFor) {
+      // Handle wait if it exists
+      if (node.wait) {
         try {
-          if (Array.isArray(node.waitFor)) {
-            const [condition, timeout] = node.waitFor;
+          if (Array.isArray(node.wait)) {
+            const [condition, timeout] = node.wait;
             const startTime = Date.now();
             const timeoutMs = timeout * 1000; // Convert seconds to milliseconds
 
@@ -181,13 +184,13 @@ export async function* DSLInterpreter(
             }
           } else {
             // Simple condition without timeout
-            while (!node.waitFor(dsl.variables)) {
+            while (!node.wait(dsl.variables)) {
               // Wait a bit before checking again
               await new Promise((resolve) => setTimeout(resolve, 100));
             }
           }
         } catch (error) {
-          console.error(`Error in waitFor condition for ${nodeId}:`, error);
+          console.error(`Error in wait condition for ${nodeId}:`, error);
           skippedNodes.add(nodeId);
           continue; // Skip to the next node
         }
@@ -244,59 +247,36 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
   const graph = new DirectedGraph();
   let autoIncrementId = 0;
 
-  // Helper function to create node execution logic
+  // Simplify node execution function creation
   const createExecuteFunction = (
     type: 'activity' | 'step',
     nodeId: string,
     name: string,
     args: string[],
-    result?: string,
+    store?: string,
     when?: (variables: Record<string, unknown>, plan: Statement) => boolean,
-    waitFor?:
+    wait?:
       | ((variables: Record<string, unknown>, plan: Statement) => boolean)
       | [(variables: Record<string, unknown>, plan: Statement) => boolean, number]
   ) => {
-    return async ({ activities, steps, variables, plan }: ExecuteInput) => {
+    return async ({ activities, steps, variables, plan }: ExecutionContext) => {
       const executorMap = type === 'activity' ? activities : steps;
       if (!executorMap?.[name]) {
         throw new Error(`${type} function '${name}' not found`);
       }
 
-      let resolvedArgs = args.map((arg) => {
-        if (bindings[arg] !== undefined) {
-          return bindings[arg];
-        }
-        // Check if the argument references a result from another node
-        if (graph.hasNode(arg)) {
-          const nodeResult = graph.getNodeAttribute(arg, 'result');
-          if (nodeResult !== undefined) {
-            return nodeResult;
-          }
-        }
-        // Handle array access like currentSearchResults[0].url
-        if (arg.includes('[') && arg.includes(']')) {
-          const [arrayName, rest] = arg.split('[');
-          const [indexStr, propertyPath] = rest.split(']');
-          const index = parseInt(indexStr, 10);
+      const resolvedArgs = args.map((arg) => {
+        const value = dottie.get(bindings, arg, undefined);
+        if (value !== undefined) return value;
 
-          if (bindings[arrayName] && Array.isArray(bindings[arrayName]) && bindings[arrayName][index]) {
-            if (propertyPath) {
-              // Handle property access like .url
-              const property = propertyPath.substring(1); // Remove the dot
-              return bindings[arrayName][index][property];
-            }
-            return bindings[arrayName][index];
-          }
-        }
-        return arg;
+        // Check for result from another node
+        return graph.hasNode(arg) ? (graph.getNodeAttribute(arg, 'result') ?? arg) : arg;
       });
 
       // @ts-ignore
       const output = await executorMap[name](...resolvedArgs);
       if (output !== undefined) {
-        if (result) {
-          bindings[result] = output;
-        }
+        if (store) dottie.set(bindings, store, output);
         graph.setNodeAttribute(nodeId, 'result', output);
       }
       return output;
@@ -308,7 +288,7 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
     type: 'activity' | 'step',
     name: string,
     args: string[],
-    result?: string,
+    store?: string,
     statement?: Statement
   ): string => {
     const nodeId = `${type}_${name}_${autoIncrementId++}`;
@@ -316,17 +296,17 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
       type,
       name,
       args,
-      result,
+      store,
       when: statement?.when,
-      waitFor: statement?.waitFor,
+      wait: statement?.wait,
       required: statement?.required,
-      execute: createExecuteFunction(type, nodeId, name, args, result, statement?.when, statement?.waitFor)
+      execute: createExecuteFunction(type, nodeId, name, args, store, statement?.when, statement?.wait)
     });
 
-    // Add edges from nodes that have results matching our arguments
+    // Add edges from nodes that have results matching our with
     for (const arg of args) {
       const dependencyNodes = Array.from(graph.nodes()).filter((n) => {
-        const nodeResult = graph.getNodeAttribute(n, 'result');
+        const nodeResult = graph.getNodeAttribute(n, 'store');
         return nodeResult === arg;
       });
 
@@ -347,11 +327,11 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
       let nodeId: string | undefined;
 
       if (statement.execute.activity) {
-        const { name, arguments: args = [], result } = statement.execute.activity;
-        nodeId = addNodeAndDependencies('activity', name, args, result, statement);
+        const { name, with: args = [], store } = statement.execute.activity;
+        nodeId = addNodeAndDependencies('activity', name, args, store, statement);
       } else if (statement.execute.step) {
-        const { name, arguments: args = [], result } = statement.execute.step;
-        nodeId = addNodeAndDependencies('step', name, args, result, statement);
+        const { name, with: args = [], store } = statement.execute.step;
+        nodeId = addNodeAndDependencies('step', name, args, store, statement);
       }
 
       // Always add dependency on previous node in sequence
@@ -386,20 +366,20 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
 
       graph.addNode(nodeId, {
         type: 'foreach',
-        items: statement.foreach.items,
-        item: statement.foreach.item,
+        in: statement.foreach.in,
+        as: statement.foreach.as,
         body: statement.foreach.body,
         condition: statement.when,
-        waitFor: statement.waitFor,
+        wait: statement.wait,
         execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
-          const itemsArray = bindings[statement.foreach.items];
+          const itemsArray = bindings[statement.foreach.in];
           if (!Array.isArray(itemsArray)) {
-            throw new Error(`Variable ${statement.foreach.items} is not an array`);
+            throw new Error(`Variable ${statement.foreach.in} is not an array`);
           }
 
-          for (const item of itemsArray) {
-            // Set item variable for the current iteration
-            bindings[statement.foreach.item] = item;
+          for (const as of itemsArray) {
+            // Set as variable for the current iteration
+            bindings[statement.foreach.as] = as;
 
             // Create a temporary subgraph for this iteration
             const tempGraph = new DirectedGraph();
@@ -433,7 +413,7 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
         type: 'while',
         condition: statement.while.condition,
         body: statement.while.body,
-        waitFor: statement.waitFor,
+        wait: statement.wait,
         execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
           while (await statement.while.condition(variables, plan)) {
             // Create a temporary subgraph for this iteration
@@ -468,7 +448,7 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
         type: 'doWhile',
         condition: statement.doWhile.condition,
         body: statement.doWhile.body,
-        waitFor: statement.waitFor,
+        wait: statement.wait,
         execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
           do {
             // Create a temporary subgraph for this iteration
@@ -580,6 +560,116 @@ async function executeGenerationWithErrorHandling(
   }
 }
 
+// Helper function to process statements in a subgraph
+function processStatementForSubgraph(
+  statement: Statement,
+  subgraph: DirectedGraph,
+  subBindings: Record<string, any>
+): string | undefined {
+  // Similar to processStatement but designed to work on a subgraph
+  // This is a simplified implementation - you would need to adapt this
+  // to work with your specific DSL structure
+
+  let autoIncrementSubId = 0;
+
+  const processSubStatement = (stmt: Statement, prevNodeId?: string): string | undefined => {
+    if ('execute' in stmt) {
+      let nodeId: string | undefined;
+
+      if (stmt.execute.activity) {
+        const { name, with: args = [], store } = stmt.execute.activity;
+        nodeId = `${name}_${autoIncrementSubId++}`;
+        subgraph.addNode(nodeId, {
+          type: 'activity',
+          name,
+          args,
+          store,
+          condition: stmt.when,
+          wait: stmt.wait,
+          execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
+            const executorMap = activities;
+            if (!executorMap?.[name]) {
+              throw new Error(`Activity function '${name}' not found`);
+            }
+
+            let resolvedArgs = args.map((arg) => {
+              if (subBindings[arg] !== undefined) {
+                return subBindings[arg];
+              }
+              return arg;
+            });
+
+            // @ts-ignore
+            const output = await executorMap[name](...resolvedArgs);
+            if (output !== undefined && store) {
+              dottie.set(subBindings, store, output);
+            }
+            return output;
+          }
+        });
+      } else if (stmt.execute.step) {
+        const { name, with: args = [], store } = stmt.execute.step;
+        nodeId = `${name}_${autoIncrementSubId++}`;
+        subgraph.addNode(nodeId, {
+          type: 'step',
+          name,
+          args,
+          store,
+          condition: stmt.when,
+          wait: stmt.wait,
+          execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
+            const executorMap = steps;
+            if (!executorMap?.[name]) {
+              throw new Error(`Step function '${name}' not found`);
+            }
+
+            let resolvedArgs = args.map((arg) => {
+              if (subBindings[arg] !== undefined) {
+                return subBindings[arg];
+              }
+              return arg;
+            });
+
+            // @ts-ignore
+            const output = await executorMap[name](...resolvedArgs);
+            if (output !== undefined && store) {
+              dottie.set(subBindings, store, output);
+            }
+            return output;
+          }
+        });
+      }
+
+      // Add dependency on previous node
+      if (nodeId && prevNodeId) {
+        try {
+          subgraph.addDirectedEdge(prevNodeId, nodeId);
+        } catch (e) {
+          // Edge might already exist
+        }
+      }
+      return nodeId;
+    } else if ('sequence' in stmt) {
+      let lastNodeId: string | undefined;
+      for (const element of stmt.sequence.elements) {
+        lastNodeId = processSubStatement(element, lastNodeId);
+      }
+      return lastNodeId;
+    } else if ('parallel' in stmt) {
+      const startNodeId = prevNodeId;
+      const nodeIds = stmt.parallel.branches
+        .map((branch) => processSubStatement(branch, startNodeId))
+        .filter((id): id is string => id !== undefined);
+
+      return nodeIds.length > 0 ? nodeIds[nodeIds.length - 1] : undefined;
+    }
+
+    return undefined;
+  };
+
+  return processSubStatement(statement);
+}
+
 /**
  * Adapter function to convert StepMetadata from the @Step decorator into DSLDefinition format
  *
@@ -649,7 +739,7 @@ export function convertStepsToDSL(
           execute: {
             step: {
               name: stepMeta.method, // Use the method name for execution
-              result: stepName // Use the step name as the result identifier
+              store: stepName // Use the step name as the result identifier
             }
           }
         };
@@ -698,7 +788,7 @@ export function convertStepsToDSL(
             execute: {
               step: {
                 name: stepMeta.method,
-                result: stepName
+                store: stepName
               }
             }
           };
@@ -755,114 +845,4 @@ export function convertStepsToDSL(
       }
     }
   };
-}
-
-// Helper function to process statements in a subgraph
-function processStatementForSubgraph(
-  statement: Statement,
-  subgraph: DirectedGraph,
-  subBindings: Record<string, any>
-): string | undefined {
-  // Similar to processStatement but designed to work on a subgraph
-  // This is a simplified implementation - you would need to adapt this
-  // to work with your specific DSL structure
-
-  let autoIncrementSubId = 0;
-
-  const processSubStatement = (stmt: Statement, prevNodeId?: string): string | undefined => {
-    if ('execute' in stmt) {
-      let nodeId: string | undefined;
-
-      if (stmt.execute.activity) {
-        const { name, arguments: args = [], result } = stmt.execute.activity;
-        nodeId = `${name}_${autoIncrementSubId++}`;
-        subgraph.addNode(nodeId, {
-          type: 'activity',
-          name,
-          args,
-          result,
-          condition: stmt.when,
-          waitFor: stmt.waitFor,
-          execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
-            const executorMap = activities;
-            if (!executorMap?.[name]) {
-              throw new Error(`Activity function '${name}' not found`);
-            }
-
-            let resolvedArgs = args.map((arg) => {
-              if (subBindings[arg] !== undefined) {
-                return subBindings[arg];
-              }
-              return arg;
-            });
-
-            // @ts-ignore
-            const output = await executorMap[name](...resolvedArgs);
-            if (output !== undefined && result) {
-              subBindings[result] = output;
-            }
-            return output;
-          }
-        });
-      } else if (stmt.execute.step) {
-        const { name, arguments: args = [], result } = stmt.execute.step;
-        nodeId = `${name}_${autoIncrementSubId++}`;
-        subgraph.addNode(nodeId, {
-          type: 'step',
-          name,
-          args,
-          result,
-          condition: stmt.when,
-          waitFor: stmt.waitFor,
-          execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
-            const executorMap = steps;
-            if (!executorMap?.[name]) {
-              throw new Error(`Step function '${name}' not found`);
-            }
-
-            let resolvedArgs = args.map((arg) => {
-              if (subBindings[arg] !== undefined) {
-                return subBindings[arg];
-              }
-              return arg;
-            });
-
-            // @ts-ignore
-            const output = await executorMap[name](...resolvedArgs);
-            if (output !== undefined && result) {
-              subBindings[result] = output;
-            }
-            return output;
-          }
-        });
-      }
-
-      // Add dependency on previous node
-      if (nodeId && prevNodeId) {
-        try {
-          subgraph.addDirectedEdge(prevNodeId, nodeId);
-        } catch (e) {
-          // Edge might already exist
-        }
-      }
-      return nodeId;
-    } else if ('sequence' in stmt) {
-      let lastNodeId: string | undefined;
-      for (const element of stmt.sequence.elements) {
-        lastNodeId = processSubStatement(element, lastNodeId);
-      }
-      return lastNodeId;
-    } else if ('parallel' in stmt) {
-      const startNodeId = prevNodeId;
-      const nodeIds = stmt.parallel.branches
-        .map((branch) => processSubStatement(branch, startNodeId))
-        .filter((id): id is string => id !== undefined);
-
-      return nodeIds.length > 0 ? nodeIds[nodeIds.length - 1] : undefined;
-    }
-
-    return undefined;
-  };
-
-  return processSubStatement(statement);
 }

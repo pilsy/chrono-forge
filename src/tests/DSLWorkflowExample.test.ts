@@ -46,15 +46,15 @@ describe('DSLWorkflowExample', () => {
         execute: {
           activity: {
             name: 'makeHTTPRequest',
-            arguments: ['apiUrl'],
-            result: 'apiResponse'
+            with: ['apiUrl'],
+            store: 'apiResponse'
           }
         }
       }
     };
 
     const handle = await execute('DSLWorkflowExample', 'start', { dsl: simpleDSL });
-    await sleep(1000);
+    await sleep(5000);
 
     const status = await handle.query('status');
     expect(status).toBe('completed');
@@ -75,8 +75,8 @@ describe('DSLWorkflowExample', () => {
               execute: {
                 activity: {
                   name: 'makeHTTPRequest',
-                  arguments: ['apiUrl'],
-                  result: 'rawData'
+                  with: ['apiUrl'],
+                  store: 'rawData'
                 }
               }
             },
@@ -84,8 +84,8 @@ describe('DSLWorkflowExample', () => {
               execute: {
                 activity: {
                   name: 'formatData',
-                  arguments: ['rawData'],
-                  result: 'formattedData'
+                  with: ['rawData'],
+                  store: 'formattedData'
                 }
               }
             },
@@ -93,8 +93,8 @@ describe('DSLWorkflowExample', () => {
               execute: {
                 activity: {
                   name: 'processResult',
-                  arguments: ['formattedData'],
-                  result: 'finalResult'
+                  with: ['formattedData'],
+                  store: 'finalResult'
                 }
               }
             }
@@ -129,8 +129,8 @@ describe('DSLWorkflowExample', () => {
         execute: {
           step: {
             name: 'transformData',
-            arguments: ['inputData'],
-            result: 'transformedData'
+            with: ['inputData'],
+            store: 'transformedData'
           }
         }
       }
@@ -158,8 +158,8 @@ describe('DSLWorkflowExample', () => {
               execute: {
                 step: {
                   name: 'transformData',
-                  arguments: ['inputData'],
-                  result: 'transformedData'
+                  with: ['inputData'],
+                  store: 'transformedData'
                 }
               }
             },
@@ -167,8 +167,8 @@ describe('DSLWorkflowExample', () => {
               execute: {
                 step: {
                   name: 'validateData',
-                  arguments: ['transformedData'],
-                  result: 'isValid'
+                  with: ['transformedData'],
+                  store: 'isValid'
                 }
               }
             },
@@ -177,8 +177,8 @@ describe('DSLWorkflowExample', () => {
               execute: {
                 step: {
                   name: 'formatOutput',
-                  arguments: ['transformedData', 'isValid'],
-                  result: 'finalOutput'
+                  with: ['transformedData', 'isValid'],
+                  store: 'finalOutput'
                 }
               }
             }
@@ -211,8 +211,8 @@ describe('DSLWorkflowExample', () => {
               execute: {
                 activity: {
                   name: 'makeHTTPRequest',
-                  arguments: ['apiUrl'],
-                  result: 'apiData'
+                  with: ['apiUrl'],
+                  store: 'apiData'
                 }
               }
             },
@@ -220,8 +220,8 @@ describe('DSLWorkflowExample', () => {
               execute: {
                 step: {
                   name: 'transformData',
-                  arguments: ['apiData'],
-                  result: 'transformedData'
+                  with: ['apiData'],
+                  store: 'transformedData'
                 }
               }
             },
@@ -229,8 +229,8 @@ describe('DSLWorkflowExample', () => {
               execute: {
                 step: {
                   name: 'validateData',
-                  arguments: ['transformedData'],
-                  result: 'isValid'
+                  with: ['transformedData'],
+                  store: 'isValid'
                 }
               }
             },
@@ -238,8 +238,8 @@ describe('DSLWorkflowExample', () => {
               execute: {
                 activity: {
                   name: 'processResult',
-                  arguments: ['transformedData', 'isValid'],
-                  result: 'finalResult'
+                  with: ['transformedData', 'isValid'],
+                  store: 'finalResult'
                 }
               }
             }
@@ -280,8 +280,8 @@ describe('DSLWorkflowExample', () => {
     // Add a step
     await handle.signal('addStep', {
       name: 'transformData',
-      arguments: ['test_data'],
-      result: 'transformedData'
+      with: ['test_data'],
+      store: 'transformedData'
     });
 
     // Verify the DSL was updated
@@ -306,8 +306,8 @@ describe('DSLWorkflowExample', () => {
                     execute: {
                       step: {
                         name: 'transformData',
-                        arguments: ['data1'],
-                        result: 'transformed1'
+                        with: ['data1'],
+                        store: 'transformed1'
                       }
                     }
                   },
@@ -315,8 +315,8 @@ describe('DSLWorkflowExample', () => {
                     execute: {
                       step: {
                         name: 'transformData',
-                        arguments: ['data2'],
-                        result: 'transformed2'
+                        with: ['data2'],
+                        store: 'transformed2'
                       }
                     }
                   }
@@ -351,8 +351,8 @@ describe('DSLWorkflowExample', () => {
               execute: {
                 step: {
                   name: 'sleepStep',
-                  arguments: ['sleepTime'],
-                  result: 'sleepResult'
+                  with: ['sleepTime'],
+                  store: 'sleepResult'
                 }
               }
             }
