@@ -109,9 +109,6 @@ export async function* DSLInterpreter(
   const graph = buildDependencyGraph(dsl.plan, bindings);
   const generations = topologicalGenerations(graph);
 
-  // Track nodes that were skipped due to conditions or dependencies
-  const skippedNodes = new Set<string>();
-
   if (generations.length === 0) {
     console.warn('No generations found in the graph. Skipping execution.');
     return;
@@ -119,6 +116,7 @@ export async function* DSLInterpreter(
 
   console.log(visualizeWorkflowGenerations(graph));
 
+  const skippedNodes = new Set<string>();
   for (const generation of generations) {
     for (const nodeId of generation) {
       const node = graph.getNodeAttributes(nodeId);
@@ -214,26 +212,6 @@ export async function* DSLInterpreter(
   }
 
   console.log('Workflow completed successfully');
-}
-
-async function executeNode(
-  nodeId: string,
-  graph: DirectedGraph,
-  activities: Record<string, (...args: any[]) => Promise<any>>,
-  steps: Record<string, (input: unknown) => Promise<unknown>> | undefined,
-  dsl: DSLDefinition
-): Promise<unknown> {
-  try {
-    const node = graph.getNodeAttributes(nodeId);
-    if (!node.execute) {
-      throw new Error(`No execute function found for node ${nodeId}`);
-    }
-
-    return await node.execute({ activities, steps, variables: dsl.variables, plan: dsl.plan });
-  } catch (error) {
-    console.error(`Error executing node ${nodeId}:`, error);
-    throw error;
-  }
 }
 
 type ExecuteInput = {
