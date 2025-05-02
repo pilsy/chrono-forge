@@ -1218,10 +1218,7 @@ describe('DSLInterpreter', () => {
       variables: { ready: false },
       plan: {
         sequence: {
-          wait: (variables) => {
-            debugger;
-            return variables.ready === true;
-          },
+          wait: ({ ready }) => ready,
           elements: [
             {
               execute: {
@@ -1242,13 +1239,9 @@ describe('DSLInterpreter', () => {
 
     const interpreter = DSLInterpreter(dsl, activities);
 
-    setTimeout(() => {
-      debugger;
-      dsl.variables.ready = true;
-      debugger;
-    }, 1000);
-    let generation = await interpreter.next();
+    setTimeout(() => (dsl.variables.ready = true), 1000);
 
+    let generation = await interpreter.next();
     await generation.value.execute();
 
     // Activities should execute after condition is met
