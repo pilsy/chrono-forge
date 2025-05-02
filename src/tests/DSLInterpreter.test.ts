@@ -1376,10 +1376,10 @@ describe('DSLInterpreter', () => {
         plan: {
           execute: {
             code: `
-                const fullName = firstName + ' ' + lastName;
-                const isAdult = age >= 18;
-                return { fullName, isAdult };
-              `,
+              const fullName = firstName + ' ' + lastName;
+              const isAdult = age >= 18;
+              return { fullName, isAdult };
+            `,
             with: ['firstName', 'lastName', 'age'],
             store: 'person'
           }

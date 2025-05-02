@@ -44,11 +44,9 @@ describe('DSLWorkflowExample', () => {
       },
       plan: {
         execute: {
-          activity: {
-            name: 'makeHTTPRequest',
-            with: ['apiUrl'],
-            store: 'apiResponse'
-          }
+          activity: 'makeHTTPRequest',
+          with: ['apiUrl'],
+          store: 'apiResponse'
         }
       }
     };
@@ -73,29 +71,23 @@ describe('DSLWorkflowExample', () => {
           elements: [
             {
               execute: {
-                activity: {
-                  name: 'makeHTTPRequest',
-                  with: ['apiUrl'],
-                  store: 'rawData'
-                }
+                activity: 'makeHTTPRequest',
+                with: ['apiUrl'],
+                store: 'rawData'
               }
             },
             {
               execute: {
-                activity: {
-                  name: 'formatData',
-                  with: ['rawData'],
-                  store: 'formattedData'
-                }
+                activity: 'formatData',
+                with: ['rawData'],
+                store: 'formattedData'
               }
             },
             {
               execute: {
-                activity: {
-                  name: 'processResult',
-                  with: ['formattedData'],
-                  store: 'finalResult'
-                }
+                activity: 'processResult',
+                with: ['formattedData'],
+                store: 'finalResult'
               }
             }
           ]
@@ -127,11 +119,9 @@ describe('DSLWorkflowExample', () => {
       },
       plan: {
         execute: {
-          step: {
-            name: 'transformData',
-            with: ['inputData'],
-            store: 'transformedData'
-          }
+          step: 'transformData',
+          with: ['inputData'],
+          store: 'transformedData'
         }
       }
     };
@@ -156,30 +146,24 @@ describe('DSLWorkflowExample', () => {
           elements: [
             {
               execute: {
-                step: {
-                  name: 'transformData',
-                  with: ['inputData'],
-                  store: 'transformedData'
-                }
+                step: 'transformData',
+                with: ['inputData'],
+                store: 'transformedData'
               }
             },
             {
               execute: {
-                step: {
-                  name: 'validateData',
-                  with: ['transformedData'],
-                  store: 'isValid'
-                }
+                step: 'validateData',
+                with: ['transformedData'],
+                store: 'isValid'
               }
             },
             {
               condition: async (dsl) => dsl.variables['isValid'] === true,
               execute: {
-                step: {
-                  name: 'formatOutput',
-                  with: ['transformedData', 'isValid'],
-                  store: 'finalOutput'
-                }
+                step: 'formatOutput',
+                with: ['transformedData', 'isValid'],
+                store: 'finalOutput'
               }
             }
           ]
@@ -209,38 +193,30 @@ describe('DSLWorkflowExample', () => {
           elements: [
             {
               execute: {
-                activity: {
-                  name: 'makeHTTPRequest',
-                  with: ['apiUrl'],
-                  store: 'apiData'
-                }
+                activity: 'makeHTTPRequest',
+                with: ['apiUrl'],
+                store: 'apiData'
               }
             },
             {
               execute: {
-                step: {
-                  name: 'transformData',
-                  with: ['apiData'],
-                  store: 'transformedData'
-                }
+                step: 'transformData',
+                with: ['apiData'],
+                store: 'transformedData'
               }
             },
             {
               execute: {
-                step: {
-                  name: 'validateData',
-                  with: ['transformedData'],
-                  store: 'isValid'
-                }
+                step: 'validateData',
+                with: ['transformedData'],
+                store: 'isValid'
               }
             },
             {
               execute: {
-                activity: {
-                  name: 'processResult',
-                  with: ['transformedData', 'isValid'],
-                  store: 'finalResult'
-                }
+                activity: 'processResult',
+                with: ['transformedData', 'isValid'],
+                store: 'finalResult'
               }
             }
           ]
@@ -304,20 +280,16 @@ describe('DSLWorkflowExample', () => {
                 branches: [
                   {
                     execute: {
-                      step: {
-                        name: 'transformData',
-                        with: ['data1'],
-                        store: 'transformed1'
-                      }
+                      step: 'transformData',
+                      with: ['data1'],
+                      store: 'transformed1'
                     }
                   },
                   {
                     execute: {
-                      step: {
-                        name: 'transformData',
-                        with: ['data2'],
-                        store: 'transformed2'
-                      }
+                      step: 'transformData',
+                      with: ['data2'],
+                      store: 'transformed2'
                     }
                   }
                 ]
@@ -349,11 +321,9 @@ describe('DSLWorkflowExample', () => {
           elements: [
             {
               execute: {
-                step: {
-                  name: 'sleepStep',
-                  with: ['sleepTime'],
-                  store: 'sleepResult'
-                }
+                step: 'sleepStep',
+                with: ['sleepTime'],
+                store: 'sleepResult'
               }
             }
           ]
