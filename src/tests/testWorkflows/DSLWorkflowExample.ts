@@ -32,7 +32,15 @@ export class DSLWorkflowExample extends Workflow {
       };
     }
 
-    (this.dsl.plan.sequence.elements as any[]).push({
+    // After the above check, we can assert the plan structure exists
+    const plan = this.dsl.plan as { sequence: { elements?: any[] } };
+
+    // Ensure elements exists and is an array
+    if (!plan.sequence.elements) {
+      plan.sequence.elements = [];
+    }
+
+    plan.sequence.elements.push({
       execute: {
         activity
       }
@@ -52,7 +60,15 @@ export class DSLWorkflowExample extends Workflow {
       };
     }
 
-    (this.dsl.plan.sequence.elements as any[]).push({
+    // After the above check, we can assert the plan structure exists
+    const plan = this.dsl.plan as { sequence: { elements?: any[] } };
+
+    // Ensure elements exists and is an array
+    if (!plan.sequence.elements) {
+      plan.sequence.elements = [];
+    }
+
+    plan.sequence.elements.push({
       execute: {
         step
       }

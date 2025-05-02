@@ -1,5 +1,5 @@
 import dottie from 'dottie';
-import { proxyActivities } from '@temporalio/workflow';
+import * as temporalWorkflow from '@temporalio/workflow';
 import { DirectedGraph } from 'eventemitter3-graphology';
 import { hasCycle, topologicalGenerations } from 'graphology-dag';
 import { StepMetadata } from '../decorators/Step';
@@ -93,7 +93,7 @@ export async function* DSLInterpreter(
 ): AsyncGenerator<DSLGeneration, void, unknown> {
   const acts =
     injectedActivities ||
-    proxyActivities<Record<string, (...args: string[]) => Promise<string | undefined>>>({
+    temporalWorkflow.proxyActivities<Record<string, (...args: string[]) => Promise<string | undefined>>>({
       startToCloseTimeout: '1 minute'
     });
 
@@ -102,9 +102,14 @@ export async function* DSLInterpreter(
 
   // Create a proxy for the variables that updates dsl.variables automatically
   const bindings = new Proxy(dsl.variables as Record<string, any>, {
-    get: (target, prop: string) => target[prop],
+    get: (target, prop: string) => {
+      // Always get the most up-to-date value from dsl.variables
+      return dsl.variables[prop as keyof typeof dsl.variables];
+    },
     set: (target, prop: string, value) => {
+      // Update both the target and dsl.variables
       target[prop] = value;
+      dsl.variables[prop as keyof typeof dsl.variables] = value;
       return true;
     }
   });
@@ -153,6 +158,19 @@ export async function* DSLInterpreter(
             skippedNodes.add(nodeId);
 
             console.log(`Skipping node ${nodeId} because condition returned false`);
+
+            // If this is a sequence node, also mark all descendant nodes to be skipped
+            if (node.type === 'sequence') {
+              // Get all descendant nodes by looking at all outNeighbors recursively
+              const descendants = getAllDescendants(graph, nodeId);
+              for (const descendantId of descendants) {
+                skippedNodes.add(descendantId);
+                console.log(
+                  `Skipping descendant node ${descendantId} because parent sequence condition returned false`
+                );
+              }
+            }
+
             continue;
           }
         } catch (error) {
@@ -168,15 +186,18 @@ export async function* DSLInterpreter(
           if (Array.isArray(node.wait)) {
             const [condition, timeout] = node.wait;
             const startTime = Date.now();
-            const timeoutMs = timeout * 1000; // Convert seconds to milliseconds
+            // Only apply timeout logic if a valid timeout is provided (greater than 0)
+            const hasTimeout = timeout !== undefined && timeout !== null && timeout > 0;
+            const timeoutMs = hasTimeout ? timeout * 1000 : 0; // Convert seconds to milliseconds
 
-            while (!condition(dsl.variables)) {
-              if (Date.now() - startTime > timeoutMs) {
+            while (!condition(dsl.variables, dsl.plan)) {
+              // Check timeout condition only if a timeout was provided
+              if (hasTimeout && Date.now() - startTime > timeoutMs) {
                 console.log(`Timeout waiting for condition on node ${nodeId}`);
                 skippedNodes.add(nodeId);
                 break; // Break out of the while loop
               }
-              // Wait a bit before checking again
+              // Wait a bit before checking again - IMPORTANT: use await to allow the event loop to process other tasks
               await new Promise((resolve) => setTimeout(resolve, 100));
             }
 
@@ -186,8 +207,8 @@ export async function* DSLInterpreter(
             }
           } else {
             // Simple condition without timeout
-            while (!node.wait(dsl.variables)) {
-              // Wait a bit before checking again
+            while (!node.wait(dsl.variables, dsl.plan)) {
+              // Wait a bit before checking again - IMPORTANT: use await to allow the event loop to process other tasks
               await new Promise((resolve) => setTimeout(resolve, 100));
             }
           }
@@ -452,12 +473,14 @@ function buildDependencyGraph(
                   if (prop in target) {
                     return target[prop];
                   }
+                  // Access bindings which will get the latest value from dsl.variables
                   return bindings[prop];
                 },
                 set: (target, prop: string, value) => {
                   if (args.includes(prop)) {
                     target[prop] = value;
                   }
+                  // Update bindings (which will update dsl.variables through its proxy)
                   bindings[prop] = value;
                   return true;
                 }
@@ -806,4 +829,27 @@ export function convertStepsToDSL(
       }
     }
   };
+}
+
+/**
+ * Recursively find all descendants of a node in a graph
+ * @param graph The directed graph
+ * @param nodeId The parent node ID
+ * @returns Array of all descendant node IDs
+ */
+function getAllDescendants(graph: DirectedGraph, nodeId: string): string[] {
+  const descendants: Set<string> = new Set();
+
+  function collectDescendants(currentNodeId: string) {
+    const children = graph.outNeighbors(currentNodeId);
+    for (const childId of children) {
+      if (!descendants.has(childId)) {
+        descendants.add(childId);
+        collectDescendants(childId);
+      }
+    }
+  }
+
+  collectDescendants(nodeId);
+  return Array.from(descendants);
 }

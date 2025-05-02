@@ -1195,21 +1195,20 @@ describe('DSLInterpreter', () => {
     };
 
     interpreter = DSLInterpreter(dslFalse, activities);
+
+    // When the sequence condition is false, we shouldn't get any nodes
+    // since the sequence node and all descendants should be skipped
     generation = await interpreter.next();
 
-    expect(generation.value.nodeId).toMatch(/^sequence_condition_\d+$/);
-    await generation.value.execute();
-
-    generation = await interpreter.next();
-
-    debugger;
-
+    // The interpreter should be done
     expect(generation.done).toBe(true);
+
+    // No activities should have been called
     expect(activities.activity1).not.toHaveBeenCalled();
     expect(activities.activity2).not.toHaveBeenCalled();
   });
 
-  it.skip('should handle wait on sequence blocks', async () => {
+  it('should handle wait on sequence blocks', async () => {
     const activities = {
       activity1: jest.fn().mockResolvedValue('result1'),
       activity2: jest.fn().mockResolvedValue('result2')
@@ -1219,7 +1218,10 @@ describe('DSLInterpreter', () => {
       variables: { ready: false },
       plan: {
         sequence: {
-          wait: [({ ready }) => ready === true, 1], // 1 second timeout
+          wait: (variables) => {
+            debugger;
+            return variables.ready === true;
+          },
           elements: [
             {
               execute: {
@@ -1240,19 +1242,23 @@ describe('DSLInterpreter', () => {
 
     const interpreter = DSLInterpreter(dsl, activities);
 
-    // Set ready to true after a delay
     setTimeout(() => {
+      debugger;
       dsl.variables.ready = true;
-    }, 100);
+      debugger;
+    }, 1000);
+    let generation = await interpreter.next();
+
+    await generation.value.execute();
 
     // Activities should execute after condition is met
-    let generation = await interpreter.next();
-    expect(generation.value.nodeId).toMatch(/^activity_activity1_\d+$/);
+    generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^activity_activity\d_\d+$/);
     await generation.value.execute();
     expect(activities.activity1).toHaveBeenCalled();
 
     generation = await interpreter.next();
-    expect(generation.value.nodeId).toMatch(/^activity_activity2_\d+$/);
+    expect(generation.value.nodeId).toMatch(/^activity_activity\d_\d+$/);
     await generation.value.execute();
     expect(activities.activity2).toHaveBeenCalled();
 
