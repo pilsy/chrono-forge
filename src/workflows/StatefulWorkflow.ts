@@ -37,6 +37,7 @@ import { flatten } from '../utils/flatten';
 import { unflatten } from '../utils';
 import { mergeDeepRight } from 'ramda';
 import { LRUCacheWithDelete } from 'mnemonist';
+import { sanitizePropertyKey } from '../utils/sanitizePropertyKey';
 
 /**
  * Configuration structure defining how entity paths and associated workflows are managed.
@@ -2757,10 +2758,13 @@ export abstract class StatefulWorkflow<
       const useMemoPath = memo === true && isStringPath;
       const memoKeyString = typeof memo === 'string';
 
-      const resolveMemoKey = () => (useMemoPath ? path : memo);
+      const resolveMemoKey = () => {
+        const key = useMemoPath ? path : memo;
+        return typeof key === 'string' ? sanitizePropertyKey(key) : key;
+      };
 
       if (memo || memoKeyString) {
-        this._memoProperties[propertyKey] = Reflect.get(this, propertyKey);
+        this._memoProperties[resolveMemoKey()] = Reflect.get(this, propertyKey);
       }
 
       if (isStringPath || memoKeyString) {
