@@ -21,11 +21,9 @@ describe('DSLInterpreter', () => {
       variables: {},
       plan: {
         execute: {
-          activity: {
-            name: 'makeHTTPRequest',
-            store: 'result',
-            with: ['https://example.com']
-          }
+          activity: 'makeHTTPRequest',
+          store: 'result',
+          with: ['https://example.com']
         }
       }
     };
@@ -55,28 +53,22 @@ describe('DSLInterpreter', () => {
           elements: [
             {
               execute: {
-                activity: {
-                  name: 'makeHTTPRequest',
-                  store: 'httpResult'
-                }
+                activity: 'makeHTTPRequest',
+                store: 'httpResult'
               }
             },
             {
               execute: {
-                activity: {
-                  name: 'formatData',
-                  with: ['httpResult'],
-                  store: 'formattedData'
-                }
+                activity: 'formatData',
+                with: ['httpResult'],
+                store: 'formattedData'
               }
             },
             {
               execute: {
-                activity: {
-                  name: 'processResult',
-                  with: ['formattedData'],
-                  store: 'finalResult'
-                }
+                activity: 'processResult',
+                with: ['formattedData'],
+                store: 'finalResult'
               }
             }
           ]
@@ -122,18 +114,14 @@ describe('DSLInterpreter', () => {
           branches: [
             {
               execute: {
-                activity: {
-                  name: 'parallelTask1',
-                  store: 'result1'
-                }
+                activity: 'parallelTask1',
+                store: 'result1'
               }
             },
             {
               execute: {
-                activity: {
-                  name: 'parallelTask2',
-                  store: 'result2'
-                }
+                activity: 'parallelTask2',
+                store: 'result2'
               }
             }
           ]
@@ -176,10 +164,8 @@ describe('DSLInterpreter', () => {
           elements: [
             {
               execute: {
-                activity: {
-                  name: 'makeHTTPRequest',
-                  store: 'httpResult'
-                }
+                activity: 'makeHTTPRequest',
+                store: 'httpResult'
               }
             },
             {
@@ -187,19 +173,15 @@ describe('DSLInterpreter', () => {
                 branches: [
                   {
                     execute: {
-                      activity: {
-                        name: 'formatData',
-                        with: ['httpResult'],
-                        store: 'formattedData'
-                      }
+                      activity: 'formatData',
+                      with: ['httpResult'],
+                      store: 'formattedData'
                     }
                   },
                   {
                     execute: {
-                      activity: {
-                        name: 'slowOperation',
-                        store: 'slowResult'
-                      }
+                      activity: 'slowOperation',
+                      store: 'slowResult'
                     }
                   }
                 ]
@@ -207,11 +189,9 @@ describe('DSLInterpreter', () => {
             },
             {
               execute: {
-                activity: {
-                  name: 'combineResults',
-                  with: ['formattedData', 'slowResult'],
-                  store: 'finalResult'
-                }
+                activity: 'combineResults',
+                with: ['formattedData', 'slowResult'],
+                store: 'finalResult'
               }
             }
           ]
@@ -268,28 +248,22 @@ describe('DSLInterpreter', () => {
           elements: [
             {
               execute: {
-                activity: {
-                  name: 'makeHTTPRequest',
-                  store: 'httpData'
-                }
+                activity: 'makeHTTPRequest',
+                store: 'httpData'
               }
             },
             {
               execute: {
-                activity: {
-                  name: 'formatData',
-                  with: ['httpData'],
-                  store: 'formattedData'
-                }
+                activity: 'formatData',
+                with: ['httpData'],
+                store: 'formattedData'
               }
             },
             {
               execute: {
-                activity: {
-                  name: 'complexOperation',
-                  with: ['formattedData', 'staticValue'],
-                  store: 'complexResult'
-                }
+                activity: 'complexOperation',
+                with: ['formattedData', 'staticValue'],
+                store: 'complexResult'
               }
             }
           ]
@@ -337,11 +311,9 @@ describe('DSLInterpreter', () => {
       },
       plan: {
         execute: {
-          activity: {
-            name: 'makeHTTPRequest',
-            with: ['apiKey'],
-            store: 'httpResult'
-          }
+          activity: 'makeHTTPRequest',
+          with: ['apiKey'],
+          store: 'httpResult'
         }
       }
     };
@@ -371,10 +343,8 @@ describe('DSLInterpreter', () => {
       variables: {},
       plan: {
         execute: {
-          activity: {
-            name: 'makeHTTPRequest',
-            store: 'apiResponse'
-          }
+          activity: 'makeHTTPRequest',
+          store: 'apiResponse'
         }
       }
     };
@@ -416,11 +386,9 @@ describe('DSLInterpreter', () => {
             // First get API data
             {
               execute: {
-                activity: {
-                  name: 'makeHTTPRequest',
-                  with: ['initialParam'],
-                  store: 'rawData'
-                }
+                activity: 'makeHTTPRequest',
+                with: ['initialParam'],
+                store: 'rawData'
               }
             },
             // Then process in parallel
@@ -429,20 +397,16 @@ describe('DSLInterpreter', () => {
                 branches: [
                   {
                     execute: {
-                      activity: {
-                        name: 'formatData',
-                        with: ['rawData'],
-                        store: 'formattedOutput'
-                      }
+                      activity: 'formatData',
+                      with: ['rawData'],
+                      store: 'formattedOutput'
                     }
                   },
                   {
                     execute: {
-                      activity: {
-                        name: 'processResult',
-                        with: ['rawData'],
-                        store: 'processedOutput'
-                      }
+                      activity: 'processResult',
+                      with: ['rawData'],
+                      store: 'processedOutput'
                     }
                   }
                 ]
@@ -451,11 +415,9 @@ describe('DSLInterpreter', () => {
             // Finally combine the results
             {
               execute: {
-                activity: {
-                  name: 'combineResults',
-                  with: ['formattedOutput', 'processedOutput'],
-                  store: 'finalOutput'
-                }
+                activity: 'combineResults',
+                with: ['formattedOutput', 'processedOutput'],
+                store: 'finalOutput'
               }
             }
           ]
@@ -512,10 +474,8 @@ describe('DSLInterpreter', () => {
       variables: {},
       plan: {
         execute: {
-          activity: {
-            name: 'makeHTTPRequest',
-            store: 'httpResult'
-          }
+          activity: 'makeHTTPRequest',
+          store: 'httpResult'
         }
       }
     };
@@ -544,10 +504,8 @@ describe('DSLInterpreter', () => {
       variables: {},
       plan: {
         execute: {
-          activity: {
-            name: 'makeHTTPRequest'
-            // No result specified
-          }
+          activity: 'makeHTTPRequest'
+          // No result specified
         }
       }
     };
@@ -583,10 +541,8 @@ describe('DSLInterpreter', () => {
           elements: [
             {
               execute: {
-                activity: {
-                  name: 'makeHTTPRequest',
-                  store: 'httpResult'
-                }
+                activity: 'makeHTTPRequest',
+                store: 'httpResult'
               }
             },
             {
@@ -597,20 +553,16 @@ describe('DSLInterpreter', () => {
                       elements: [
                         {
                           execute: {
-                            activity: {
-                              name: 'formatData',
-                              with: ['httpResult'],
-                              store: 'formattedData'
-                            }
+                            activity: 'formatData',
+                            with: ['httpResult'],
+                            store: 'formattedData'
                           }
                         },
                         {
                           execute: {
-                            activity: {
-                              name: 'processResult',
-                              with: ['formattedData'],
-                              store: 'processedData'
-                            }
+                            activity: 'processResult',
+                            with: ['formattedData'],
+                            store: 'processedData'
                           }
                         }
                       ]
@@ -618,10 +570,8 @@ describe('DSLInterpreter', () => {
                   },
                   {
                     execute: {
-                      activity: {
-                        name: 'slowOperation',
-                        store: 'slowResult'
-                      }
+                      activity: 'slowOperation',
+                      store: 'slowResult'
                     }
                   }
                 ]
@@ -683,11 +633,9 @@ describe('DSLInterpreter', () => {
       },
       plan: {
         execute: {
-          activity: {
-            name: 'combineResults',
-            with: ['staticArg1', 'staticArg2'],
-            store: 'combinedStaticResult'
-          }
+          activity: 'combineResults',
+          with: ['staticArg1', 'staticArg2'],
+          store: 'combinedStaticResult'
         }
       }
     };
@@ -724,20 +672,16 @@ describe('DSLInterpreter', () => {
           elements: [
             {
               execute: {
-                activity: {
-                  name: 'makeHTTPRequest',
-                  store: 'condition'
-                }
+                activity: 'makeHTTPRequest',
+                store: 'condition'
               }
             },
             {
               when: ({ condition }) => condition === 'true',
               execute: {
-                activity: {
-                  name: 'conditionalTask',
-                  with: ['condition'],
-                  store: 'conditionalResult'
-                }
+                activity: 'conditionalTask',
+                with: ['condition'],
+                store: 'conditionalResult'
               }
             }
           ]
@@ -782,20 +726,16 @@ describe('DSLInterpreter', () => {
           elements: [
             {
               execute: {
-                activity: {
-                  name: 'makeHTTPRequest',
-                  store: 'condition'
-                }
+                activity: 'makeHTTPRequest',
+                store: 'condition'
               }
             },
             {
               when: ({ condition }) => condition === 'true',
               execute: {
-                activity: {
-                  name: 'conditionalTask',
-                  with: ['condition'],
-                  store: 'conditionalResult'
-                }
+                activity: 'conditionalTask',
+                with: ['condition'],
+                store: 'conditionalResult'
               }
             }
           ]
@@ -835,10 +775,8 @@ describe('DSLInterpreter', () => {
           elements: [
             {
               execute: {
-                activity: {
-                  name: 'makeHTTPRequest',
-                  store: 'httpData'
-                }
+                activity: 'makeHTTPRequest',
+                store: 'httpData'
               }
             },
             {
@@ -846,20 +784,16 @@ describe('DSLInterpreter', () => {
                 branches: [
                   {
                     execute: {
-                      activity: {
-                        name: 'formatData',
-                        with: ['httpData'],
-                        store: 'formattedData'
-                      }
+                      activity: 'formatData',
+                      with: ['httpData'],
+                      store: 'formattedData'
                     }
                   },
                   {
                     execute: {
-                      activity: {
-                        name: 'processResult',
-                        with: ['httpData'],
-                        store: 'processedData'
-                      }
+                      activity: 'processResult',
+                      with: ['httpData'],
+                      store: 'processedData'
                     }
                   }
                 ]
@@ -867,11 +801,9 @@ describe('DSLInterpreter', () => {
             },
             {
               execute: {
-                activity: {
-                  name: 'combineResults',
-                  with: ['formattedData', 'processedData'],
-                  store: 'finalData'
-                }
+                activity: 'combineResults',
+                with: ['formattedData', 'processedData'],
+                store: 'finalData'
               }
             }
           ]
@@ -924,11 +856,9 @@ describe('DSLInterpreter', () => {
       variables: {},
       plan: {
         execute: {
-          activity: {
-            name: 'makeHTTPRequest',
-            with: ['circularRef'], // This creates a circular dependency
-            store: 'circularRef' // by using the same name for input and output
-          }
+          activity: 'makeHTTPRequest',
+          with: ['circularRef'], // This creates a circular dependency
+          store: 'circularRef' // by using the same name for input and output
         }
       }
     };
@@ -954,11 +884,9 @@ describe('DSLInterpreter', () => {
       variables: { ready: false },
       plan: {
         execute: {
-          activity: {
-            name: 'makeHTTPRequest',
-            store: 'result',
-            with: ['https://example.com']
-          }
+          activity: 'makeHTTPRequest',
+          store: 'result',
+          with: ['https://example.com']
         },
         wait: [({ ready }) => ready === true, 5] // 5 second timeout
       }
@@ -982,10 +910,8 @@ describe('DSLInterpreter', () => {
       variables: { ready: false },
       plan: {
         execute: {
-          activity: {
-            name: 'makeHTTPRequest',
-            store: 'result'
-          }
+          activity: 'makeHTTPRequest',
+          store: 'result'
         },
         wait: [({ ready }) => ready === true, 1] // 1 second timeout - moved to correct level
       }
@@ -1014,11 +940,9 @@ describe('DSLInterpreter', () => {
           as: 'currentItem',
           body: {
             execute: {
-              activity: {
-                name: 'makeHTTPRequest',
-                with: ['currentItem'],
-                store: 'result'
-              }
+              activity: 'makeHTTPRequest',
+              with: ['currentItem'],
+              store: 'result'
             }
           }
         }
@@ -1042,10 +966,8 @@ describe('DSLInterpreter', () => {
           condition: async (variables) => variables.count < 3,
           body: {
             execute: {
-              activity: {
-                name: 'incrementCounter',
-                store: 'count'
-              }
+              activity: 'incrementCounter',
+              store: 'count'
             }
           }
         }
@@ -1074,10 +996,8 @@ describe('DSLInterpreter', () => {
         doWhile: {
           body: {
             execute: {
-              activity: {
-                name: 'makeHTTPRequest',
-                store: 'result'
-              }
+              activity: 'makeHTTPRequest',
+              store: 'result'
             }
           },
           condition: async (variables) => variables.count < 1
@@ -1098,10 +1018,8 @@ describe('DSLInterpreter', () => {
       variables: {},
       plan: {
         execute: {
-          activity: {
-            name: 'makeHTTPRequest',
-            store: 'result'
-          }
+          activity: 'makeHTTPRequest',
+          store: 'result'
         },
         when: () => {
           throw new Error('Condition evaluation failed');
@@ -1125,21 +1043,17 @@ describe('DSLInterpreter', () => {
           elements: [
             {
               execute: {
-                activity: {
-                  name: 'makeHTTPRequest',
-                  store: 'parentResult'
-                }
+                activity: 'makeHTTPRequest',
+                store: 'parentResult'
               },
               when: () => false,
               required: true
             },
             {
               execute: {
-                activity: {
-                  name: 'formatData',
-                  with: ['parentResult'],
-                  store: 'childResult'
-                }
+                activity: 'formatData',
+                with: ['parentResult'],
+                store: 'childResult'
               }
             }
           ]
@@ -1167,20 +1081,16 @@ describe('DSLInterpreter', () => {
           elements: [
             {
               execute: {
-                activity: {
-                  name: 'makeHTTPRequest',
-                  store: 'parentResult'
-                }
+                activity: 'makeHTTPRequest',
+                store: 'parentResult'
               },
               when: () => false
             },
             {
               execute: {
-                activity: {
-                  name: 'formatData',
-                  with: ['parentResult'],
-                  store: 'childResult'
-                }
+                activity: 'formatData',
+                with: ['parentResult'],
+                store: 'childResult'
               }
             }
           ]
@@ -1219,19 +1129,15 @@ describe('DSLInterpreter', () => {
           elements: [
             {
               execute: {
-                activity: {
-                  name: 'activity1',
-                  store: 'result1'
-                }
+                activity: 'activity1',
+                store: 'result1'
               }
             },
             {
               execute: {
-                activity: {
-                  name: 'activity2',
-                  with: ['result1'],
-                  store: 'result2'
-                }
+                activity: 'activity2',
+                with: ['result1'],
+                store: 'result2'
               }
             }
           ]
@@ -1269,19 +1175,15 @@ describe('DSLInterpreter', () => {
           elements: [
             {
               execute: {
-                activity: {
-                  name: 'activity1',
-                  store: 'result1'
-                }
+                activity: 'activity1',
+                store: 'result1'
               }
             },
             {
               execute: {
-                activity: {
-                  name: 'activity2',
-                  with: ['result1'],
-                  store: 'result2'
-                }
+                activity: 'activity2',
+                with: ['result1'],
+                store: 'result2'
               }
             }
           ]
@@ -1318,18 +1220,14 @@ describe('DSLInterpreter', () => {
           elements: [
             {
               execute: {
-                activity: {
-                  name: 'activity1',
-                  store: 'result1'
-                }
+                activity: 'activity1',
+                store: 'result1'
               }
             },
             {
               execute: {
-                activity: {
-                  name: 'activity2',
-                  store: 'result2'
-                }
+                activity: 'activity2',
+                store: 'result2'
               }
             }
           ]
@@ -1359,6 +1257,380 @@ describe('DSLInterpreter', () => {
     expect((await interpreter.next()).done).toBe(true);
   });
 
+  describe('Code Execution', () => {
+    it('should execute direct code and store the result', async () => {
+      const dsl: DSLDefinition = {
+        variables: { x: 5, y: 3 },
+        plan: {
+          execute: {
+            code: 'const result = x + y; return result;',
+            with: ['x', 'y'],
+            store: 'sum'
+          }
+        }
+      };
+
+      const interpreter = DSLInterpreter(dsl, {});
+
+      // Get the single generation
+      const generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^code_\d_\d+$/);
+      expect(generation.value.nodeIds).toHaveLength(1);
+      const result = await generation.value.execute();
+
+      // Check the result
+      expect(result).toBe(8);
+      expect(dsl.variables.sum).toBe(8);
+
+      // Should be done
+      expect((await interpreter.next()).done).toBe(true);
+    });
+
+    it('should execute code that modifies workflow variables', async () => {
+      const dsl: DSLDefinition = {
+        variables: { counter: 0, items: ['a', 'b', 'c'] },
+        plan: {
+          execute: {
+            code: `
+                counter += 1;
+                items.push('d');
+                return items.length;
+              `,
+            with: ['counter', 'items'],
+            store: 'itemCount'
+          }
+        }
+      };
+
+      const interpreter = DSLInterpreter(dsl, {});
+
+      // Get the single generation
+      const generation = await interpreter.next();
+      const result = await generation.value.execute();
+
+      // Check the results
+      expect(result).toBe(4);
+      expect(dsl.variables.counter).toBe(1);
+      expect(dsl.variables.items).toEqual(['a', 'b', 'c', 'd']);
+      expect(dsl.variables.itemCount).toBe(4);
+    });
+
+    it('should execute code in sequence with other steps', async () => {
+      // Set up mock activities
+      global.activities = {
+        getData: jest.fn().mockResolvedValue({ value: 10 })
+      };
+
+      const dsl: DSLDefinition = {
+        variables: { multiplier: 2 },
+        plan: {
+          sequence: {
+            elements: [
+              {
+                execute: {
+                  activity: 'getData',
+                  store: 'data'
+                }
+              },
+              {
+                execute: {
+                  code: `
+                      const calculated = data.value * multiplier;
+                      return calculated;
+                    `,
+                  with: ['data', 'multiplier'],
+                  store: 'result'
+                }
+              }
+            ]
+          }
+        }
+      };
+
+      const interpreter = DSLInterpreter(dsl, global.activities);
+
+      // First generation - getData activity
+      let generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^activity_getData_\d+$/);
+      let result = await generation.value.execute();
+      expect(result).toEqual({ value: 10 });
+
+      // Second generation - code execution
+      generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^code_\d_\d+$/);
+      result = await generation.value.execute();
+      expect(result).toBe(20);
+      expect(dsl.variables.result).toBe(20);
+
+      // Should be done
+      expect((await interpreter.next()).done).toBe(true);
+    });
+
+    it('should execute code with parameters from "with" array', async () => {
+      const dsl: DSLDefinition = {
+        variables: {
+          firstName: 'John',
+          lastName: 'Doe',
+          age: 30
+        },
+        plan: {
+          execute: {
+            code: `
+                const fullName = firstName + ' ' + lastName;
+                const isAdult = age >= 18;
+                return { fullName, isAdult };
+              `,
+            with: ['firstName', 'lastName', 'age'],
+            store: 'person'
+          }
+        }
+      };
+
+      const interpreter = DSLInterpreter(dsl, {});
+
+      // Get the single generation
+      const generation = await interpreter.next();
+      const result = await generation.value.execute();
+
+      // Check the results
+      expect(result).toEqual({ fullName: 'John Doe', isAdult: true });
+      expect(dsl.variables.person).toEqual({ fullName: 'John Doe', isAdult: true });
+    });
+
+    it('should execute code in parallel with other operations', async () => {
+      const dsl: DSLDefinition = {
+        variables: { base: 5 },
+        plan: {
+          parallel: {
+            branches: [
+              {
+                execute: {
+                  code: 'return base * 2;',
+                  with: ['base'],
+                  store: 'doubled'
+                }
+              },
+              {
+                execute: {
+                  code: 'return base * base;',
+                  with: ['base'],
+                  store: 'squared'
+                }
+              }
+            ]
+          }
+        }
+      };
+
+      const interpreter = DSLInterpreter(dsl, {});
+
+      // First parallel branch
+      let generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^code_\d_\d+$/);
+      let result = await generation.value.execute();
+      expect(result).toBe(10);
+      expect(dsl.variables.doubled).toBe(10);
+
+      // Second parallel branch
+      generation = await interpreter.next();
+      expect(generation.value.nodeId).toMatch(/^code_\d_\d+$/);
+      result = await generation.value.execute();
+      expect(result).toBe(25);
+      expect(dsl.variables.squared).toBe(25);
+
+      // Should be done
+      expect((await interpreter.next()).done).toBe(true);
+    });
+
+    it('should handle complex code with conditionals and loops', async () => {
+      const dsl: DSLDefinition = {
+        variables: { numbers: [1, 2, 3, 4, 5] },
+        plan: {
+          execute: {
+            code: `
+                let sum = 0;
+                let evenCount = 0;
+                
+                for (const num of numbers) {
+                  sum += num;
+                  if (num % 2 === 0) {
+                    evenCount++;
+                  }
+                }
+                
+                return { sum, evenCount };
+              `,
+            with: ['numbers'],
+            store: 'stats'
+          }
+        }
+      };
+
+      const interpreter = DSLInterpreter(dsl, {});
+
+      // Get the single generation
+      const generation = await interpreter.next();
+      const result = await generation.value.execute();
+
+      // Check the results
+      expect(result).toEqual({ sum: 15, evenCount: 2 });
+      expect(dsl.variables.stats).toEqual({ sum: 15, evenCount: 2 });
+    });
+
+    it('should execute code inside a foreach loop', async () => {
+      const dsl: DSLDefinition = {
+        variables: {
+          items: [1, 2, 3],
+          results: []
+        },
+        plan: {
+          foreach: {
+            in: 'items',
+            as: 'currentItem',
+            body: {
+              execute: {
+                code: `
+                  const squared = currentItem * currentItem;
+                  results.push(squared);
+                  return squared;
+                `,
+                with: ['items', 'currentItem', 'results'],
+                store: 'lastResult'
+              }
+            }
+          }
+        }
+      };
+
+      const interpreter = DSLInterpreter(dsl, {});
+
+      // Execute the loop
+      const generation = await interpreter.next();
+      await generation.value.execute();
+
+      // Check results
+      expect(dsl.variables.results).toEqual([1, 4, 9]);
+      expect(dsl.variables.lastResult).toBe(9); // Last iteration result
+    });
+
+    it('should execute code inside a while loop', async () => {
+      const dsl: DSLDefinition = {
+        variables: {
+          counter: 0,
+          sum: 0
+        },
+        plan: {
+          while: {
+            condition: (variables) => variables.counter < 5,
+            body: {
+              execute: {
+                code: `
+                  counter += 1;
+                  sum += counter;
+                  return counter;
+                `,
+                with: ['counter', 'sum'],
+                store: 'currentValue'
+              }
+            }
+          }
+        }
+      };
+
+      const interpreter = DSLInterpreter(dsl, {});
+
+      // Execute the loop
+      const generation = await interpreter.next();
+      await generation.value.execute();
+
+      // Check results - should have summed 1+2+3+4+5 = 15
+      expect(dsl.variables.counter).toBe(5);
+      expect(dsl.variables.sum).toBe(15);
+    });
+
+    it('should handle errors in code execution gracefully', async () => {
+      const dsl: DSLDefinition = {
+        variables: {},
+        plan: {
+          sequence: {
+            elements: [
+              {
+                execute: {
+                  code: 'throw new Error("Test error");',
+                  store: 'result'
+                }
+              },
+              {
+                execute: {
+                  code: 'return "This should not execute";',
+                  store: 'secondResult'
+                }
+              }
+            ]
+          }
+        }
+      };
+
+      const interpreter = DSLInterpreter(dsl, {});
+
+      // First code block with error
+      const generation = await interpreter.next();
+
+      // Should throw an error when executed
+      await expect(generation.value.execute()).rejects.toThrow();
+
+      // Variables should remain unchanged
+      expect(dsl.variables.result).toBeUndefined();
+      expect(dsl.variables.secondResult).toBeUndefined();
+    });
+
+    it('should allow code to reference results from previous steps', async () => {
+      // Set up mock activities
+      global.activities = {
+        getData: jest.fn().mockResolvedValue([10, 20, 30])
+      };
+
+      const dsl: DSLDefinition = {
+        variables: {},
+        plan: {
+          sequence: {
+            elements: [
+              {
+                execute: {
+                  activity: 'getData',
+                  store: 'data'
+                }
+              },
+              {
+                execute: {
+                  code: `
+                    return data.reduce((sum, val) => sum + val, 0);
+                  `,
+                  with: ['data'],
+                  store: 'sum'
+                }
+              }
+            ]
+          }
+        }
+      };
+
+      const interpreter = DSLInterpreter(dsl, global.activities);
+
+      // First generation - getData activity
+      let generation = await interpreter.next();
+      await generation.value.execute();
+
+      // Second generation - code execution
+      generation = await interpreter.next();
+      const result = await generation.value.execute();
+
+      // Should calculate sum of the array: 10+20+30 = 60
+      expect(result).toBe(60);
+      expect(dsl.variables.sum).toBe(60);
+    });
+  });
+
   describe('Step Integration', () => {
     beforeEach(() => {
       // Reset all mocks before each test
@@ -1377,11 +1649,9 @@ describe('DSLInterpreter', () => {
         variables: { input: 'test_data' },
         plan: {
           execute: {
-            step: {
-              name: 'processData',
-              with: ['input'],
-              store: 'processedResult'
-            }
+            step: 'processData',
+            with: ['input'],
+            store: 'processedResult'
           }
         }
       };
@@ -1407,22 +1677,19 @@ describe('DSLInterpreter', () => {
         {
           name: 'step1',
           method: 'processData',
-          required: true,
-          executed: false
+          required: true
         },
         {
           name: 'step2',
           method: 'validateInput',
           after: 'step1',
-          required: true,
-          executed: false
+          required: true
         },
         {
           name: 'step3',
           method: 'transformResult',
           after: 'step2',
-          required: false,
-          executed: false
+          required: false
         }
       ];
 
@@ -1439,16 +1706,16 @@ describe('DSLInterpreter', () => {
       const firstElement = dsl.plan.sequence.elements[0];
       expect('execute' in firstElement).toBe(true);
       if ('execute' in firstElement) {
-        expect(firstElement.execute.step?.name).toBe('processData');
-        expect(firstElement.execute.step?.store).toBe('step1');
+        expect(firstElement.execute.step).toBe('processData');
+        expect(firstElement.execute.store).toBe('step1');
       }
 
       // Check second element is step2
       const secondElement = dsl.plan.sequence.elements[1];
       expect('execute' in secondElement).toBe(true);
       if ('execute' in secondElement) {
-        expect(secondElement.execute.step?.name).toBe('validateInput');
-        expect(secondElement.execute.step?.store).toBe('step2');
+        expect(secondElement.execute.step).toBe('validateInput');
+        expect(secondElement.execute.store).toBe('step2');
       }
     });
 
@@ -1457,22 +1724,19 @@ describe('DSLInterpreter', () => {
         {
           name: 'step1',
           method: 'processData',
-          required: true,
-          executed: false
+          required: true
         },
         {
           name: 'step2',
           method: 'validateInput',
           after: 'step1',
-          required: true,
-          executed: false
+          required: true
         },
         {
           name: 'step3',
           method: 'transformResult',
           after: 'step1',
-          required: true,
-          executed: false
+          required: true
         }
       ];
 
@@ -1484,11 +1748,9 @@ describe('DSLInterpreter', () => {
             elements: [
               {
                 execute: {
-                  step: {
-                    name: 'processData',
-                    with: ['input'],
-                    store: 'step1'
-                  }
+                  step: 'processData',
+                  with: ['input'],
+                  store: 'step1'
                 }
               },
               {
@@ -1496,20 +1758,16 @@ describe('DSLInterpreter', () => {
                   branches: [
                     {
                       execute: {
-                        step: {
-                          name: 'validateInput',
-                          with: ['step1'],
-                          store: 'step2'
-                        }
+                        step: 'validateInput',
+                        with: ['step1'],
+                        store: 'step2'
                       }
                     },
                     {
                       execute: {
-                        step: {
-                          name: 'transformResult',
-                          with: ['step1'],
-                          store: 'step3'
-                        }
+                        step: 'transformResult',
+                        with: ['step1'],
+                        store: 'step3'
                       }
                     }
                   ]
@@ -1565,29 +1823,23 @@ describe('DSLInterpreter', () => {
             elements: [
               {
                 execute: {
-                  step: {
-                    name: 'processData',
-                    with: ['input'],
-                    store: 'processedData'
-                  }
+                  step: 'processData',
+                  with: ['input'],
+                  store: 'processedData'
                 }
               },
               {
                 execute: {
-                  step: {
-                    name: 'validateInput',
-                    with: ['processedData'],
-                    store: 'isValid'
-                  }
+                  step: 'validateInput',
+                  with: ['processedData'],
+                  store: 'isValid'
                 }
               },
               {
                 execute: {
-                  step: {
-                    name: 'transformResult',
-                    with: ['processedData', 'isValid'],
-                    store: 'finalResult'
-                  }
+                  step: 'transformResult',
+                  with: ['processedData', 'isValid'],
+                  store: 'finalResult'
                 }
               }
             ]
@@ -1640,28 +1892,22 @@ describe('DSLInterpreter', () => {
             elements: [
               {
                 execute: {
-                  activity: {
-                    name: 'fetchData',
-                    store: 'rawData'
-                  }
+                  activity: 'fetchData',
+                  store: 'rawData'
                 }
               },
               {
                 execute: {
-                  step: {
-                    name: 'processData',
-                    with: ['rawData'],
-                    store: 'processedData'
-                  }
+                  step: 'processData',
+                  with: ['rawData'],
+                  store: 'processedData'
                 }
               },
               {
                 execute: {
-                  activity: {
-                    name: 'saveData',
-                    with: ['processedData'],
-                    store: 'saveResult'
-                  }
+                  activity: 'saveData',
+                  with: ['processedData'],
+                  store: 'saveResult'
                 }
               }
             ]
@@ -1709,11 +1955,9 @@ describe('DSLInterpreter', () => {
             elements: [
               {
                 execute: {
-                  step: {
-                    name: 'processData',
-                    with: ['nonExistentData'],
-                    store: 'processedData'
-                  }
+                  step: 'processData',
+                  with: ['nonExistentData'],
+                  store: 'processedData'
                 }
               }
             ]
@@ -1766,11 +2010,11 @@ describe('DSLInterpreter', () => {
 
     it('should handle complex dependency patterns', () => {
       const steps: StepMetadata[] = [
-        { name: 'step1', method: 'method1', executed: false },
-        { name: 'step2', method: 'method2', after: 'step1', executed: false },
-        { name: 'step3', method: 'method3', after: 'step1', executed: false },
-        { name: 'step4', method: 'method4', after: ['step2', 'step3'], executed: false },
-        { name: 'step5', method: 'method5', before: 'step4', executed: false }
+        { name: 'step1', method: 'method1' },
+        { name: 'step2', method: 'method2', after: 'step1' },
+        { name: 'step3', method: 'method3', after: 'step1' },
+        { name: 'step4', method: 'method4', after: ['step2', 'step3'] },
+        { name: 'step5', method: 'method5', before: 'step4' }
       ];
 
       const dsl = convertStepsToDSL(steps);
@@ -1783,10 +2027,10 @@ describe('DSLInterpreter', () => {
       let containsStep4 = false;
 
       if ('execute' in lastGenElement && lastGenElement.execute.step) {
-        containsStep4 = lastGenElement.execute.step.store === 'step4';
+        containsStep4 = lastGenElement.execute.store === 'step4';
       } else if ('parallel' in lastGenElement) {
         containsStep4 = lastGenElement.parallel.branches.some(
-          (branch) => 'execute' in branch && branch.execute.step?.store === 'step4'
+          (branch) => 'execute' in branch && branch.execute.store === 'step4'
         );
       }
 

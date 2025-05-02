@@ -35,26 +35,14 @@ export type Parallel = {
 };
 
 export type Execute = {
+  // Optional name, defaults to the name of the step, activity or workflow
+  name?: string;
+
   code?: string;
-  step?: StepInvocation;
-  activity?: ActivityInvocation;
-  workflow?: WorkflowInvocation;
-};
+  step?: string;
+  activity?: string;
+  workflow?: string;
 
-export type ActivityInvocation = {
-  name: string;
-  with?: string[];
-  store?: string;
-};
-
-export type WorkflowInvocation = {
-  name: string;
-  with?: string[];
-  store?: string;
-};
-
-export type StepInvocation = {
-  name: string;
   with?: string[];
   store?: string;
 };
@@ -105,7 +93,16 @@ export async function* DSLInterpreter(
     });
 
   const steps = injectedSteps || {};
-  const bindings = dsl.variables as Record<string, string>;
+
+  // Create a proxy for the variables that updates dsl.variables automatically
+  const bindings = new Proxy(dsl.variables as Record<string, any>, {
+    get: (target, prop: string) => target[prop],
+    set: (target, prop: string, value) => {
+      target[prop] = value;
+      return true;
+    }
+  });
+
   const graph = buildDependencyGraph(dsl.plan, bindings);
   const generations = topologicalGenerations(graph);
 
@@ -221,30 +218,33 @@ type ExecuteInput = {
   plan: Statement;
 };
 
-function buildDependencyGraph(plan: Statement, bindings: Record<string, string | undefined>): DirectedGraph {
-  const graph = new DirectedGraph();
-  let autoIncrementId = 0;
+function buildDependencyGraph(
+  plan: Statement,
+  bindings: Record<string, string | undefined>,
+  existingGraph?: DirectedGraph,
+  startId?: number
+): DirectedGraph {
+  const graph = existingGraph || new DirectedGraph();
+  let autoIncrementId = startId || 0;
 
-  // Simplify node execution function creation
   const createExecuteFunction = (
-    type: 'activity' | 'step',
+    type: 'activity' | 'step' | 'code' | 'workflow',
     nodeId: string,
     name: string,
     args: string[],
     store?: string,
-    when?: (variables: Record<string, unknown>, plan: Statement) => boolean,
-    wait?:
-      | ((variables: Record<string, unknown>, plan: Statement) => boolean)
-      | [(variables: Record<string, unknown>, plan: Statement) => boolean, number]
+    statement?: Statement,
+    executorMap?: Record<string, (...args: any[]) => Promise<any>>
   ) => {
     return async ({ activities, steps, variables, plan }: ExecutionContext) => {
-      const executorMap = type === 'activity' ? activities : steps;
+      executorMap = executorMap ?? (type === 'activity' ? activities : steps);
       if (!executorMap?.[name]) {
         throw new Error(`${type} function '${name}' not found`);
       }
 
       const resolvedArgs = args.map((arg) => {
-        const value = dottie.get(bindings, arg, undefined);
+        // Get value directly from the proxied bindings
+        const value = bindings[arg];
         if (value !== undefined) return value;
 
         // Check for result from another node
@@ -254,20 +254,23 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
       // @ts-ignore
       const output = await executorMap[name](...resolvedArgs);
       if (output !== undefined) {
-        if (store) dottie.set(bindings, store, output);
+        if (store) {
+          // Store directly to bindings via proxy
+          bindings[store] = output;
+        }
         graph.setNodeAttribute(nodeId, 'result', output);
       }
       return output;
     };
   };
 
-  // Helper function to add node and its dependencies
   const addNodeAndDependencies = (
-    type: 'activity' | 'step',
+    type: 'activity' | 'step' | 'code' | 'workflow',
     name: string,
     args: string[],
     store?: string,
-    statement?: Statement
+    statement?: Statement,
+    executorMap?: Record<string, (...args: any[]) => Promise<any>>
   ): string => {
     const nodeId = `${type}_${name}_${autoIncrementId++}`;
     graph.addNode(nodeId, {
@@ -278,7 +281,7 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
       when: statement?.when,
       wait: statement?.wait,
       required: statement?.required,
-      execute: createExecuteFunction(type, nodeId, name, args, store, statement?.when, statement?.wait)
+      execute: createExecuteFunction(type, nodeId, name, args, store, statement, executorMap)
     });
 
     // Add edges from nodes that have results matching our with
@@ -304,21 +307,54 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
     if ('execute' in statement) {
       let nodeId: string | undefined;
 
-      if (statement.execute.activity) {
-        const { name, with: args = [], store } = statement.execute.activity;
-        nodeId = addNodeAndDependencies('activity', name, args, store, statement);
-      } else if (statement.execute.step) {
-        const { name, with: args = [], store } = statement.execute.step;
-        nodeId = addNodeAndDependencies('step', name, args, store, statement);
+      const { name = `${autoIncrementId++}`, with: args = [], store, code, step, activity } = statement.execute;
+      if (activity) {
+        nodeId = addNodeAndDependencies('activity', activity, args, store, statement);
+      } else if (step) {
+        nodeId = addNodeAndDependencies('step', step, args, store, statement);
+      } else if (code) {
+        nodeId = addNodeAndDependencies('code', name, args, store, statement, {
+          [name]: async (...vals: any[]) => {
+            // Create a context object that uses the proxy for all accessed variables
+            const context: Record<string, any> = {};
+
+            // Map the provided values to their argument names
+            for (let i = 0; i < args.length; i++) {
+              // Get the initial value from bindings through the proxy
+              context[args[i]] = vals[i];
+            }
+
+            // Create a proxy for the context that updates bindings
+            const contextProxy = new Proxy(context, {
+              get: (target, prop: string) => {
+                // Try to get from context first, then from bindings
+                if (prop in target) {
+                  return target[prop];
+                }
+                return bindings[prop];
+              },
+              set: (target, prop: string, value) => {
+                // If this is an argument, update context
+                if (args.includes(prop)) {
+                  target[prop] = value;
+                }
+                // Always update bindings which updates dsl.variables via the proxy
+                bindings[prop] = value;
+                return true;
+              }
+            });
+
+            // Execute the code with access to all variables via the proxy
+            const fn = new Function('context', `with (context) { ${code} }`);
+            return fn(contextProxy);
+          }
+        });
       }
 
-      // Always add dependency on previous node in sequence
       if (nodeId && previousNodeId) {
         try {
           graph.addDirectedEdge(previousNodeId, nodeId);
-        } catch (e) {
-          // Edge might already exist
-        }
+        } catch (e) {}
       }
       return nodeId;
     } else if ('sequence' in statement) {
@@ -356,31 +392,20 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
           }
 
           for (const as of itemsArray) {
-            // Set as variable for the current iteration
             bindings[statement.foreach.as] = as;
 
-            // Create a temporary subgraph for this iteration
-            const tempGraph = new DirectedGraph();
-            const tempBindings = { ...bindings };
+            const tempGraph = buildDependencyGraph(statement.foreach.body, bindings, undefined, autoIncrementId);
+            autoIncrementId += 1000;
 
-            // Process the body of the loop for this iteration
-            const bodyNodeId = processStatementForSubgraph(statement.foreach.body, tempGraph, tempBindings);
-
-            // Execute the subgraph
-            if (bodyNodeId) {
-              await executeGraphByGenerations(tempGraph, tempBindings, activities, steps, { variables, plan });
-            }
+            await executeGraphByGenerations(tempGraph, bindings, activities, steps, { variables, plan });
           }
         }
       });
 
-      // Add dependency on previous node
       if (previousNodeId) {
         try {
           graph.addDirectedEdge(previousNodeId, nodeId);
-        } catch (e) {
-          // Edge might already exist
-        }
+        } catch (e) {}
       }
 
       return nodeId;
@@ -394,28 +419,18 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
         wait: statement.wait,
         execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
           while (await statement.while.condition(variables, plan)) {
-            // Create a temporary subgraph for this iteration
-            const tempGraph = new DirectedGraph();
-            const tempBindings = { ...bindings };
+            const tempGraph = buildDependencyGraph(statement.while.body, bindings, undefined, autoIncrementId);
+            autoIncrementId += 1000;
 
-            // Process the body of the loop for this iteration
-            const bodyNodeId = processStatementForSubgraph(statement.while.body, tempGraph, tempBindings);
-
-            // Execute the subgraph
-            if (bodyNodeId) {
-              await executeGraphByGenerations(tempGraph, tempBindings, activities, steps, { variables, plan });
-            }
+            await executeGraphByGenerations(tempGraph, bindings, activities, steps, { variables, plan });
           }
         }
       });
 
-      // Add dependency on previous node
       if (previousNodeId) {
         try {
           graph.addDirectedEdge(previousNodeId, nodeId);
-        } catch (e) {
-          // Edge might already exist
-        }
+        } catch (e) {}
       }
 
       return nodeId;
@@ -429,28 +444,18 @@ function buildDependencyGraph(plan: Statement, bindings: Record<string, string |
         wait: statement.wait,
         execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
           do {
-            // Create a temporary subgraph for this iteration
-            const tempGraph = new DirectedGraph();
-            const tempBindings = { ...bindings };
+            const tempGraph = buildDependencyGraph(statement.doWhile.body, bindings, undefined, autoIncrementId);
+            autoIncrementId += 1000;
 
-            // Process the body of the loop for this iteration
-            const bodyNodeId = processStatementForSubgraph(statement.doWhile.body, tempGraph, tempBindings);
-
-            // Execute the subgraph
-            if (bodyNodeId) {
-              await executeGraphByGenerations(tempGraph, tempBindings, activities, steps, { variables, plan });
-            }
+            await executeGraphByGenerations(tempGraph, bindings, activities, steps, { variables, plan });
           } while (await statement.doWhile.condition(variables, plan));
         }
       });
 
-      // Add dependency on previous node
       if (previousNodeId) {
         try {
           graph.addDirectedEdge(previousNodeId, nodeId);
-        } catch (e) {
-          // Edge might already exist
-        }
+        } catch (e) {}
       }
 
       return nodeId;
@@ -538,116 +543,6 @@ async function executeGenerationWithErrorHandling(
   }
 }
 
-// Helper function to process statements in a subgraph
-function processStatementForSubgraph(
-  statement: Statement,
-  subgraph: DirectedGraph,
-  subBindings: Record<string, any>
-): string | undefined {
-  // Similar to processStatement but designed to work on a subgraph
-  // This is a simplified implementation - you would need to adapt this
-  // to work with your specific DSL structure
-
-  let autoIncrementSubId = 0;
-
-  const processSubStatement = (stmt: Statement, prevNodeId?: string): string | undefined => {
-    if ('execute' in stmt) {
-      let nodeId: string | undefined;
-
-      if (stmt.execute.activity) {
-        const { name, with: args = [], store } = stmt.execute.activity;
-        nodeId = `${name}_${autoIncrementSubId++}`;
-        subgraph.addNode(nodeId, {
-          type: 'activity',
-          name,
-          args,
-          store,
-          condition: stmt.when,
-          wait: stmt.wait,
-          execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
-            const executorMap = activities;
-            if (!executorMap?.[name]) {
-              throw new Error(`Activity function '${name}' not found`);
-            }
-
-            let resolvedArgs = args.map((arg) => {
-              if (subBindings[arg] !== undefined) {
-                return subBindings[arg];
-              }
-              return arg;
-            });
-
-            // @ts-ignore
-            const output = await executorMap[name](...resolvedArgs);
-            if (output !== undefined && store) {
-              dottie.set(subBindings, store, output);
-            }
-            return output;
-          }
-        });
-      } else if (stmt.execute.step) {
-        const { name, with: args = [], store } = stmt.execute.step;
-        nodeId = `${name}_${autoIncrementSubId++}`;
-        subgraph.addNode(nodeId, {
-          type: 'step',
-          name,
-          args,
-          store,
-          condition: stmt.when,
-          wait: stmt.wait,
-          execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
-            const executorMap = steps;
-            if (!executorMap?.[name]) {
-              throw new Error(`Step function '${name}' not found`);
-            }
-
-            let resolvedArgs = args.map((arg) => {
-              if (subBindings[arg] !== undefined) {
-                return subBindings[arg];
-              }
-              return arg;
-            });
-
-            // @ts-ignore
-            const output = await executorMap[name](...resolvedArgs);
-            if (output !== undefined && store) {
-              dottie.set(subBindings, store, output);
-            }
-            return output;
-          }
-        });
-      }
-
-      // Add dependency on previous node
-      if (nodeId && prevNodeId) {
-        try {
-          subgraph.addDirectedEdge(prevNodeId, nodeId);
-        } catch (e) {
-          // Edge might already exist
-        }
-      }
-      return nodeId;
-    } else if ('sequence' in stmt) {
-      let lastNodeId: string | undefined;
-      for (const element of stmt.sequence.elements) {
-        lastNodeId = processSubStatement(element, lastNodeId);
-      }
-      return lastNodeId;
-    } else if ('parallel' in stmt) {
-      const startNodeId = prevNodeId;
-      const nodeIds = stmt.parallel.branches
-        .map((branch) => processSubStatement(branch, startNodeId))
-        .filter((id): id is string => id !== undefined);
-
-      return nodeIds.length > 0 ? nodeIds[nodeIds.length - 1] : undefined;
-    }
-
-    return undefined;
-  };
-
-  return processSubStatement(statement);
-}
-
 /**
  * Adapter function to convert StepMetadata from the @Step decorator into DSLDefinition format
  *
@@ -715,10 +610,8 @@ export function convertStepsToDSL(
       if (stepMeta) {
         const statement: Statement = {
           execute: {
-            step: {
-              name: stepMeta.method, // Use the method name for execution
-              store: stepName // Use the step name as the result identifier
-            }
+            step: stepMeta.method, // Use the method name for execution
+            store: stepName // Use the step name as the result identifier
           }
         };
 
@@ -764,10 +657,8 @@ export function convertStepsToDSL(
         if (stepMeta) {
           const statement: Statement = {
             execute: {
-              step: {
-                name: stepMeta.method,
-                store: stepName
-              }
+              step: stepMeta.method,
+              store: stepName
             }
           };
 
