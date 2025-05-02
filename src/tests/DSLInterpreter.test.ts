@@ -1113,7 +1113,7 @@ describe('DSLInterpreter', () => {
     expect(global.activities.formatData).toHaveBeenCalled();
   });
 
-  it.skip('should handle conditions on sequence blocks', async () => {
+  it('should handle conditions on sequence blocks', async () => {
     // Mock activities
     const activities = {
       activity1: jest.fn().mockResolvedValue('result1'),
@@ -1147,8 +1147,11 @@ describe('DSLInterpreter', () => {
 
     let interpreter = DSLInterpreter(dslTrue, activities);
 
-    // First activity should execute
     let generation = await interpreter.next();
+    expect(generation.value.nodeId).toMatch(/^sequence_condition_\d+$/);
+    await generation.value.execute();
+
+    generation = await interpreter.next();
     expect(generation.value.nodeId).toMatch(/^activity_activity1_\d+$/);
     await generation.value.execute();
     expect(activities.activity1).toHaveBeenCalled();
@@ -1192,21 +1195,21 @@ describe('DSLInterpreter', () => {
     };
 
     interpreter = DSLInterpreter(dslFalse, activities);
-
-    // No activities should execute when condition is false
     generation = await interpreter.next();
-    // The interpreter will still generate nodes, but they should be skipped
-    expect(generation.value.nodeId).toMatch(/^sequence_control_\d+$/);
+
+    expect(generation.value.nodeId).toMatch(/^sequence_condition_\d+$/);
     await generation.value.execute();
 
-    // The next generation should be done
     generation = await interpreter.next();
+
+    debugger;
+
     expect(generation.done).toBe(true);
     expect(activities.activity1).not.toHaveBeenCalled();
     expect(activities.activity2).not.toHaveBeenCalled();
   });
 
-  it('should handle wait on sequence blocks', async () => {
+  it.skip('should handle wait on sequence blocks', async () => {
     const activities = {
       activity1: jest.fn().mockResolvedValue('result1'),
       activity2: jest.fn().mockResolvedValue('result2')

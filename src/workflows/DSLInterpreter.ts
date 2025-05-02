@@ -9,30 +9,32 @@ export type DSLDefinition = {
   plan: Statement;
 };
 
-export type Statement = {
+export type StatementConditions = {
   when?: (variables: Record<string, unknown>, plan: Statement) => boolean;
-  retries?: number;
-  timeout?: number;
-  required?: boolean;
   wait?:
     | ((variables: Record<string, unknown>, plan: Statement) => boolean)
     | [(variables: Record<string, unknown>, plan: Statement) => boolean, number];
-} & (
-  | { sequence: Sequence }
-  | { parallel: Parallel }
-  | { execute: Execute }
-  | { foreach: ForEach }
-  | { while: While }
-  | { doWhile: DoWhile }
-);
+  timeout?: number;
+  retries?: number;
+  required?: boolean;
+};
+
+export type Statement = {
+  sequence?: Sequence;
+  parallel?: Parallel;
+  execute?: Execute;
+  foreach?: ForEach;
+  while?: While;
+  doWhile?: DoWhile;
+} & StatementConditions;
 
 export type Sequence = {
   elements: Statement[];
-};
+} & StatementConditions;
 
 export type Parallel = {
   branches: Statement[];
-};
+} & StatementConditions;
 
 export type Execute = {
   // Optional name, defaults to the name of the step, activity or workflow
@@ -45,7 +47,7 @@ export type Execute = {
 
   with?: string[];
   store?: string;
-};
+} & StatementConditions;
 
 export type DSLGeneration = {
   nodeId: string;
@@ -149,6 +151,7 @@ export async function* DSLInterpreter(
           if (!conditionMet) {
             // Skip this node if condition not met
             skippedNodes.add(nodeId);
+
             console.log(`Skipping node ${nodeId} because condition returned false`);
             continue;
           }
@@ -233,7 +236,7 @@ function buildDependencyGraph(
   const graph = existingGraph ?? new DirectedGraph();
 
   const createExecuteFunction = (
-    type: 'activity' | 'step' | 'code' | 'workflow',
+    type: 'activity' | 'step' | 'code' | 'workflow' | 'sequence' | 'foreach' | 'while' | 'doWhile',
     nodeId: string,
     name: string,
     args: string[],
@@ -267,7 +270,7 @@ function buildDependencyGraph(
   };
 
   const addNodeAndDependencies = (
-    type: 'activity' | 'step' | 'code' | 'workflow',
+    type: 'activity' | 'step' | 'code' | 'workflow' | 'sequence' | 'foreach' | 'while' | 'doWhile',
     name: string,
     args: string[],
     store?: string,
@@ -303,23 +306,54 @@ function buildDependencyGraph(
   };
 
   const processStatement = (statement: Statement, previousNodeId?: string): string | undefined => {
+    let nodeId: string | undefined;
+
     if ('sequence' in statement) {
-      let lastNodeId: string | undefined;
-      for (const element of statement.sequence.elements) {
+      const { elements, when, wait, required } = statement.sequence as Sequence;
+
+      if (when || wait) {
+        nodeId = `sequence_condition_${autoIncrementId++}`;
+        graph.addNode(nodeId, {
+          type: 'sequence',
+          when,
+          wait,
+          required,
+          execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
+            const tempGraph = buildDependencyGraph({ sequence: { elements } }, bindings, undefined, autoIncrementId);
+            autoIncrementId += 1000;
+
+            await executeGraphByGenerations(
+              tempGraph,
+              bindings,
+              activities,
+              steps,
+              { variables, plan },
+              { visualizationFormat: 'tree' }
+            );
+          }
+        });
+
+        if (previousNodeId) {
+          try {
+            graph.addDirectedEdge(previousNodeId, nodeId);
+          } catch (e) {}
+        }
+      }
+
+      let lastNodeId = nodeId;
+      for (const element of elements) {
         lastNodeId = processStatement(element, lastNodeId);
       }
       return lastNodeId;
     } else if ('parallel' in statement) {
       const startNodeId = previousNodeId;
-      const nodeIds = statement.parallel.branches
+      const nodeIds = (statement?.parallel?.branches ?? [])
         .map((branch) => processStatement(branch, startNodeId))
         .filter((id): id is string => id !== undefined);
 
       return nodeIds.length > 0 ? nodeIds[nodeIds.length - 1] : undefined;
     } else {
-      let nodeId: string | undefined;
-
-      if ('foreach' in statement) {
+      if (statement?.foreach) {
         nodeId = `foreach_${autoIncrementId++}`;
         graph.addNode(nodeId, {
           type: 'foreach',
@@ -329,15 +363,15 @@ function buildDependencyGraph(
           condition: statement.when,
           wait: statement.wait,
           execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
-            const itemsArray = bindings[statement.foreach.in];
+            const itemsArray = bindings[statement!.foreach!.in];
             if (!Array.isArray(itemsArray)) {
-              throw new Error(`Variable ${statement.foreach.in} is not an array`);
+              throw new Error(`Variable ${statement!.foreach!.in} is not an array`);
             }
 
             for (const as of itemsArray) {
-              bindings[statement.foreach.as] = as;
+              bindings[statement!.foreach!.as] = as;
 
-              const tempGraph = buildDependencyGraph(statement.foreach.body, bindings, undefined, autoIncrementId);
+              const tempGraph = buildDependencyGraph(statement!.foreach!.body, bindings, undefined, autoIncrementId);
               autoIncrementId += 1000;
 
               await executeGraphByGenerations(
@@ -351,16 +385,16 @@ function buildDependencyGraph(
             }
           }
         });
-      } else if ('while' in statement) {
+      } else if (statement?.while) {
         nodeId = `while_${autoIncrementId++}`;
         graph.addNode(nodeId, {
           type: 'while',
-          condition: statement.while.condition,
-          body: statement.while.body,
+          condition: statement!.while!.condition,
+          body: statement!.while!.body,
           wait: statement.wait,
           execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
-            while (await statement.while.condition(variables, plan)) {
-              const tempGraph = buildDependencyGraph(statement.while.body, bindings, undefined, autoIncrementId);
+            while (await statement!.while!.condition(variables, plan)) {
+              const tempGraph = buildDependencyGraph(statement!.while!.body, bindings, undefined, autoIncrementId);
               autoIncrementId += 1000;
 
               await executeGraphByGenerations(
@@ -374,16 +408,16 @@ function buildDependencyGraph(
             }
           }
         });
-      } else if ('doWhile' in statement) {
+      } else if (statement?.doWhile) {
         nodeId = `doWhile_${autoIncrementId++}`;
         graph.addNode(nodeId, {
           type: 'doWhile',
-          condition: statement.doWhile.condition,
-          body: statement.doWhile.body,
+          condition: statement!.doWhile!.condition,
+          body: statement!.doWhile!.body,
           wait: statement.wait,
           execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
             do {
-              const tempGraph = buildDependencyGraph(statement.doWhile.body, bindings, undefined, autoIncrementId);
+              const tempGraph = buildDependencyGraph(statement!.doWhile!.body, bindings, undefined, autoIncrementId);
               autoIncrementId += 1000;
 
               await executeGraphByGenerations(
@@ -394,10 +428,10 @@ function buildDependencyGraph(
                 { variables, plan },
                 { visualizationFormat: 'tree' }
               );
-            } while (await statement.doWhile.condition(variables, plan));
+            } while (await statement!.doWhile!.condition(variables, plan));
           }
         });
-      } else if ('execute' in statement) {
+      } else if (statement?.execute) {
         const { name = `${autoIncrementId++}`, with: args = [], store, code, step, activity } = statement.execute;
 
         if (activity) {
