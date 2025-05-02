@@ -27,11 +27,14 @@ export class ShouldImplementOnContinue extends Workflow<
   @Property()
   protected id: string;
 
+  // Add the isContinueable property to fix the linter error
+  protected isContinueable: boolean = true;
+
   constructor(params: ShouldImplementOnContinueParams, options: ShouldImplementOnContinueOptions) {
     super(params, options);
     this.counter = params.counter || 0;
     this.id = params.id;
-    this.continueAsNew = true; // Enable continue-as-new functionality
+    this.isContinueable = true; // Enable continue-as-new functionality
   }
 
   /**
@@ -42,7 +45,7 @@ export class ShouldImplementOnContinue extends Workflow<
 
     // Force continue-as-new after 3 iterations for testing
     if (this.iteration >= 3) {
-      this.shouldContinueAsNew = true;
+      this.continueAsNew = true;
     }
 
     return { id: this.id, counter: this.counter, iteration: this.iteration };
@@ -63,7 +66,7 @@ export class ShouldImplementOnContinue extends Workflow<
       id: this.id,
       counter: this.counter + 100 // Add 100 to counter to demonstrate custom logic
     };
-    
+
     await continueFn(params);
     return params;
   }

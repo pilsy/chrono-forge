@@ -25,7 +25,7 @@ export class ShouldImplementStatefulOnContinue extends StatefulWorkflow {
 
     // Force continue-as-new after 3 iterations for testing
     if (this.iteration >= 3) {
-      this.shouldContinueAsNew = true;
+      this.continueAsNew = true;
     }
 
     return { id: this.id, counter: this.counter, iteration: this.iteration };

@@ -412,9 +412,10 @@ export abstract class StatefulWorkflow<
 
   /**
    * Determines whether the workflow is a long running continueAsNew type workflow or a short lived one.
-   * In the case of workflows extending from StatefulWorkflow, they are considered long running entity workflows.
+   * When true, the workflow will use the continueAsNew mechanism to restart itself with the same parameters
+   * when it reaches certain limits (history size, iterations, etc.).
    */
-  protected continueAsNew: boolean = true;
+  protected isContinueable: boolean = true;
 
   /**
    * Flag indicating whether the workflow should continue as new in the next iteration.
@@ -438,7 +439,7 @@ export abstract class StatefulWorkflow<
    *   async execute() {
    *     // After processing a large batch of data
    *     if (this.processedItemCount > 1000) {
-   *       this.shouldContinueAsNew = true;
+   *       this.continueAsNew = true;
    *       return this.result;
    *     }
    *   }
@@ -449,7 +450,7 @@ export abstract class StatefulWorkflow<
    * @see {@link https://docs.temporal.io/workflows#continue-as-new Temporal Continue-as-New Documentation}
    */
   @Property()
-  protected shouldContinueAsNew: boolean = false;
+  protected continueAsNew: boolean = false;
 
   /**
    * Internal reference to the StateManager instance for this workflow.
@@ -1052,10 +1053,10 @@ export abstract class StatefulWorkflow<
             this.pendingIteration ||
             this.pendingUpdate ||
             !!this.pendingChanges.length ||
-            this.shouldContinueAsNew ||
+            this.continueAsNew ||
             this.status !== 'running',
           // @ts-ignore
-          !this.conditionTimeout ? undefined : this.conditionTimeout
+          this.conditionTimeout ?? undefined
         );
         this.log.trace(`executeWorkflow: ${this.iteration}`);
 
@@ -1094,8 +1095,9 @@ export abstract class StatefulWorkflow<
         if (
           ++this.iteration >= this.maxIterations ||
           workflow.workflowInfo().historyLength >= this.maxIterations ||
-          (workflow.workflowInfo().continueAsNewSuggested && workflow.workflowInfo().historySize >= 25000000) ||
-          this.shouldContinueAsNew
+          (workflow.workflowInfo().continueAsNewSuggested &&
+            workflow.workflowInfo().historySize >= this.maxHistorySize) ||
+          this.continueAsNew
         ) {
           await this.handleMaxIterations();
           break;

@@ -106,7 +106,7 @@ export function Temporal(options?: TemporalOptions) {
           await instance.emitAsync('hooks');
           await instance.emitAsync('init');
 
-          const executionMethod = instance.continueAsNew
+          const executionMethod = instance.isContinueable
             ? 'executeWorkflow'
             : 'execute';
 
@@ -114,7 +114,7 @@ export function Temporal(options?: TemporalOptions) {
           try {
             result = await instance[executionMethod](...args);
           } finally {
-            // Ensure cleanup happens in all cases: success, error, or continueAsNew
+            // Ensure cleanup happens in all cases: success, error, or isContinueable
             if (typeof instance.cleanup === 'function') {
               try {
                 instance.cleanup();
@@ -238,22 +238,32 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    * when it reaches certain limits (history size, iterations, etc.).
    */
   @Property({ set: false })
-  protected continueAsNew = false;
+  protected isContinueable = false;
 
   /**
    * Boolean flag indicating if workflow should continue as new immediately.
    * When set to true, the workflow will trigger the continueAsNew mechanism at the end of the current iteration.
    */
   @Property()
-  protected shouldContinueAsNew = false;
+  protected continueAsNew = false;
 
   /**
    * Maximum number of iterations for the workflow.
    * Prevents infinite loops and ensures the workflow history doesn't grow too large.
+   *
    * When this limit is reached, the workflow will either continue as new or terminate.
    */
   @Property({ set: false })
   protected maxIterations = 10000;
+
+  /**
+   * Maximum number of history size for the workflow represented in bytes.
+   * This is used to prevent the workflow history from growing too large.
+   *
+   * Default is 25MB.
+   */
+  @Property({ set: false })
+  protected maxHistorySize = 26214400;
 
   /**
    * Current workflow iteration count.
@@ -564,8 +574,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
         if (
           ++this.iteration >= this.maxIterations ||
-          (workflow.workflowInfo().continueAsNewSuggested && workflow.workflowInfo().historySize >= 41943040) ||
-          this.shouldContinueAsNew
+          (workflow.workflowInfo().continueAsNewSuggested &&
+            workflow.workflowInfo().historySize >= this.maxHistorySize) ||
+          this.continueAsNew
         ) {
           await this.handleMaxIterations();
           break;

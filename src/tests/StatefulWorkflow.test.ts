@@ -119,7 +119,7 @@ describe('StatefulWorkflow', () => {
       const { state: initialMemoValue } = await getMemo(handle);
       expect(initialMemoValue).toEqual(state);
 
-      await handle.signal('shouldContinueAsNew', true);
+      await handle.signal('continueAsNew', true);
       await sleep(2500);
     });
   });
