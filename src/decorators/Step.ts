@@ -134,66 +134,9 @@ export const Step = (options: StepOptions = {}) => {
 
     // Replace the method with a wrapped version that handles retries and timeouts
     descriptor.value = async function (this: WorkflowInstance, ...args: any[]) {
-      const steps = Reflect.getMetadata(STEP_METADATA_KEY, target) || [];
-      const stepMetadata = steps.find((s: StepMetadata) => s.name === stepName);
-
       try {
-        let result;
-        let attempts = 0;
-        const maxAttempts = (stepMetadata?.retries || 0) + 1;
-
-        while (attempts < maxAttempts) {
-          attempts++;
-          try {
-            // Handle timeout if specified
-            if (stepMetadata?.timeout) {
-              const timeoutPromise = new Promise((_, reject) => {
-                const timeoutId = setTimeout(
-                  () => reject(new Error(`Step '${stepName}' timed out after ${stepMetadata.timeout}ms`)),
-                  stepMetadata.timeout
-                );
-                return () => clearTimeout(timeoutId);
-              });
-
-              result = await Promise.race([originalMethod.apply(this, args), timeoutPromise]);
-            } else {
-              result = await originalMethod.apply(this, args);
-            }
-
-            // Success - break out of retry loop
-            break;
-          } catch (error) {
-            // Last attempt failed
-            if (attempts >= maxAttempts) {
-              throw error;
-            }
-
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            this.log?.warn?.(`Step '${stepName}' failed, retrying (${attempts}/${maxAttempts}): ${errorMessage}`);
-          }
-        }
-
-        // Mark step as executed and store result
-        if (stepMetadata) {
-          stepMetadata.executed = true;
-          stepMetadata.result = result;
-        }
-
-        return result;
+        return await originalMethod.apply(this, args);
       } catch (error) {
-        // Handle error with custom handler if provided
-        if (stepMetadata?.onError) {
-          try {
-            const handledResult = stepMetadata.onError(error instanceof Error ? error : new Error(String(error)));
-            stepMetadata.executed = true;
-            stepMetadata.result = handledResult;
-            return handledResult;
-          } catch (handlerError) {
-            // If error handler throws, use that error instead
-            error = handlerError;
-          }
-        }
-
         // Log error
         const errorMessage = error instanceof Error ? error.message : String(error);
         this.log?.error?.(`Step '${stepName}' failed: ${errorMessage}`);
