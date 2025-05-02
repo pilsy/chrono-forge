@@ -84,7 +84,10 @@ type ExecutionContext = {
 export async function* DSLInterpreter(
   dsl: DSLDefinition,
   injectedActivities?: Record<string, (...args: string[]) => Promise<string | undefined>>,
-  injectedSteps?: Record<string, (...args: string[]) => Promise<string | undefined>>
+  injectedSteps?: Record<string, (...args: string[]) => Promise<string | undefined>>,
+  options?: {
+    visualizationFormat?: 'list' | 'tree';
+  }
 ): AsyncGenerator<DSLGeneration, void, unknown> {
   const acts =
     injectedActivities ||
@@ -93,6 +96,7 @@ export async function* DSLInterpreter(
     });
 
   const steps = injectedSteps || {};
+  const visualizationFormat = options?.visualizationFormat || 'tree';
 
   // Create a proxy for the variables that updates dsl.variables automatically
   const bindings = new Proxy(dsl.variables as Record<string, any>, {
@@ -111,7 +115,7 @@ export async function* DSLInterpreter(
     return;
   }
 
-  console.log(visualizeWorkflowGenerations(graph));
+  console.log(visualizeWorkflow(graph, visualizationFormat));
 
   const skippedNodes = new Set<string>();
   for (const generation of generations) {
@@ -224,8 +228,9 @@ function buildDependencyGraph(
   existingGraph?: DirectedGraph,
   startId?: number
 ): DirectedGraph {
-  const graph = existingGraph || new DirectedGraph();
-  let autoIncrementId = startId || 0;
+  let autoIncrementId = startId ?? 0;
+
+  const graph = existingGraph ?? new DirectedGraph();
 
   const createExecuteFunction = (
     type: 'activity' | 'step' | 'code' | 'workflow',
@@ -243,11 +248,9 @@ function buildDependencyGraph(
       }
 
       const resolvedArgs = args.map((arg) => {
-        // Get value directly from the proxied bindings
         const value = bindings[arg];
         if (value !== undefined) return value;
 
-        // Check for result from another node
         return graph.hasNode(arg) ? (graph.getNodeAttribute(arg, 'result') ?? arg) : arg;
       });
 
@@ -255,7 +258,6 @@ function buildDependencyGraph(
       const output = await executorMap[name](...resolvedArgs);
       if (output !== undefined) {
         if (store) {
-          // Store directly to bindings via proxy
           bindings[store] = output;
         }
         graph.setNodeAttribute(nodeId, 'result', output);
@@ -284,7 +286,6 @@ function buildDependencyGraph(
       execute: createExecuteFunction(type, nodeId, name, args, store, statement, executorMap)
     });
 
-    // Add edges from nodes that have results matching our with
     for (const arg of args) {
       const dependencyNodes = Array.from(graph.nodes()).filter((n) => {
         const nodeResult = graph.getNodeAttribute(n, 'store');
@@ -294,9 +295,7 @@ function buildDependencyGraph(
       for (const depNode of dependencyNodes) {
         try {
           graph.addDirectedEdge(depNode, nodeId);
-        } catch (e) {
-          // Edge might already exist
-        }
+        } catch (e) {}
       }
     }
 
@@ -304,60 +303,7 @@ function buildDependencyGraph(
   };
 
   const processStatement = (statement: Statement, previousNodeId?: string): string | undefined => {
-    if ('execute' in statement) {
-      let nodeId: string | undefined;
-
-      const { name = `${autoIncrementId++}`, with: args = [], store, code, step, activity } = statement.execute;
-      if (activity) {
-        nodeId = addNodeAndDependencies('activity', activity, args, store, statement);
-      } else if (step) {
-        nodeId = addNodeAndDependencies('step', step, args, store, statement);
-      } else if (code) {
-        nodeId = addNodeAndDependencies('code', name, args, store, statement, {
-          [name]: async (...vals: any[]) => {
-            // Create a context object that uses the proxy for all accessed variables
-            const context: Record<string, any> = {};
-
-            // Map the provided values to their argument names
-            for (let i = 0; i < args.length; i++) {
-              // Get the initial value from bindings through the proxy
-              context[args[i]] = vals[i];
-            }
-
-            // Create a proxy for the context that updates bindings
-            const contextProxy = new Proxy(context, {
-              get: (target, prop: string) => {
-                // Try to get from context first, then from bindings
-                if (prop in target) {
-                  return target[prop];
-                }
-                return bindings[prop];
-              },
-              set: (target, prop: string, value) => {
-                // If this is an argument, update context
-                if (args.includes(prop)) {
-                  target[prop] = value;
-                }
-                // Always update bindings which updates dsl.variables via the proxy
-                bindings[prop] = value;
-                return true;
-              }
-            });
-
-            // Execute the code with access to all variables via the proxy
-            const fn = new Function('context', `with (context) { ${code} }`);
-            return fn(contextProxy);
-          }
-        });
-      }
-
-      if (nodeId && previousNodeId) {
-        try {
-          graph.addDirectedEdge(previousNodeId, nodeId);
-        } catch (e) {}
-      }
-      return nodeId;
-    } else if ('sequence' in statement) {
+    if ('sequence' in statement) {
       let lastNodeId: string | undefined;
       for (const element of statement.sequence.elements) {
         lastNodeId = processStatement(element, lastNodeId);
@@ -366,112 +312,144 @@ function buildDependencyGraph(
     } else if ('parallel' in statement) {
       const startNodeId = previousNodeId;
       const nodeIds = statement.parallel.branches
-        .map((branch) => {
-          // Each parallel branch starts from the same previous node
-          return processStatement(branch, startNodeId);
-        })
+        .map((branch) => processStatement(branch, startNodeId))
         .filter((id): id is string => id !== undefined);
 
-      // Return the last node ID from the parallel branches
       return nodeIds.length > 0 ? nodeIds[nodeIds.length - 1] : undefined;
-    } else if ('foreach' in statement) {
-      // Create a special node for the foreach loop
-      const nodeId = `foreach_${autoIncrementId++}`;
+    } else {
+      let nodeId: string | undefined;
 
-      graph.addNode(nodeId, {
-        type: 'foreach',
-        in: statement.foreach.in,
-        as: statement.foreach.as,
-        body: statement.foreach.body,
-        condition: statement.when,
-        wait: statement.wait,
-        execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
-          const itemsArray = bindings[statement.foreach.in];
-          if (!Array.isArray(itemsArray)) {
-            throw new Error(`Variable ${statement.foreach.in} is not an array`);
+      if ('foreach' in statement) {
+        nodeId = `foreach_${autoIncrementId++}`;
+        graph.addNode(nodeId, {
+          type: 'foreach',
+          in: statement.foreach.in,
+          as: statement.foreach.as,
+          body: statement.foreach.body,
+          condition: statement.when,
+          wait: statement.wait,
+          execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
+            const itemsArray = bindings[statement.foreach.in];
+            if (!Array.isArray(itemsArray)) {
+              throw new Error(`Variable ${statement.foreach.in} is not an array`);
+            }
+
+            for (const as of itemsArray) {
+              bindings[statement.foreach.as] = as;
+
+              const tempGraph = buildDependencyGraph(statement.foreach.body, bindings, undefined, autoIncrementId);
+              autoIncrementId += 1000;
+
+              await executeGraphByGenerations(
+                tempGraph,
+                bindings,
+                activities,
+                steps,
+                { variables, plan },
+                { visualizationFormat: 'tree' }
+              );
+            }
           }
+        });
+      } else if ('while' in statement) {
+        nodeId = `while_${autoIncrementId++}`;
+        graph.addNode(nodeId, {
+          type: 'while',
+          condition: statement.while.condition,
+          body: statement.while.body,
+          wait: statement.wait,
+          execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
+            while (await statement.while.condition(variables, plan)) {
+              const tempGraph = buildDependencyGraph(statement.while.body, bindings, undefined, autoIncrementId);
+              autoIncrementId += 1000;
 
-          for (const as of itemsArray) {
-            bindings[statement.foreach.as] = as;
-
-            const tempGraph = buildDependencyGraph(statement.foreach.body, bindings, undefined, autoIncrementId);
-            autoIncrementId += 1000;
-
-            await executeGraphByGenerations(tempGraph, bindings, activities, steps, { variables, plan });
+              await executeGraphByGenerations(
+                tempGraph,
+                bindings,
+                activities,
+                steps,
+                { variables, plan },
+                { visualizationFormat: 'tree' }
+              );
+            }
           }
+        });
+      } else if ('doWhile' in statement) {
+        nodeId = `doWhile_${autoIncrementId++}`;
+        graph.addNode(nodeId, {
+          type: 'doWhile',
+          condition: statement.doWhile.condition,
+          body: statement.doWhile.body,
+          wait: statement.wait,
+          execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
+            do {
+              const tempGraph = buildDependencyGraph(statement.doWhile.body, bindings, undefined, autoIncrementId);
+              autoIncrementId += 1000;
+
+              await executeGraphByGenerations(
+                tempGraph,
+                bindings,
+                activities,
+                steps,
+                { variables, plan },
+                { visualizationFormat: 'tree' }
+              );
+            } while (await statement.doWhile.condition(variables, plan));
+          }
+        });
+      } else if ('execute' in statement) {
+        const { name = `${autoIncrementId++}`, with: args = [], store, code, step, activity } = statement.execute;
+
+        if (activity) {
+          nodeId = addNodeAndDependencies('activity', activity, args, store, statement);
+        } else if (step) {
+          nodeId = addNodeAndDependencies('step', step, args, store, statement);
+        } else if (code) {
+          nodeId = addNodeAndDependencies('code', name, args, store, statement, {
+            [name]: async (...vals: any[]) => {
+              const context: Record<string, any> = {};
+
+              for (let i = 0; i < args.length; i++) {
+                context[args[i]] = vals[i];
+              }
+
+              const contextProxy = new Proxy(context, {
+                get: (target, prop: string) => {
+                  if (prop in target) {
+                    return target[prop];
+                  }
+                  return bindings[prop];
+                },
+                set: (target, prop: string, value) => {
+                  if (args.includes(prop)) {
+                    target[prop] = value;
+                  }
+                  bindings[prop] = value;
+                  return true;
+                }
+              });
+
+              const fn = new Function('context', `with (context) { ${code} }`);
+              return fn(contextProxy);
+            }
+          });
         }
-      });
+      }
 
-      if (previousNodeId) {
+      if (nodeId && previousNodeId) {
         try {
           graph.addDirectedEdge(previousNodeId, nodeId);
         } catch (e) {}
       }
-
-      return nodeId;
-    } else if ('while' in statement) {
-      const nodeId = `while_${autoIncrementId++}`;
-
-      graph.addNode(nodeId, {
-        type: 'while',
-        condition: statement.while.condition,
-        body: statement.while.body,
-        wait: statement.wait,
-        execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
-          while (await statement.while.condition(variables, plan)) {
-            const tempGraph = buildDependencyGraph(statement.while.body, bindings, undefined, autoIncrementId);
-            autoIncrementId += 1000;
-
-            await executeGraphByGenerations(tempGraph, bindings, activities, steps, { variables, plan });
-          }
-        }
-      });
-
-      if (previousNodeId) {
-        try {
-          graph.addDirectedEdge(previousNodeId, nodeId);
-        } catch (e) {}
-      }
-
-      return nodeId;
-    } else if ('doWhile' in statement) {
-      const nodeId = `doWhile_${autoIncrementId++}`;
-
-      graph.addNode(nodeId, {
-        type: 'doWhile',
-        condition: statement.doWhile.condition,
-        body: statement.doWhile.body,
-        wait: statement.wait,
-        execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
-          do {
-            const tempGraph = buildDependencyGraph(statement.doWhile.body, bindings, undefined, autoIncrementId);
-            autoIncrementId += 1000;
-
-            await executeGraphByGenerations(tempGraph, bindings, activities, steps, { variables, plan });
-          } while (await statement.doWhile.condition(variables, plan));
-        }
-      });
-
-      if (previousNodeId) {
-        try {
-          graph.addDirectedEdge(previousNodeId, nodeId);
-        } catch (e) {}
-      }
-
       return nodeId;
     }
-
-    return undefined;
   };
 
   processStatement(plan);
 
-  // Check for cycles
   if (hasCycle(graph)) {
     throw new Error('Circular dependency detected in workflow graph');
   }
-
-  // After building the graph, we can visualize it
 
   return graph;
 }
@@ -481,38 +459,118 @@ async function executeGraphByGenerations(
   bindings: Record<string, string | undefined>,
   activities: Record<string, (...args: any[]) => Promise<any>>,
   steps: Record<string, (input: unknown) => Promise<unknown>> | undefined,
-  dsl: DSLDefinition
+  dsl: DSLDefinition,
+  options?: {
+    visualizationFormat?: 'list' | 'tree';
+  }
 ): Promise<void> {
   const generations = topologicalGenerations(graph);
-
   if (generations.length === 0) {
     console.warn('No generations found in the graph. Skipping execution.');
     return;
   }
 
+  console.log(visualizeWorkflow(graph, options?.visualizationFormat || 'list'));
+
   for (let genIndex = 0; genIndex < generations.length; genIndex++) {
     const generation = generations[genIndex];
 
-    console.log(`Executing generation ${genIndex} with ${generation.length} nodes: ${generation.join(', ')}`);
+    console.log(
+      `\x1b[1m\x1b[36mExecuting generation ${genIndex} with ${generation.length} nodes:\x1b[0m ${generation.join(', ')}`
+    );
     await executeGenerationWithErrorHandling(generation, graph, activities, steps, dsl);
   }
-  console.log('Workflow completed successfully');
+  console.log('\x1b[1m\x1b[32mWorkflow completed successfully\x1b[0m');
 }
 
 function visualizeWorkflowGenerations(graph: DirectedGraph): string {
   const generations = topologicalGenerations(graph);
-  let visualization = 'Workflow Execution Plan:\n';
+  let visualization = '\x1b[1m\x1b[36mWorkflow Execution Plan:\x1b[0m\n';
 
   generations.forEach((generation, index) => {
-    visualization += `\nGeneration ${index}:\n`;
+    visualization += `\n\x1b[1m\x1b[33mGeneration ${index}:\x1b[0m\n`;
     generation.forEach((nodeId) => {
       const dependencies = graph.inNeighbors(nodeId);
       const nodeType = graph.hasNodeAttribute(nodeId, 'type') ? graph.getNodeAttribute(nodeId, 'type') : 'unknown';
-      visualization += `  - ${nodeId} [${nodeType}]${dependencies.length > 0 ? ` (depends on: ${dependencies.join(', ')})` : ''}\n`;
+
+      // Color-code different node types
+      let nodeTypeColor = '\x1b[32m'; // Default green
+      if (nodeType === 'activity') nodeTypeColor = '\x1b[35m'; // Magenta
+      if (nodeType === 'step') nodeTypeColor = '\x1b[36m'; // Cyan
+      if (nodeType === 'foreach' || nodeType === 'while' || nodeType === 'doWhile') nodeTypeColor = '\x1b[33m'; // Yellow
+
+      visualization += `  • \x1b[1m${nodeId}\x1b[0m [${nodeTypeColor}${nodeType}\x1b[0m]`;
+
+      if (dependencies.length > 0) {
+        visualization += ` \x1b[90m(depends on: ${dependencies.join(', ')})\x1b[0m`;
+      }
+      visualization += '\n';
     });
   });
 
   return visualization;
+}
+
+/**
+ * Creates a tree-style visualization of workflow generations
+ * @param graph The directed graph representing the workflow
+ * @returns A string with ASCII tree visualization of the workflow
+ */
+function visualizeWorkflowAsTree(graph: DirectedGraph): string {
+  const generations = topologicalGenerations(graph);
+  let result = '\x1b[1m\x1b[36mWorkflow Tree:\x1b[0m\n';
+
+  // Create a map of node to its children
+  const nodeChildren: Record<string, string[]> = {};
+  graph.forEachNode((nodeId) => {
+    nodeChildren[nodeId] = graph.outNeighbors(nodeId);
+  });
+
+  // Find root nodes (nodes with no incoming edges)
+  const rootNodes = graph.nodes().filter((node) => graph.inDegree(node) === 0);
+
+  // Recursively build the tree
+  const buildTree = (nodeId: string, prefix = '', isLast = true) => {
+    const nodeType = graph.hasNodeAttribute(nodeId, 'type') ? graph.getNodeAttribute(nodeId, 'type') : 'unknown';
+
+    // Color-code different node types
+    let nodeTypeColor = '\x1b[32m'; // Default green
+    if (nodeType === 'activity') nodeTypeColor = '\x1b[35m'; // Magenta
+    if (nodeType === 'step') nodeTypeColor = '\x1b[36m'; // Cyan
+    if (nodeType === 'foreach' || nodeType === 'while' || nodeType === 'doWhile') nodeTypeColor = '\x1b[33m'; // Yellow
+
+    // Current line connector
+    const connector = isLast ? '└── ' : '├── ';
+
+    // Add the current node to the result
+    result += `${prefix}${connector}\x1b[1m${nodeId}\x1b[0m [${nodeTypeColor}${nodeType}\x1b[0m]\n`;
+
+    // Prefix for children
+    const newPrefix = prefix + (isLast ? '    ' : '│   ');
+
+    // Add all children
+    const children = nodeChildren[nodeId] || [];
+    children.forEach((child, index) => {
+      buildTree(child, newPrefix, index === children.length - 1);
+    });
+  };
+
+  // Build tree starting from each root node
+  rootNodes.forEach((rootNode, index) => {
+    buildTree(rootNode, '', index === rootNodes.length - 1);
+  });
+
+  return result;
+}
+
+/**
+ * Visualizes the workflow generations in different formats
+ * @param graph The directed graph to visualize
+ * @param format Optional format (list or tree)
+ * @returns String representation of the workflow
+ */
+function visualizeWorkflow(graph: DirectedGraph, format: 'list' | 'tree' = 'list'): string {
+  return format === 'tree' ? visualizeWorkflowAsTree(graph) : visualizeWorkflowGenerations(graph);
 }
 
 async function executeGenerationWithErrorHandling(
