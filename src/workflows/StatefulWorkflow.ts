@@ -1039,7 +1039,7 @@ export abstract class StatefulWorkflow<
     this.log.trace(`executeWorkflow`);
 
     if (this.schema) this.configureManagedPaths(this.schema);
-    if (this.params?.startDelay) await workflow.sleep(this.params.startDelay);
+    if (this.startDelay) await workflow.sleep(this.startDelay);
 
     try {
       while (this.iteration <= this.maxIterations) {
@@ -1050,6 +1050,7 @@ export abstract class StatefulWorkflow<
         await workflow.condition(
           () =>
             (typeof (this as any).condition === 'function' && (this as any).condition()) ||
+            this.hasDSLNodesToExecute() ||
             this.pendingIteration ||
             this.pendingUpdate ||
             !!this.pendingChanges.length ||

@@ -232,6 +232,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    */
   protected stepHandlers: Record<string, (...args: string[]) => Promise<string | undefined>> = {};
 
+  @Property()
+  protected startDelay: Duration | undefined = undefined;
+
   /**
    * Determines whether the workflow is a long running continueAsNew type workflow or a short lived one.
    * When true, the workflow will use the continueAsNew mechanism to restart itself with the same parameters
@@ -398,6 +401,8 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       this.status = this.args?.status ?? 'running';
       // @ts-ignore
       this.dsl = this.args?.dsl ?? undefined;
+      // @ts-ignore
+      this.startDelay = this.args?.startDelay ?? undefined;
     }
   }
 
@@ -448,8 +453,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   protected async execute(...args: unknown[]): Promise<unknown> {
     if (this.dsl && this.interpreter) {
       try {
-        if (this.continueAsNew) {
-          // For continueAsNew workflows, process just one generation per call
+        if (this.isContinueable) {
           if (!this.currentGeneration) {
             const next = await this.interpreter.next();
             if (next.done) {
@@ -522,8 +526,8 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    *
    * @returns {boolean} True if there is a current generation to execute, false otherwise.
    */
-  protected hasMoreNodesToExecute(): boolean {
-    return !!this.currentGeneration;
+  protected hasDSLNodesToExecute(): boolean {
+    return Boolean(this.dsl && this.interpreter && this.currentGeneration);
   }
 
   /**
@@ -541,13 +545,23 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    * @returns {Promise<any>} Result of the workflow processing.
    */
   protected async executeWorkflow(...args: unknown[]): Promise<any> {
+    this.log.trace(`executeWorkflow`);
+
+    if (this.startDelay) await workflow.sleep(this.startDelay);
+
     try {
       while (this.iteration <= this.maxIterations) {
+        if (this.pendingIteration) {
+          this.pendingIteration = false;
+        }
+
         await workflow.condition(
           () =>
             (typeof (this as any).condition === 'function' && (this as any).condition()) ||
+            this.hasDSLNodesToExecute() ||
             this.pendingIteration ||
             this.pendingUpdate ||
+            this.continueAsNew ||
             this.status !== 'running',
           // @ts-ignore
           !this.conditionTimeout ? undefined : this.conditionTimeout

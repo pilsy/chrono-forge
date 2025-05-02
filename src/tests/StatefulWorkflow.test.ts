@@ -374,6 +374,102 @@ describe('StatefulWorkflow', () => {
     });
   });
 
+  describe('Workflow Control Signals', () => {
+    it('Should pause and resume workflow execution', async () => {
+      const listingId = uuid4();
+      const data = {
+        id: uuid4(),
+        listings: [{ id: listingId, name: 'Test Listing' }]
+      };
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: data.id,
+        entityName: 'User',
+        data,
+        status: 'paused'
+      });
+      await sleep(5000);
+
+      const status = await handle.query('status');
+      expect(status).toBe('paused');
+
+      // Pause the workflow
+      await handle.signal('resume');
+      await sleep();
+
+      // Verify workflow is paused
+      const statusAfterPause = await handle.query('status');
+      expect(statusAfterPause).toBe('running');
+
+      // Resume the workflow
+      await handle.signal('pause');
+      await sleep();
+
+      // Verify workflow is running again
+      const statusAfterResume = await handle.query('status');
+      expect(statusAfterResume).toBe('paused');
+
+      await handle.signal('status', 'complete');
+      await sleep();
+      await handle.result();
+    });
+
+    it('Should cancel workflow execution', async () => {
+      const listingId = uuid4();
+      const data = {
+        id: uuid4(),
+        listings: [{ id: listingId, name: 'Test Listing' }]
+      };
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: data.id,
+        entityName: 'User',
+        data
+      });
+      await sleep(5000);
+
+      // Cancel the workflow
+      await handle.signal('cancel');
+      await sleep();
+
+      // Verify workflow is in cancelling state
+      const statusAfterCancel = await handle.query('status');
+      expect(['cancelling', 'cancelled']).toContain(statusAfterCancel);
+
+      await handle.result();
+    });
+
+    it('Should forward pause signal to child workflows', async () => {
+      const listingId = uuid4();
+      const data = {
+        id: uuid4(),
+        listings: [{ id: listingId, name: 'Test Listing' }]
+      };
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: data.id,
+        entityName: 'User',
+        data
+      });
+      await sleep(5000);
+
+      // Get the child workflow and verify it's also paused
+      const client = getClient();
+      const childHandle = await client.workflow.getHandle(`Listing-${listingId}`);
+      expect(await childHandle.query('status')).toBe('running');
+
+      // Pause the parent workflow
+      await handle.signal('pause');
+      await sleep(2500);
+
+      // Verify parent workflow is paused
+      const parentStatus = await handle.query('status');
+      expect(parentStatus).toBe('paused');
+
+      expect(await childHandle.query('status')).toBe('paused');
+
+      // Clean up
+      await handle.signal('cancel');
+    });
+  });
+
   describe('Child Workflow Management', () => {
     it('Should correctly manage one parent User and three child Listing workflows', async () => {
       // Initialize data for one User and three Listings
