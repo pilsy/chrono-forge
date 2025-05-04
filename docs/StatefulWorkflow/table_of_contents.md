@@ -109,19 +109,13 @@ The core philosophy of `StatefulWorkflow` is to facilitate efficient, scalable, 
     - [Advanced Event Patterns](./event_handling.md#advanced-event-patterns)
     - [Best Practices for Event-Driven Design](./event_handling.md#best-practices-for-event-driven-design)
 
-13. [Redux-inspired State Management](./state_management.md)
-    - [StateManager Architecture](./state_management.md#statemanager-architecture)
-    - [Actions, Reducers, and State Updates](./state_management.md#actions-reducers-and-state-updates)
-    - [Entity Normalization and State Structure](./state_management.md#entity-normalization-and-state-structure)
-    - [Persistence and Memo Integration](./state_management.md#persistence-and-memo-integration)
-
-14. [Best Practices and Advanced Usage](./best_practices_and_advanced_usage.md)
+13. [Best Practices and Advanced Usage](./best_practices_and_advanced_usage.md)
     - [Customizing `StatefulWorkflow` for Specific Use Cases](./best_practices_and_advanced_usage.md#customizing-statefulworkflow-for-specific-use-cases)
     - [Performance Optimization Tips](./best_practices_and_advanced_usage.md#performance-optimization-tips)
     - [Error Handling and Retry Strategies](./best_practices_and_advanced_usage.md#error-handling-and-retry-strategies)
     - [Integrating with Other Workflow Management Systems](./best_practices_and_advanced_usage.md#integrating-with-other-workflow-management-systems)
 
-15. [Conclusion and Further Reading](./conclusion_and_further_reading.md)
+14. [Conclusion and Further Reading](./conclusion_and_further_reading.md)
     - [Summary of Key Concepts](./conclusion_and_further_reading.md#summary-of-key-concepts)
     - [Future Enhancements and Roadmap](./conclusion_and_further_reading.md#future-enhancements-and-roadmap)
     - [Additional Resources and Documentation](./conclusion_and_further_reading.md#additional-resources-and-documentation)
