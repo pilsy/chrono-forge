@@ -1,4 +1,3 @@
-import dottie from 'dottie';
 import * as temporalWorkflow from '@temporalio/workflow';
 import { DirectedGraph } from 'eventemitter3-graphology';
 import { hasCycle, topologicalGenerations } from 'graphology-dag';
@@ -98,18 +97,18 @@ export async function* DSLInterpreter(
     });
 
   const steps = injectedSteps || {};
-  const visualizationFormat = options?.visualizationFormat || 'tree';
+  const visualizationFormat = options?.visualizationFormat ?? 'tree';
 
   // Create a proxy for the variables that updates dsl.variables automatically
   const bindings = new Proxy(dsl.variables as Record<string, any>, {
     get: (target, prop: string) => {
       // Always get the most up-to-date value from dsl.variables
-      return dsl.variables[prop as keyof typeof dsl.variables];
+      return dsl.variables[prop];
     },
     set: (target, prop: string, value) => {
       // Update both the target and dsl.variables
       target[prop] = value;
-      dsl.variables[prop as keyof typeof dsl.variables] = value;
+      dsl.variables[prop] = value;
       return true;
     }
   });
@@ -735,10 +734,10 @@ export function convertStepsToDSL(
           statement.when = (variables, plan) => {
             try {
               if (workflowInstance && typeof stepMeta.condition === 'function') {
-                return Boolean(stepMeta.condition.call(workflowInstance));
+                return Boolean(stepMeta.condition.apply(workflowInstance, [variables, plan]));
               }
               if (stepMeta.condition) {
-                return Boolean(stepMeta.condition());
+                return Boolean(stepMeta.condition(variables, plan));
               }
               return true;
             } catch (error) {
@@ -782,10 +781,10 @@ export function convertStepsToDSL(
             statement.when = (variables, plan) => {
               try {
                 if (workflowInstance && typeof stepMeta.condition === 'function') {
-                  return Boolean(stepMeta.condition.call(workflowInstance));
+                  return Boolean(stepMeta.condition.apply(workflowInstance, [variables, plan]));
                 }
                 if (stepMeta.condition) {
-                  return Boolean(stepMeta.condition());
+                  return Boolean(stepMeta.condition(variables, plan));
                 }
                 return true;
               } catch (error) {

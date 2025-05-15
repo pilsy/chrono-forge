@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { STEP_METADATA_KEY } from './metadata';
+import { Statement } from '../workflows/DSLInterpreter';
 
 export interface StepOptions {
   /**
@@ -11,7 +12,7 @@ export interface StepOptions {
    * Condition function that determines if this step should be executed.
    * The step will only run if this function returns true.
    */
-  condition?: () => boolean;
+  condition?: (variables: Record<string, unknown>, plan: Statement) => boolean;
 
   /**
    * Steps that should be executed before this step.
@@ -55,7 +56,7 @@ export interface StepOptions {
 export interface StepMetadata {
   name: string;
   method: string;
-  condition?: () => boolean;
+  condition?: (variables: Record<string, unknown>, plan: Statement) => boolean;
   before?: string | string[];
   after?: string | string[];
   retries?: number;
