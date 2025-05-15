@@ -383,15 +383,15 @@ function buildDependencyGraph(
           condition: statement.when,
           wait: statement.wait,
           execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
-            const itemsArray = bindings[statement!.foreach!.in];
+            const itemsArray = bindings[statement.foreach!.in];
             if (!Array.isArray(itemsArray)) {
-              throw new Error(`Variable ${statement!.foreach!.in} is not an array`);
+              throw new Error(`Variable ${statement.foreach!.in} is not an array`);
             }
 
             for (const as of itemsArray) {
-              bindings[statement!.foreach!.as] = as;
+              bindings[statement.foreach!.as] = as;
 
-              const tempGraph = buildDependencyGraph(statement!.foreach!.body, bindings, undefined, autoIncrementId);
+              const tempGraph = buildDependencyGraph(statement.foreach!.body, bindings, undefined, autoIncrementId);
               autoIncrementId += 1000;
 
               await executeGraphByGenerations(
@@ -409,12 +409,12 @@ function buildDependencyGraph(
         nodeId = `while_${autoIncrementId++}`;
         graph.addNode(nodeId, {
           type: 'while',
-          condition: statement!.while!.condition,
-          body: statement!.while!.body,
+          condition: statement.while.condition,
+          body: statement.while.body,
           wait: statement.wait,
           execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
-            while (await statement!.while!.condition(variables, plan)) {
-              const tempGraph = buildDependencyGraph(statement!.while!.body, bindings, undefined, autoIncrementId);
+            while (await statement.while!.condition(variables, plan)) {
+              const tempGraph = buildDependencyGraph(statement.while!.body, bindings, undefined, autoIncrementId);
               autoIncrementId += 1000;
 
               await executeGraphByGenerations(
@@ -432,12 +432,12 @@ function buildDependencyGraph(
         nodeId = `doWhile_${autoIncrementId++}`;
         graph.addNode(nodeId, {
           type: 'doWhile',
-          condition: statement!.doWhile!.condition,
-          body: statement!.doWhile!.body,
+          condition: statement.doWhile.condition,
+          body: statement.doWhile.body,
           wait: statement.wait,
           execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
             do {
-              const tempGraph = buildDependencyGraph(statement!.doWhile!.body, bindings, undefined, autoIncrementId);
+              const tempGraph = buildDependencyGraph(statement.doWhile!.body, bindings, undefined, autoIncrementId);
               autoIncrementId += 1000;
 
               await executeGraphByGenerations(
@@ -448,7 +448,7 @@ function buildDependencyGraph(
                 { variables, plan },
                 { visualizationFormat: 'tree' }
               );
-            } while (await statement!.doWhile!.condition(variables, plan));
+            } while (await statement.doWhile!.condition(variables, plan));
           }
         });
       } else if (statement?.execute) {
@@ -526,7 +526,7 @@ async function executeGraphByGenerations(
     return;
   }
 
-  console.log(visualizeWorkflow(graph, options?.visualizationFormat || 'list'));
+  console.log(visualizeWorkflow(graph, options?.visualizationFormat ?? 'list'));
 
   for (let genIndex = 0; genIndex < generations.length; genIndex++) {
     const generation = generations[genIndex];
@@ -573,7 +573,7 @@ function visualizeWorkflowGenerations(graph: DirectedGraph): string {
  * @returns A string with ASCII tree visualization of the workflow
  */
 function visualizeWorkflowAsTree(graph: DirectedGraph): string {
-  const generations = topologicalGenerations(graph);
+  topologicalGenerations(graph);
   let result = '\x1b[1m\x1b[36mWorkflow Tree:\x1b[0m\n';
 
   // Create a map of node to its children
@@ -731,15 +731,13 @@ export function convertStepsToDSL(
 
         // Add condition if present
         if (stepMeta.condition) {
-          statement.when = (variables, plan) => {
+          const conditionFn = stepMeta.condition;
+          statement.when = function (variables, plan) {
             try {
-              if (workflowInstance && typeof stepMeta.condition === 'function') {
-                return Boolean(stepMeta.condition.apply(workflowInstance, [variables, plan]));
+              if (workflowInstance) {
+                return Boolean(conditionFn.call(workflowInstance, variables, plan));
               }
-              if (stepMeta.condition) {
-                return Boolean(stepMeta.condition(variables, plan));
-              }
-              return true;
+              return Boolean(conditionFn.call(this, variables, plan));
             } catch (error) {
               console.error(`Error evaluating condition for step ${stepName}:`, error);
               return false;
@@ -778,15 +776,13 @@ export function convertStepsToDSL(
 
           // Add condition if present
           if (stepMeta.condition) {
-            statement.when = (variables, plan) => {
+            const conditionFn = stepMeta.condition;
+            statement.when = function (variables, plan) {
               try {
-                if (workflowInstance && typeof stepMeta.condition === 'function') {
-                  return Boolean(stepMeta.condition.apply(workflowInstance, [variables, plan]));
+                if (workflowInstance) {
+                  return Boolean(conditionFn.call(workflowInstance, variables, plan));
                 }
-                if (stepMeta.condition) {
-                  return Boolean(stepMeta.condition(variables, plan));
-                }
-                return true;
+                return Boolean(conditionFn.call(this, variables, plan));
               } catch (error) {
                 console.error(`Error evaluating condition for step ${stepName}:`, error);
                 return false;

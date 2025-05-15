@@ -11,8 +11,9 @@ export interface StepOptions {
   /**
    * Condition function that determines if this step should be executed.
    * The step will only run if this function returns true.
+   * The function has access to the workflow instance via 'this'.
    */
-  condition?: (variables: Record<string, unknown>, plan: Statement) => boolean;
+  condition?: (this: WorkflowInstance, variables: Record<string, unknown>, plan: Statement) => boolean;
 
   /**
    * Steps that should be executed before this step.
@@ -56,7 +57,7 @@ export interface StepOptions {
 export interface StepMetadata {
   name: string;
   method: string;
-  condition?: (variables: Record<string, unknown>, plan: Statement) => boolean;
+  condition?: (this: WorkflowInstance, variables: Record<string, unknown>, plan: Statement) => boolean;
   before?: string | string[];
   after?: string | string[];
   retries?: number;
@@ -77,7 +78,7 @@ interface Logger {
 }
 
 // Define the base type for workflow classes that might use the Step decorator
-interface WorkflowInstance {
+export interface WorkflowInstance {
   log?: Logger;
   [key: string]: any;
 }
@@ -104,7 +105,7 @@ interface WorkflowInstance {
  *
  *   @Step({
  *     after: ['step1', 'step2'],
- *     condition: () => this.someCondition,
+ *     condition: function() { return this.someCondition; },
  *     onError: (err) => console.error('Step failed:', err)
  *   })
  *   async conditionalStep() {
@@ -147,14 +148,14 @@ export const Step = (options: StepOptions = {}) => {
     };
 
     // Add step metadata using reflection
-    const steps = Reflect.getMetadata(STEP_METADATA_KEY, target) || [];
+    const steps = Reflect.getMetadata(STEP_METADATA_KEY, target) ?? [];
     steps.push({
       name: stepName,
       method: propertyKey,
       condition: options.condition,
       before: options.before,
       after: options.after,
-      retries: options.retries || 0,
+      retries: options.retries ?? 0,
       timeout: options.timeout,
       required: options.required !== false, // Default to true
       onError: options.onError,
