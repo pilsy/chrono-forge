@@ -1,4 +1,4 @@
-import * as temporalWorkflow from '@temporalio/workflow';
+import { proxyActivities, inWorkflowContext, condition } from '@temporalio/workflow';
 import { DirectedGraph } from 'eventemitter3-graphology';
 import { hasCycle, topologicalGenerations } from 'graphology-dag';
 import { StepMetadata } from '../decorators/Step';
@@ -92,7 +92,7 @@ export async function* DSLInterpreter(
 ): AsyncGenerator<DSLGeneration, void, unknown> {
   const acts =
     injectedActivities ||
-    temporalWorkflow.proxyActivities<Record<string, (...args: string[]) => Promise<string | undefined>>>({
+    proxyActivities<Record<string, (...args: string[]) => Promise<string | undefined>>>({
       startToCloseTimeout: '1 minute'
     });
 
@@ -182,39 +182,36 @@ export async function* DSLInterpreter(
       // Handle wait if it exists
       if (node.wait) {
         try {
-          if (Array.isArray(node.wait)) {
-            const [condition, timeout] = node.wait;
+          if (inWorkflowContext()) {
+            await condition(
+              Array.isArray(node.wait) ? node.wait[0] : node.wait,
+              Array.isArray(node.wait) ? node.wait[1] : undefined
+            );
+          } else {
+            // Non-workflow context handling
+            const waitFn = Array.isArray(node.wait) ? node.wait[0] : node.wait;
+            const timeout = Array.isArray(node.wait) ? node.wait[1] : undefined;
             const startTime = Date.now();
-            // Only apply timeout logic if a valid timeout is provided (greater than 0)
             const hasTimeout = timeout !== undefined && timeout !== null && timeout > 0;
-            const timeoutMs = hasTimeout ? timeout * 1000 : 0; // Convert seconds to milliseconds
+            const timeoutMs = hasTimeout ? timeout * 1000 : 0;
 
-            while (!condition(dsl.variables, dsl.plan)) {
-              // Check timeout condition only if a timeout was provided
+            while (!waitFn(dsl.variables, dsl.plan)) {
               if (hasTimeout && Date.now() - startTime > timeoutMs) {
                 console.log(`Timeout waiting for condition on node ${nodeId}`);
                 skippedNodes.add(nodeId);
-                break; // Break out of the while loop
+                break;
               }
-              // Wait a bit before checking again - IMPORTANT: use await to allow the event loop to process other tasks
               await new Promise((resolve) => setTimeout(resolve, 100));
             }
 
-            // Skip this node if it was added to skippedNodes
             if (skippedNodes.has(nodeId)) {
-              continue; // Skip to the next node
-            }
-          } else {
-            // Simple condition without timeout
-            while (!node.wait(dsl.variables, dsl.plan)) {
-              // Wait a bit before checking again - IMPORTANT: use await to allow the event loop to process other tasks
-              await new Promise((resolve) => setTimeout(resolve, 100));
+              continue;
             }
           }
         } catch (error) {
           console.error(`Error in wait condition for ${nodeId}:`, error);
           skippedNodes.add(nodeId);
-          continue; // Skip to the next node
+          continue;
         }
       }
 
@@ -729,17 +726,33 @@ export function convertStepsToDSL(
           }
         };
 
-        // Add condition if present
-        if (stepMeta.condition) {
-          const conditionFn = stepMeta.condition;
+        // Add when condition if present
+        if (stepMeta.when) {
+          const whenFn = stepMeta.when;
           statement.when = function (variables, plan) {
             try {
               if (workflowInstance) {
-                return Boolean(conditionFn.call(workflowInstance, variables, plan));
+                return Boolean(whenFn.call(workflowInstance, variables, plan));
               }
-              return Boolean(conditionFn.call(this, variables, plan));
+              return Boolean(whenFn.call(this, variables, plan));
             } catch (error) {
-              console.error(`Error evaluating condition for step ${stepName}:`, error);
+              console.error(`Error evaluating when condition for step ${stepName}:`, error);
+              return false;
+            }
+          };
+        }
+
+        // Add wait condition if present (maps from condition)
+        if (stepMeta.condition) {
+          const waitFn = stepMeta.condition;
+          statement.wait = function (variables, plan) {
+            try {
+              if (workflowInstance) {
+                return Boolean(waitFn.call(workflowInstance, variables, plan));
+              }
+              return Boolean(waitFn.call(this, variables, plan));
+            } catch (error) {
+              console.error(`Error evaluating wait condition for step ${stepName}:`, error);
               return false;
             }
           };
@@ -774,17 +787,33 @@ export function convertStepsToDSL(
             }
           };
 
-          // Add condition if present
-          if (stepMeta.condition) {
-            const conditionFn = stepMeta.condition;
+          // Add when condition if present
+          if (stepMeta.when) {
+            const whenFn = stepMeta.when;
             statement.when = function (variables, plan) {
               try {
                 if (workflowInstance) {
-                  return Boolean(conditionFn.call(workflowInstance, variables, plan));
+                  return Boolean(whenFn.call(workflowInstance, variables, plan));
                 }
-                return Boolean(conditionFn.call(this, variables, plan));
+                return Boolean(whenFn.call(this, variables, plan));
               } catch (error) {
-                console.error(`Error evaluating condition for step ${stepName}:`, error);
+                console.error(`Error evaluating when condition for step ${stepName}:`, error);
+                return false;
+              }
+            };
+          }
+
+          // Add wait condition if present (maps from condition)
+          if (stepMeta.condition) {
+            const waitFn = stepMeta.condition;
+            statement.wait = function (variables, plan) {
+              try {
+                if (workflowInstance) {
+                  return Boolean(waitFn.call(workflowInstance, variables, plan));
+                }
+                return Boolean(waitFn.call(this, variables, plan));
+              } catch (error) {
+                console.error(`Error evaluating wait condition for step ${stepName}:`, error);
                 return false;
               }
             };

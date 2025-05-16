@@ -7,6 +7,7 @@ export class ShouldExecuteSteps extends Workflow {
   private results: string[] = [];
   // Flag to control conditional steps
   public shouldRunConditional: boolean = true;
+  public shouldWaitForStep: boolean = false;
 
   @Step()
   async stepOne() {
@@ -62,8 +63,7 @@ export class ShouldExecuteSteps extends Workflow {
   @Step({
     after: 'stepTwo',
     // Use a regular function to allow proper binding with call()
-    condition: function () {
-      // @ts-ignore
+    when: function () {
       return this.shouldRunConditional === true;
     }
   })
@@ -90,6 +90,18 @@ export class ShouldExecuteSteps extends Workflow {
     return 'alwaysRun';
   }
 
+  // Step with wait condition
+  @Step({
+    after: 'stepTwo',
+    condition: function () {
+      return this.shouldWaitForStep === true;
+    }
+  })
+  async waitStep() {
+    this.results.push('waitStep');
+    return 'waitStep';
+  }
+
   // Query to get execution order for testing
   @Query()
   getResults() {
@@ -106,6 +118,13 @@ export class ShouldExecuteSteps extends Workflow {
   @Signal()
   async setShouldRunConditional(value: boolean) {
     this.shouldRunConditional = value;
+    return value;
+  }
+
+  // Signal to set the wait condition flag
+  @Signal()
+  async setShouldWaitForStep(value: boolean) {
+    this.shouldWaitForStep = value;
     return value;
   }
 }

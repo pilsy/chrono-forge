@@ -166,21 +166,25 @@ describe('Workflow', () => {
 
   describe('Step Execution', () => {
     it('Should execute steps in the correct order', async () => {
-      const result = await execute(workflows.ShouldExecuteSteps, 'execute');
+      const handle = await execute(workflows.ShouldExecuteSteps, 'start');
+      await handle.signal('setShouldWaitForStep', true);
+      const result = await handle.result();
       expect(result).toBe('afterConditional');
-    });
+    }, 60000);
 
     it('Should respect step dependencies defined with after', async () => {
       const handle = await execute(workflows.ShouldExecuteSteps, 'start');
-      await sleep(1000);
+      await handle.signal('setShouldWaitForStep', true);
+      await sleep(500);
 
       // The workflow should have completed all steps in sequence
       const result = await handle.result();
       expect(result).toBe('afterConditional');
-    });
+    }, 60000);
 
     it('Should execute steps in parallel when they have the same dependency', async () => {
       const handle = await execute(workflows.ShouldExecuteSteps, 'start');
+      await handle.signal('setShouldWaitForStep', true);
       await sleep(5000); // Give enough time for all steps to complete
 
       const results = await handle.query('getResults');
@@ -200,6 +204,7 @@ describe('Workflow', () => {
 
     it('Should handle steps with multiple dependencies', async () => {
       const handle = await execute(workflows.ShouldExecuteSteps, 'start');
+      await handle.signal('setShouldWaitForStep', true);
       await sleep(5000);
 
       const results = await handle.query('getResults');
@@ -216,6 +221,7 @@ describe('Workflow', () => {
   describe('Conditional Step Execution', () => {
     it('Should execute conditional steps when condition is met', async () => {
       const handle = await execute(workflows.ShouldExecuteSteps, 'start');
+      await handle.signal('setShouldWaitForStep', true);
       // By default, shouldRunConditional is true
       await sleep(5000); // Give enough time for all steps to complete
 
@@ -241,7 +247,7 @@ describe('Workflow', () => {
 
     it('Should skip conditional steps when condition is not met', async () => {
       const handle = await execute(workflows.ShouldExecuteSteps, 'start');
-
+      await handle.signal('setShouldWaitForStep', true);
       // Set the condition to false
       await handle.signal('setShouldRunConditional', false);
       await sleep(5000); // Give enough time for all steps to complete
@@ -269,6 +275,7 @@ describe('Workflow', () => {
 
     it('Should handle mixed conditional and unconditional branches', async () => {
       const handle = await execute(workflows.ShouldExecuteSteps, 'start');
+      await handle.signal('setShouldWaitForStep', true);
       // Set the condition to false
       await handle.signal('setShouldRunConditional', false);
       await sleep(5000);
@@ -295,6 +302,48 @@ describe('Workflow', () => {
       // Verify correct ordering of unconditional steps
       expect(results.indexOf('stepTwo')).toBeLessThan(results.indexOf('alwaysRun'));
       expect(results.indexOf('stepOne')).toBeLessThan(results.indexOf('parallelA'));
+    });
+
+    it('Should handle both when and wait conditions correctly', async () => {
+      const handle = await execute(workflows.ShouldExecuteSteps, 'start');
+
+      // Initially both conditions should be false
+      await handle.signal('setShouldRunConditional', false);
+      await sleep(1000);
+
+      let results = await handle.query('getResults');
+
+      // Verify neither conditional step was executed
+      expect(results).not.toContain('conditionalStep');
+      expect(results).not.toContain('waitStep');
+
+      // Set when condition to true but keep wait false
+      await handle.signal('setShouldRunConditional', true);
+      await sleep(1000);
+
+      results = await handle.query('getResults');
+
+      // Only when-conditioned step should execute
+      expect(results).toContain('conditionalStep');
+      expect(results).not.toContain('waitStep');
+
+      // Set wait condition to true
+      await handle.signal('setShouldWaitForStep', true);
+      await sleep(1000);
+
+      results = await handle.query('getResults');
+
+      // Both steps should now be executed
+      expect(results).toContain('conditionalStep');
+      expect(results).toContain('waitStep');
+
+      // Verify execution order
+      expect(results.indexOf('stepTwo')).toBeLessThan(results.indexOf('conditionalStep'));
+      expect(results.indexOf('stepTwo')).toBeLessThan(results.indexOf('waitStep'));
+
+      // Verify workflow completed successfully
+      const finalResult = await handle.result();
+      expect(finalResult).toBe('afterConditional');
     });
   });
 });

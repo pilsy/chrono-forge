@@ -7,7 +7,14 @@ import { StepMetadata } from '../decorators/Step';
 
 // Mock the @temporalio/workflow module
 jest.mock('@temporalio/workflow', () => ({
-  proxyActivities: jest.fn(() => global.activities)
+  proxyActivities: jest.fn(() => global.activities),
+  inWorkflowContext: jest.fn(() => false),
+  condition: jest.fn(async (condition, timeout) => {
+    if (timeout) {
+      await new Promise((resolve) => setTimeout(resolve, timeout * 1000));
+    }
+    return condition();
+  })
 }));
 
 describe('DSLInterpreter', () => {

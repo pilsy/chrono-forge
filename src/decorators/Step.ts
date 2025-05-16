@@ -9,11 +9,20 @@ export interface StepOptions {
   name?: string;
 
   /**
-   * Condition function that determines if this step should be executed.
-   * The step will only run if this function returns true.
+   * Condition function that determines if this step should wait before executing.
+   * The step will wait until this function returns true.
    * The function has access to the workflow instance via 'this'.
+   * This maps to 'wait' in the DSLInterpreter.
    */
   condition?: (this: WorkflowInstance, variables: Record<string, unknown>, plan: Statement) => boolean;
+
+  /**
+   * When function that determines if this step should be executed.
+   * The step will only run if this function returns true.
+   * The function has access to the workflow instance via 'this'.
+   * This maps to 'when' in the DSLInterpreter.
+   */
+  when?: (this: WorkflowInstance, variables: Record<string, unknown>, plan: Statement) => boolean;
 
   /**
    * Steps that should be executed before this step.
@@ -58,6 +67,7 @@ export interface StepMetadata {
   name: string;
   method: string;
   condition?: (this: WorkflowInstance, variables: Record<string, unknown>, plan: Statement) => boolean;
+  when?: (this: WorkflowInstance, variables: Record<string, unknown>, plan: Statement) => boolean;
   before?: string | string[];
   after?: string | string[];
   retries?: number;
@@ -153,6 +163,7 @@ export const Step = (options: StepOptions = {}) => {
       name: stepName,
       method: propertyKey,
       condition: options.condition,
+      when: options.when,
       before: options.before,
       after: options.after,
       retries: options.retries ?? 0,
