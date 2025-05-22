@@ -315,7 +315,7 @@ function buildDependencyGraph(
       for (const depNode of dependencyNodes) {
         try {
           graph.addDirectedEdge(depNode, nodeId);
-        } catch (e) {}
+        } catch {}
       }
     }
 
@@ -353,7 +353,7 @@ function buildDependencyGraph(
         if (previousNodeId) {
           try {
             graph.addDirectedEdge(previousNodeId, nodeId);
-          } catch (e) {}
+          } catch {}
         }
       }
 
@@ -492,7 +492,7 @@ function buildDependencyGraph(
       if (nodeId && previousNodeId) {
         try {
           graph.addDirectedEdge(previousNodeId, nodeId);
-        } catch (e) {}
+        } catch {}
       }
       return nodeId;
     }

@@ -140,16 +140,12 @@ export interface WorkflowInstance {
 export const Step = (options: StepOptions = {}) => {
   return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
     const stepName = options.name ?? propertyKey;
-
-    // Store the original method
     const originalMethod = descriptor.value;
 
-    // Replace the method with a wrapped version that handles retries and timeouts
     descriptor.value = async function (this: WorkflowInstance, ...args: any[]) {
       try {
         return await originalMethod.apply(this, args);
       } catch (error) {
-        // Log error
         const errorMessage = error instanceof Error ? error.message : String(error);
         this.log?.error?.(`Step '${stepName}' failed: ${errorMessage}`);
 
@@ -157,7 +153,6 @@ export const Step = (options: StepOptions = {}) => {
       }
     };
 
-    // Add step metadata using reflection
     const steps = Reflect.getMetadata(STEP_METADATA_KEY, target) ?? [];
     steps.push({
       name: stepName,
@@ -168,7 +163,7 @@ export const Step = (options: StepOptions = {}) => {
       after: options.after,
       retries: options.retries ?? 0,
       timeout: options.timeout,
-      required: options.required !== false, // Default to true
+      required: options.required !== false,
       onError: options.onError,
       executed: false
     });

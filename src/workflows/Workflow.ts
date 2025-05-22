@@ -98,9 +98,10 @@ export function Temporal(options?: TemporalOptions) {
       `
       return async function ${workflowName}(...args) {
         const instance = new constructor(args[0], { ...extraOptions, activities });
-
+        
         try {
           instance.workflowType = '${workflowName}';
+
           await instance.bindEventHandlers();
           await instance.emitAsync('setup');
           await instance.emitAsync('hooks');
@@ -114,14 +115,11 @@ export function Temporal(options?: TemporalOptions) {
           try {
             result = await instance[executionMethod](...args);
           } finally {
-            // Ensure cleanup happens in all cases: success, error, or isContinueable
-            if (typeof instance.cleanup === 'function') {
-              try {
-                instance.cleanup();
-              } catch (cleanupError) {
-                workflow.log.error('Error during workflow cleanup: ' + 
-                  (cleanupError instanceof Error ? cleanupError.message : String(cleanupError)));
-              }
+            try {
+              instance.cleanup();
+            } catch (cleanupError) {
+              workflow.log.error('Error during workflow cleanup: ' + 
+                (cleanupError instanceof Error ? cleanupError.message : String(cleanupError)));
             }
           }
           return result;
@@ -192,17 +190,17 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    *
    * Available log levels: debug, info, warn, error, trace
    */
+  private createLogger(level: keyof typeof workflow.log) {
+    return (message: string, ...args: any[]) =>
+      workflow.log[level](`[${this.constructor.name}]:[${workflow.workflowInfo().workflowId}]: ${message}`, ...args);
+  }
+
   protected log = {
-    debug: (message: string, ...args: any[]) =>
-      workflow.log.debug(`[${this.constructor.name}]:[${workflow.workflowInfo().workflowId}]: ${message}`, ...args),
-    info: (message: string, ...args: any[]) =>
-      workflow.log.info(`[${this.constructor.name}]:[${workflow.workflowInfo().workflowId}]: ${message}`, ...args),
-    warn: (message: string, ...args: any[]) =>
-      workflow.log.warn(`[${this.constructor.name}]:[${workflow.workflowInfo().workflowId}]: ${message}`, ...args),
-    error: (message: string, ...args: any[]) =>
-      workflow.log.error(`[${this.constructor.name}]:[${workflow.workflowInfo().workflowId}]: ${message}`, ...args),
-    trace: (message: string, ...args: any[]) =>
-      workflow.log.trace(`[${this.constructor.name}]:[${workflow.workflowInfo().workflowId}]: ${message}`, ...args)
+    debug: this.createLogger('debug'),
+    info: this.createLogger('info'),
+    warn: this.createLogger('warn'),
+    error: this.createLogger('error'),
+    trace: this.createLogger('trace')
   };
 
   /**
@@ -564,7 +562,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
             this.continueAsNew ||
             this.status !== 'running',
           // @ts-ignore
-          !this.conditionTimeout ? undefined : this.conditionTimeout
+          this.conditionTimeout ?? undefined
         );
 
         if (this.status === 'paused') {
@@ -713,7 +711,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
     for (const listener of listeners) {
       try {
-        await Promise.resolve().then(() => listener(...args));
+        await Promise.resolve().then(() => listener.apply(this, args));
       } catch (error) {
         console.error(`Error in listener for event '${event}':`, error);
       }
@@ -739,6 +737,16 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     try {
       this.removeAllListeners();
 
+      // Clear all handler maps
+      this.queryHandlers = {};
+      this.signalHandlers = {};
+      this.stepHandlers = {};
+
+      // Reset the DSL interpreter
+      this.interpreter = undefined;
+      this.currentGeneration = undefined;
+
+      // Reset binding flags
       this._eventsBound = false;
       this._hooksBound = false;
       this._signalsBound = false;
@@ -917,14 +925,35 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     if (this._queriesBound) {
       return;
     }
+
     const queries = this.collectMetadata(QUERY_METADATA_KEY, this.constructor.prototype);
-    for (const [queryName, queryMethod] of queries) {
+    for (const [queryName, queryMethod, options] of queries) {
       if (typeof (this as any)[queryMethod] === 'function') {
-        const handler = (this as any)[queryMethod].bind(this);
-        this.queryHandlers[queryName] = handler;
-        workflow.setHandler(workflow.defineQuery(queryName), handler);
+        const originalHandler = (this as any)[queryMethod].bind(this);
+        const wrappedHandler = (...args: any[]) => {
+          try {
+            this.log.trace(`[QUERY]:(${queryName})`);
+            this.emitAsync(queryName).catch((err) => this.log.error(`[QUERY]:(${queryName}):emit error`, err));
+            return originalHandler(...args);
+          } catch (err) {
+            if (options?.onError) {
+              try {
+                return options.onError(err);
+              } catch (errorHandlerErr) {
+                this.log.error(`[QUERY]:(${queryName}):error handler threw`, errorHandlerErr);
+                throw errorHandlerErr;
+              }
+            } else {
+              this.log.error(`[QUERY]:(${queryName}):error`, err);
+              throw err;
+            }
+          }
+        };
+        this.queryHandlers[queryName] = wrappedHandler;
+        workflow.setHandler(workflow.defineQuery(queryName), wrappedHandler);
       }
     }
+
     this._queriesBound = true;
   }
 
@@ -942,14 +971,39 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     if (this._signalsBound) {
       return;
     }
+
     const signals = this.collectMetadata(SIGNAL_METADATA_KEY, this.constructor.prototype);
-    for (const [signalName, signalMethod] of signals) {
+    for (const [signalName, signalMethod, options] of signals) {
       if (typeof (this as any)[signalMethod] === 'function') {
-        const handler = (this as any)[signalMethod].bind(this);
-        this.signalHandlers[signalName] = handler;
-        workflow.setHandler(workflow.defineSignal(signalName), handler);
+        const originalHandler = (this as any)[signalMethod].bind(this);
+        const wrappedHandler = async (...args: any[]) => {
+          try {
+            this.log.trace(`[SIGNAL]:(${signalName})`);
+            await this.emitAsync(signalName);
+            return await originalHandler(...args);
+          } catch (err) {
+            if (options?.onError) {
+              try {
+                const result = options.onError(err);
+                if (result instanceof Promise) {
+                  return await result;
+                }
+                return result;
+              } catch (errorHandlerErr) {
+                this.log.error(`[SIGNAL]:(${signalName}):error handler threw`, errorHandlerErr);
+                throw errorHandlerErr;
+              }
+            } else {
+              this.log.error(`[SIGNAL]:(${signalName}):error`, err);
+              throw err;
+            }
+          }
+        };
+        this.signalHandlers[signalName] = wrappedHandler;
+        workflow.setHandler(workflow.defineSignal(signalName), wrappedHandler);
       }
     }
+
     this._signalsBound = true;
   }
 
@@ -1022,7 +1076,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
     let currentProto = target;
     while (currentProto && currentProto !== Object.prototype) {
-      const metadata = Reflect.getMetadata(metadataKey, currentProto) || [];
+      const metadata = Reflect.getMetadata(metadataKey, currentProto) ?? [];
       for (const item of metadata) {
         const itemString = JSON.stringify(item);
         if (!seen.has(itemString)) {
@@ -1057,13 +1111,13 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
 
     for (const proto of protoChain) {
-      const metadata = Reflect.getOwnMetadata(HOOKS_METADATA_KEY, proto) || {};
+      const metadata = Reflect.getOwnMetadata(HOOKS_METADATA_KEY, proto) ?? {};
       for (const key of Object.keys(metadata)) {
         if (!collectedMetadata[key]) {
           collectedMetadata[key] = { before: [], after: [] };
         }
-        collectedMetadata[key].before.push(...(metadata[key].before || []));
-        collectedMetadata[key].after.push(...(metadata[key].after || []));
+        collectedMetadata[key].before.push(...(metadata[key].before ?? []));
+        collectedMetadata[key].after.push(...(metadata[key].after ?? []));
       }
     }
 

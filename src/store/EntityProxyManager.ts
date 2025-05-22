@@ -751,6 +751,7 @@ export class EntityProxyManager {
   public static clearCache(): void {
     this.entityCache.clear();
     this.entityStateManagers.clear();
+    this.proxyStateTree = new ProxyStateTree<Record<string, Record<string, any>>>({});
   }
 
   /**

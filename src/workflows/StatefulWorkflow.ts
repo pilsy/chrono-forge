@@ -14,7 +14,7 @@ import {
 import { detailedDiff, DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
 import { isEmpty, isEqual, isObject } from 'lodash';
-import { Workflow, TemporalOptions } from './Workflow';
+import { Workflow } from './Workflow';
 import {
   Signal,
   Query,
@@ -963,7 +963,7 @@ export abstract class StatefulWorkflow<
     }
 
     this.id = this.params?.id;
-    this.entityName = (this.params?.entityName || options?.schemaName) as string;
+    this.entityName = this.params?.entityName ?? options?.schemaName;
     this.schema = this.entityName ? this.schemaManager.getSchema(this.entityName) : (options.schema as schema.Entity);
 
     this.stateManager.on('stateChange', this.stateChanged.bind(this));
@@ -1088,7 +1088,7 @@ export abstract class StatefulWorkflow<
 
         if (this.isInTerminalState()) {
           if (this.status !== 'errored') {
-            return this.result || this.data;
+            return this.result ?? this.data;
           }
           throw this.result;
         }
@@ -2841,8 +2841,8 @@ export abstract class StatefulWorkflow<
       return;
     }
 
-    const actions: ActionMetadata[] = Reflect.getMetadata(ACTIONS_METADATA_KEY, this.constructor.prototype) || [];
-    const validators = Reflect.getMetadata(VALIDATOR_METADATA_KEY, this.constructor.prototype) || {};
+    const actions: ActionMetadata[] = Reflect.getMetadata(ACTIONS_METADATA_KEY, this.constructor.prototype) ?? [];
+    const validators = Reflect.getMetadata(VALIDATOR_METADATA_KEY, this.constructor.prototype) ?? {};
 
     for (const { method } of actions) {
       const methodName = method;
@@ -3002,15 +3002,18 @@ export abstract class StatefulWorkflow<
   protected cleanup(): void {
     try {
       this._actionsBound = false;
-
-      if (this.stateManager) {
-        this.stateManager.removeListener('stateChange', this.stateChanged.bind(this));
-        this.stateManager.cleanup();
-      }
-
+      this.actionRunning = false;
+      this.pendingIteration = false;
+      this.pendingUpdate = false;
+      this.iteration = 0;
       this.selectorPatternCache.clear();
       this.subscriptionHandles.clear();
       this.ancestorHandles.clear();
+      this.ancestorWorkflowIds.length = 0;
+      this._memoProperties = {};
+      this.subscriptions.length = 0;
+
+      this.stateManager.cleanup();
 
       super.cleanup();
     } catch (error) {

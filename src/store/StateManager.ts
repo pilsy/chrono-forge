@@ -421,6 +421,7 @@ export class StateManager extends EventEmitter {
     }
 
     this.cache.clear();
+    EntityProxyManager.clearCache();
     delete StateManager.instances[this.instanceId];
   }
 

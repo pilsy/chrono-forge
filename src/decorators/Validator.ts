@@ -21,7 +21,7 @@ import { VALIDATOR_METADATA_KEY } from './metadata';
  */
 export function Validator<T = any>(actionName: string) {
   return (target: any, propertyKey: string) => {
-    const validators = Reflect.getMetadata(VALIDATOR_METADATA_KEY, target) || {};
+    const validators = Reflect.getMetadata(VALIDATOR_METADATA_KEY, target) ?? {};
     validators[actionName] = propertyKey;
 
     Reflect.defineMetadata(VALIDATOR_METADATA_KEY, validators, target);
