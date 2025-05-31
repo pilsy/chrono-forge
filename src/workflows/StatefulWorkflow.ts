@@ -14,7 +14,7 @@ import {
 import { detailedDiff, DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
 import { isEmpty, isEqual, isObject } from 'lodash';
-import { Workflow } from './Workflow';
+import { TemporalOptions, Workflow } from './Workflow';
 import {
   Signal,
   Query,
@@ -268,7 +268,7 @@ export type StatefulWorkflowOptions = {
       strategy?: '$set' | '$merge';
     };
   };
-};
+} & TemporalOptions;
 
 /**
  * Represents a pending change awaiting application within a workflow, detailing the modifications and approach.
@@ -2756,10 +2756,11 @@ export abstract class StatefulWorkflow<
 
     const properties = this.collectMetadata(PROPERTY_METADATA_KEY, this.constructor.prototype);
 
-    properties.forEach(({ propertyKey, path, memo }) => {
+    properties.forEach(({ propertyKey, path, memo, option }) => {
       const isStringPath = typeof path === 'string';
       const useMemoPath = memo === true && isStringPath;
       const memoKeyString = typeof memo === 'string';
+      const optionKey = typeof option === 'string';
 
       const resolveMemoKey = () => {
         const key = useMemoPath ? path : memo;
@@ -2774,7 +2775,7 @@ export abstract class StatefulWorkflow<
         Object.defineProperty(this, propertyKey, {
           get: () => {
             if (useMemoPath || memoKeyString) {
-              return this._memoProperties ? this._memoProperties[resolveMemoKey()] : undefined;
+              return dottie.get(this._memoProperties, resolveMemoKey());
             } else if (isStringPath) {
               return dottie.get(this.data || {}, path);
             }
@@ -2792,6 +2793,10 @@ export abstract class StatefulWorkflow<
           configurable: false,
           enumerable: true
         });
+
+        if (optionKey && option in this.options) {
+          (this as any)[propertyKey] = (this.options as Record<string, any>)[option];
+        }
       }
     });
   }

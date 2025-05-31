@@ -2,6 +2,7 @@ import { proxyActivities, inWorkflowContext, condition } from '@temporalio/workf
 import { DirectedGraph } from 'eventemitter3-graphology';
 import { hasCycle, topologicalGenerations } from 'graphology-dag';
 import { StepMetadata } from '../decorators/Step';
+import dottie from 'dottie';
 
 export type DSLDefinition = {
   variables: Record<string, unknown>;
@@ -380,10 +381,7 @@ function buildDependencyGraph(
           condition: statement.when,
           wait: statement.wait,
           execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
-            const itemsArray = bindings[statement.foreach!.in];
-            if (!Array.isArray(itemsArray)) {
-              throw new Error(`Variable ${statement.foreach!.in} is not an array`);
-            }
+            const itemsArray = dottie.get(bindings, statement.foreach!.in, []);
 
             for (const as of itemsArray) {
               bindings[statement.foreach!.as] = as;

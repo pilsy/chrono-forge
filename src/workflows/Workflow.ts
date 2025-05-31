@@ -30,13 +30,6 @@ export interface TemporalOptions {
   name?: string;
 
   /**
-   * The task queue for the workflow.
-   * Specifies which task queue the workflow should be registered with.
-   * Workers listening on this task queue will be able to execute this workflow.
-   */
-  taskQueue?: string;
-
-  /**
    * Activity functions to use with the DSL interpreter.
    * If not provided, will use default activity proxy.
    */
@@ -75,13 +68,7 @@ export interface TemporalOptions {
  */
 export function Temporal(options?: TemporalOptions) {
   return function (constructor: any) {
-    const {
-      name: optionalName,
-      taskQueue,
-      activities,
-      tracerName = 'temporal_worker',
-      ...extraOptions
-    } = options || {};
+    const { name: optionalName, taskQueue, activities, ...extraOptions } = options || {};
     const workflowName: string = optionalName ?? constructor.name;
 
     if (!(constructor.prototype instanceof Workflow)) {

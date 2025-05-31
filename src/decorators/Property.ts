@@ -1,6 +1,16 @@
 import 'reflect-metadata';
 import { PROPERTY_METADATA_KEY, GETTER_METADATA_KEY, SETTER_METADATA_KEY } from './metadata';
 
+export type PropertyOptions = {
+  get?: boolean | string;
+  set?: boolean | string;
+  path?: string;
+  memo?: string | boolean;
+  option?: string | boolean;
+  signalName?: string;
+  queryName?: string;
+};
+
 /**
  * Decorator that defines and configures a workflow property with optional memoization and signal/query access.
  * Properties decorated with `@Property` are automatically managed by the workflow system, providing
@@ -101,9 +111,7 @@ import { PROPERTY_METADATA_KEY, GETTER_METADATA_KEY, SETTER_METADATA_KEY } from 
  * }
  * ```
  */
-export const Property = (
-  options: { get?: boolean | string; set?: boolean | string; path?: string; memo?: string | boolean } = {}
-) => {
+export const Property = (options: PropertyOptions = {}) => {
   return (target: any, propertyKey: string) => {
     const properties = Reflect.getOwnMetadata(PROPERTY_METADATA_KEY, target) ?? [];
     properties.push({
@@ -111,9 +119,10 @@ export const Property = (
       path: options.path,
       get: options.get || options.get === undefined,
       set: options.set || options.set === undefined,
-      queryName: propertyKey,
-      signalName: propertyKey,
-      memo: options.memo
+      queryName: options.queryName ?? propertyKey,
+      signalName: options.signalName ?? propertyKey,
+      memo: options.memo,
+      option: options.option
     });
 
     Reflect.defineMetadata(PROPERTY_METADATA_KEY, properties, target);
