@@ -269,7 +269,7 @@ function buildDependencyGraph(
       }
 
       const resolvedArgs = args.map((arg) => {
-        const value = bindings[arg];
+        const value = dottie.get(bindings, arg);
         if (value !== undefined) return value;
 
         return graph.hasNode(arg) ? (graph.getNodeAttribute(arg, 'result') ?? arg) : arg;
