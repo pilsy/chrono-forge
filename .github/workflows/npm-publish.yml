@@ -1,75 +1,92 @@
 name: Node.js Package
 
+# Publishing is a manual run: Actions > Node.js Package > Run workflow, on `main`.
+# It publishes only when package.json has a version that has no tag yet and the Test Suite passed for that exact
+# commit on a push to main. A merge never publishes by itself.
+#
+# npm authenticates with trusted publishing (OIDC), so no npm token is stored in the repository. Each package
+# (chrono-forge and temporal-forge) needs a trusted publisher on npmjs.com: user `pilsy`, repository `chrono-forge`,
+# workflow filename `npm-publish.yml`. package.json `repository.url` must match this repository.
 on:
-  workflow_run:
-    workflows: ['Test Suite']
-    types:
-      - completed
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
 
 jobs:
   version-check:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     outputs:
       version_changed: ${{ steps.check_version.outputs.version_changed }}
       current_version: ${{ steps.current_version.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Get current version
         id: current_version
-        run: |
-          current_version=$(node -p "require('./package.json').version")
-          echo "version=$current_version" >> $GITHUB_ENV
-          echo "::set-output name=version::$current_version"
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
         shell: bash
 
-      - name: Get last version from Git tags
-        id: last_version
+      - name: Require a passing Test Suite run for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git fetch --tags
-          last_version=$(git tag --sort=-v:refname | head -n 1 | sed 's/^v//')
-          echo "last_version=$last_version" >> $GITHUB_ENV
-          echo "::set-output name=last_version::$last_version"
+          passed=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow run-tests.yml --commit "$GITHUB_SHA" \
+            --event push --status success --json databaseId --jq 'length')
+          if [ "${passed:-0}" -lt 1 ]; then
+            echo "::error::No successful Test Suite run for $GITHUB_SHA on a push to main"
+            exit 1
+          fi
         shell: bash
 
       - name: Check if version changed
         id: check_version
+        env:
+          CURRENT_VERSION: ${{ steps.current_version.outputs.version }}
         run: |
-          if [ "${{ steps.current_version.outputs.version }}" != "${{ steps.last_version.outputs.last_version }}" ]; then
-            echo "version_changed=true" >> $GITHUB_ENV
-            echo "::set-output name=version_changed::true"
+          if git rev-parse -q --verify "refs/tags/$CURRENT_VERSION" >/dev/null; then
+            echo "Tag $CURRENT_VERSION already exists; nothing to publish."
+            echo "version_changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "version_changed=false" >> $GITHUB_ENV
-            echo "::set-output name=version_changed::false"
+            echo "version_changed=true" >> "$GITHUB_OUTPUT"
           fi
+        shell: bash
 
   create-tag:
     if: ${{ needs.version-check.outputs.version_changed == 'true' }}
     runs-on: ubuntu-latest
     needs: version-check
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set up Git for pushing
-        run: |
-          git config --global user.email "action@github.com"
-          git config --global user.name "GitHub Action"
+        with:
+          fetch-depth: 0
 
       - name: Create Git tag
         env:
           VERSION: ${{ needs.version-check.outputs.current_version }}
-          GH_TOKEN: ${{ github.token }}
         run: |
-          git tag "$VERSION"
+          git config user.email "action@github.com"
+          git config user.name "GitHub Action"
+          git tag "$VERSION" "$GITHUB_SHA"
           git push origin "$VERSION"
         shell: bash
 
@@ -81,42 +98,46 @@ jobs:
           git fetch --tags
           LAST_VERSION=$(git tag --sort=-v:refname | grep -v "^${VERSION}$" | head -n 1)
           if [ -z "$LAST_VERSION" ]; then
-            echo "No previous version tag found, setting to initial version."
             LAST_VERSION="initial"
           fi
-          echo "Creating release notes from $LAST_VERSION to $VERSION"
-          gh release create "$VERSION" --title "Release $VERSION" --notes "See changes: https://github.com/${{ github.repository }}/compare/$LAST_VERSION...$VERSION"
+          gh release create "$VERSION" --title "Release $VERSION" \
+            --notes "See CHANGELOG.md. Changes: https://github.com/${{ github.repository }}/compare/$LAST_VERSION...$VERSION"
+        shell: bash
 
   publish-npm-chrono:
     if: ${{ needs.version-check.outputs.version_changed == 'true' }}
     runs-on: ubuntu-latest
-    needs: create-tag
+    needs: [version-check, create-tag]
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org/
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@11
       - run: npm ci
       - run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-npm-temporal:
     if: ${{ needs.version-check.outputs.version_changed == 'true' }}
     runs-on: ubuntu-latest
-    needs: create-tag
+    needs: [version-check, create-tag]
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org/
+      - run: npm install -g npm@11
       - run: npm ci
       - run: |
           jq '.name = "temporal-forge"' package.json > temp.json && mv temp.json package.json
           npm run clean
-          npm run build
           npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

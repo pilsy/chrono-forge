@@ -1,33 +1,47 @@
-[< Previous](./conclusion_and_further_reading.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./getting_started.md)
-
+[Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./getting_started.md)
 
 ---
 
 ### 1: Introduction to `StatefulWorkflow`
 
-`StatefulWorkflow` is a powerful, configurable base class designed for managing complex workflows with hierarchical relationships and state management capabilities in Temporal.io. By leveraging features such as automatic data normalization, dynamic child workflow management, and signal-based communication, `StatefulWorkflow` provides an efficient way to handle complex data flows, synchronize states, and manage interdependencies between workflows in distributed systems.
+`StatefulWorkflow` is a TypeScript/Temporal base class for workflows that keep normalized state, auto-manage child workflows from that state, and propagate updates via signals. It gives you a consistent pattern for hierarchical workflows without hand-rolling store plumbing or signal fan-out logic.
 
-#### Overview and Purpose
+#### What it is (at a glance)
 
-`StatefulWorkflow` is created to simplify the development of workflows that require dynamic state management, complex relationships, and seamless integration with external APIs. It allows developers to focus on business logic while handling the complexities of state synchronization, child workflow management, and API integration. This class is ideal for scenarios where workflows need to react to external data changes, manage nested entities, and interact with other workflows or external services.
+- Built for Temporal Node/TypeScript (v1.x), meant to run inside a Temporal worker.
+- Normalized store (`normalizr` + `SchemaManager`) with automatic persistence to workflow memo.
+- Child lifecycle automation: start/update/cancel children based on `managedPaths`.
+- Signal/query surface for updates, subscriptions, and configuration (API URL/token).
+- Guards for ancestry/circular relationships to avoid redundant or looping workflows.
 
-#### Key Features
+#### Minimal quickstart
 
-- **Dynamic Child Workflow Management**: Automatically starts, updates, and cancels child workflows based on the state of the parent workflow.
-- **State Management with Data Normalization**: Automatically normalizes and manages complex nested data structures using `normalizr` and `SchemaManager`.
-- **API Integration and Token Management**: Provides seamless integration with external APIs using Temporal activities and manages API tokens centrally.
-- **Signal-Based Communication**: Enables efficient inter-workflow communication using Temporal signals to manage state changes, updates, and subscriptions.
-- **Circular Relationship Handling**: Detects and prevents circular dependencies and redundant workflows in hierarchical structures.
-- **Exposed Queries and Signals**: Provides built-in queries and signals to manage and control the workflow dynamically.
+```ts
+// pseudo-code: your workflow extending StatefulWorkflow
+export class ProjectWorkflow extends StatefulWorkflow<ProjectState> {
+  managedPaths = ['projects[*].tasks[*]']; // drives child workflows
 
-#### Use Cases and Applications
+  @Action()
+  async addTask(input: { taskId: string; projectId: string; title: string }) {
+    // mutate normalized state; children spawn/update automatically
+    this.update({ data: { id: input.taskId, title: input.title, projectId: input.projectId }, entityName: 'Task' });
+  }
+}
+```
 
-- **Data Synchronization Workflows**: Manage real-time data synchronization between external APIs and internal states.
-- **Complex Entity Management**: Handle nested entities with dynamic relationships, such as managing users, posts, and comments in a social media application.
-- **Distributed System Coordination**: Coordinate state changes across multiple distributed systems with efficient signal-based communication.
-- **Secure API Access**: Manage secure API access and propagate tokens dynamically across workflow hierarchies.
+- Run with a Temporal worker as usual; use queries (`state`, `pendingChanges`, `subscriptions`) and signals (`update`, `delete`, `apiToken`) to interact. `subscribe` / `unsubscribe` are opt-in with `@Temporal({ subscribeSignals: true })`.
+- See [Getting Started](./getting_started.md) for setup, imports, and a runnable example.
 
+#### When to use
+
+- You have hierarchical entities (e.g., org → project → task) and want child workflows to mirror state changes automatically.
+- You need normalized state with predictable updates and memo persistence.
+- You must propagate changes across related workflows via signals without bespoke routing.
+
+#### When to skip
+
+- Flat, short-lived workflows without child orchestration.
+- Scenarios where memo size, fan-out, or signal volume must be strictly minimal and you do not need normalized state.
 
 ---
-[< Previous](./conclusion_and_further_reading.md) | [Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./getting_started.md)
-
+[Table of Contents](./table_of_contents.md#table-of-contents) | [Next >](./getting_started.md)

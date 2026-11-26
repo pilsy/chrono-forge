@@ -1,44 +1,111 @@
 ## `StatefulWorkflow` Docs
 
-### Overview
+## Overview
 
-`StatefulWorkflow` is an extensible and sophisticated workflow class designed for Temporal.io, a popular workflow orchestration platform. It provides a robust foundation for creating dynamic, hierarchical workflows that can seamlessly manage state, synchronize data, and communicate across multiple levels of parent-child relationships. With features such as automatic child state management, dynamic data loading from APIs, powerful subscription-based state synchronization, and intelligent handling of circular relationships, `StatefulWorkflow` is well-suited for complex systems where entities interact across various layers and domains.
+`StatefulWorkflow` is a core class built on top of Temporal.io designed to simplify the creation of dynamic, hierarchical workflows with strong state management. It provides abstractions for data normalization, synchronization, and workflow orchestration, reducing boilerplate and enabling developers to focus on application logic.
 
-The core philosophy of `StatefulWorkflow` is to facilitate efficient, scalable, and flexible workflow management by abstracting away many of the tedious details associated with state handling, entity normalization, and data propagation. It allows developers to focus on implementing their business logic while the workflow itself manages the complexities of state updates, data consistency, and hierarchical relationships.
+## What It Solves
 
-### Key Functional Pillars of `StatefulWorkflow`
+- **Managing complex entity graphs** where nested or related entities require coordinated workflow behavior.
+- **Maintaining consistency in long-running processes** that depend on external data sources or frequently changing inputs.
+- **Reducing maintenance overhead** caused by custom orchestration logic, manual normalization, or fragmented update flows.
 
-1. **Automatic Child State Management**: `StatefulWorkflow` leverages its deep understanding of hierarchical relationships to automatically manage child workflows. This includes starting, updating, or canceling child workflows based on changes in the parent's state. This automated approach simplifies complex workflows where parent entities must manage the lifecycle and synchronization of child entities.
+## Key Features
 
-2. **Data Normalization and Denormalization**: Handling complex nested data structures can be challenging, especially in distributed workflows. `StatefulWorkflow` uses `normalizr` to normalize data into a flat structure for efficient storage and processing. This allows for easier updates, querying, and synchronization. When data is sent to subscribers or used in business logic, it is automatically denormalized back into a usable form.
+### Automatic Child Workflow Management
 
-3. **Dynamic Data Loading from External APIs**: In many real-world applications, workflows need to interact with external services to fetch or update data. `StatefulWorkflow` provides an extensible mechanism for loading data from APIs using a `loadData` function that can be implemented by the developer. This data loading is tightly integrated into the workflow's execution cycle, ensuring that the workflow state is always up-to-date.
+Parent workflows automatically start, update, or stop child workflows whenever relevant parts of their state change.
 
-4. **Dynamic Parent-Child-Grandchild Relationship Handling**: The complexity of workflow management increases exponentially when dealing with multi-level parent-child relationships. `StatefulWorkflow` intelligently handles these relationships by detecting potential redundancies and circular dependencies. It can delegate the management of child workflows to appropriate ancestors if needed, ensuring efficient and clean state management across the hierarchy.
+### Data Normalization and Denormalization
 
-5. **Subscription-Based State Synchronization**: A key challenge in hierarchical workflows is keeping the state synchronized across different levels and entities. `StatefulWorkflow` provides a powerful subscription system that allows workflows to subscribe to state changes from other workflows. This enables dynamic and selective propagation of updates, additions, or deletions based on flexible criteria such as paths and selectors.
+Nested structures are normalized for efficient storage and update handling, while denormalized views are provided for easier consumption.
 
-6. **API Token Management and Propagation**: Securely managing API tokens is crucial for workflows that interact with external systems. `StatefulWorkflow` includes built-in functionality for managing and propagating API tokens throughout the workflow hierarchy. This ensures that all workflows have consistent access to the necessary credentials while preventing security risks associated with token misuse or redundancy.
+### Subscription-Based State Synchronization
 
-7. **Typed Action System**: `StatefulWorkflow` introduces a powerful action system using the `@Action` decorator, which enables type-safe, discrete operations that can modify workflow state in a controlled manner. Actions provide a structured approach to implementing business logic operations with proper tracking and state management integration.
+Workflows can subscribe to specific parts of the state. Only relevant subscribers are notified when changes occur, avoiding redundant updates.
 
-8. **Centralized State Management with Redux-like Store**: The workflow integrates deeply with a Redux-inspired state management system that provides normalized storage, efficient updates, and predictable state transitions through actions and reducers. This ensures consistent state handling across all workflow operations.
+### External Data Loading Support
 
-9. **Automatic State Persistence to Memo**: `StatefulWorkflow` can automatically persist its state to the Temporal workflow memo, enabling continuity across workflow executions and providing resilience against restarts or crashes.
+A `loadData` mechanism allows workflows to synchronize with external systems or APIs and integrate updates safely.
 
-10. **Event-Driven Architecture**: The workflow leverages a sophisticated event system to respond to state changes, external signals, and internal transitions with registered event handlers defined through the `@On` decorator.
+### Support for Hierarchical and Circular Relations
 
-### Benefits of Using `StatefulWorkflow`
+Handles complex relationships across entity trees, including parent-child chains, sibling relationships, and circular references.
 
-- **Simplifies Complex State Management**: By automating the management of child workflows and using normalized data structures, `StatefulWorkflow` reduces the burden on developers to manually handle intricate state transitions and updates.
-- **Promotes Scalability and Flexibility**: The dynamic handling of parent-child relationships and subscriptions enables workflows to adapt to changing states and requirements without extensive reconfiguration.
-- **Enhances Data Integrity and Consistency**: With its robust synchronization mechanisms and intelligent relationship management, `StatefulWorkflow` ensures that data remains consistent and accurate across all levels of the workflow hierarchy.
-- **Facilitates Integration with External APIs**: The `loadData` functionality allows workflows to seamlessly interact with external services, keeping the workflow state aligned with real-world data and ensuring a more reactive and responsive system.
-- **Ensures Security and Efficiency**: Through effective API token management and propagation, `StatefulWorkflow` ensures secure and efficient access to external resources without compromising on performance or security.
-- **Enables Type-Safe Business Logic**: The typed action system provides compile-time checking and improved developer experience when implementing business operations.
-- **Provides Predictable State Updates**: The Redux-inspired state management approach ensures predictable, traceable state transitions throughout the workflow lifecycle.
+### Credential Propagation
 
-`StatefulWorkflow` is designed to address the complexities of managing stateful, hierarchical workflows in distributed systems. By combining automatic state management, dynamic data loading, flexible subscription-based synchronization, and intelligent relationship handling, it offers a comprehensive solution for building robust and scalable workflows. This powerful class abstracts away the complexities associated with state propagation, API integration, and entity management, allowing developers to focus on delivering business value while leveraging Temporal.io's workflow orchestration capabilities.
+Token or credential updates propagate automatically across all dependent workflows.
+
+## Developer Benefits
+
+- Less boilerplate and orchestration logic.
+- Improved maintainability as data structures and relationships evolve.
+- More reliable state handling with built-in normalization and synchronization.
+- Easier integration with external APIs and services.
+- Scalable architecture for entity-heavy or long-running workflows.
+
+## When to Use `StatefulWorkflow`
+
+Use it when your workflows:
+
+- Manage nested or relational data.
+- Need to track long-running state with external synchronization.
+- Should automatically orchestrate child workflows.
+- Require strong consistency guarantees across workflow hierarchies.
+
+## Example Usage
+
+```ts
+import {
+  Temporal,
+  StatefulWorkflow,
+  StatefulWorkflowParams,
+  StatefulWorkflowOptions,
+  Property,
+  SchemaManager
+} from 'temporal-forge';
+
+type User = {
+  id: string;
+  likes: Like[];
+};
+
+type Like = {
+  id: string;
+  user: User;
+};
+
+@Temporal({
+  schemaName: "User",
+  schemas: SchemaManager.schemas
+})
+class UserWorkflow extends StatefulWorkflow<
+  StatefulWorkflowParams<User>,
+  StatefulWorkflowOptions
+> {
+  @Property({ path: 'likes' })
+  protected likes!: Like[];
+
+  async execute() {
+    this.log.info('Executing workflow – child workflows for `likes` have been automatically prepared.');
+  }
+}
+
+export default UserWorkflow;
+
+SchemaManager.parseYAML(`
+  User:
+    idAttribute: id
+    likes: [Like]
+  Like:
+    idAttribute: id
+    user: User
+`);
+```
+
+## Summary
+
+`StatefulWorkflow` enables scalable, maintainable orchestration for entity-driven workflows. With normalization, subscription-based updates, automatic child workflow management, and strong integration support, it’s an ideal building block for complex Temporal workflows needing consistency and automation.
 
 ---
 
@@ -88,14 +155,13 @@ The core philosophy of `StatefulWorkflow` is to facilitate efficient, scalable, 
      - [`subscriptions`](./StatefulWorkflow/exposed_queries_and_signals.md#subscriptions)
      - [`managedPaths`](./StatefulWorkflow/exposed_queries_and_signals.md#managedpaths)
      - [`apiUrl`](./StatefulWorkflow/exposed_queries_and_signals.md#apiurl)
-     - [`apiToken`](./StatefulWorkflow/exposed_queries_and_signals.md#apitoken)
+     - [`params`](./StatefulWorkflow/exposed_queries_and_signals.md#params)
    - [Exposed Signals](./StatefulWorkflow/exposed_queries_and_signals.md#exposed-signals)
      - [`apiToken`](./StatefulWorkflow/exposed_queries_and_signals.md#apitoken-signal)
-     - [`apiUrl`](./StatefulWorkflow/exposed_queries_and_signals.md#apiurl-signal)
      - [`update`](./StatefulWorkflow/exposed_queries_and_signals.md#update)
      - [`delete`](./StatefulWorkflow/exposed_queries_and_signals.md#delete)
-     - [`subscribe`](./StatefulWorkflow/exposed_queries_and_signals.md#subscribe)
-     - [`unsubscribe`](./StatefulWorkflow/exposed_queries_and_signals.md#unsubscribe)
+     - [`subscribe`](./StatefulWorkflow/exposed_queries_and_signals.md#subscribe-opt-in-since-20) (opt-in)
+     - [`unsubscribe`](./StatefulWorkflow/exposed_queries_and_signals.md#unsubscribe-opt-in-since-20) (opt-in)
 
 6. [Dynamic Data Loading and API Integration](./StatefulWorkflow/dynamic_data_loading_and_api_integration.md)
    - [Loading Data Dynamically with `loadData`](./StatefulWorkflow/dynamic_data_loading_and_api_integration.md#loading-data-dynamically-with-loaddata)

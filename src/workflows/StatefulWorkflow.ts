@@ -14,7 +14,7 @@ import {
 import { detailedDiff, DetailedDiff } from 'deep-object-diff';
 import { schema, Schema } from 'normalizr';
 import { isEmpty, isEqual, isObject } from 'lodash';
-import { TemporalOptions, Workflow } from './Workflow';
+import { TemporalOptions, Workflow, toNonRetryableFailure } from './Workflow';
 import {
   Signal,
   Query,
@@ -31,13 +31,13 @@ import { EnhancedEntity, SchemaManager } from '../store/SchemaManager';
 import { StateManager } from '../store/StateManager';
 import { limitRecursion } from '../utils/limitRecursion';
 import { getCompositeKey } from '../utils/getCompositeKey';
-import { UpdateHandlerOptions } from '@temporalio/workflow/lib/interfaces';
 import { Duration, HandlerUnfinishedPolicy } from '@temporalio/common';
 import { flatten } from '../utils/flatten';
 import { unflatten } from '../utils';
 import { mergeDeepRight } from 'ramda';
 import { LRUCacheWithDelete } from 'mnemonist';
 import { sanitizePropertyKey } from '../utils/sanitizePropertyKey';
+import { getMetadata } from '../utils/metadata';
 
 /**
  * Configuration structure defining how entity paths and associated workflows are managed.
@@ -379,7 +379,6 @@ export abstract class StatefulWorkflow<
   /**
    * Internal state binding flags
    */
-  private _actionsBound: boolean = false;
   protected _eventsBound = false;
 
   private readonly selectorPatternCache = new Map<string, RegExp>();
@@ -409,6 +408,9 @@ export abstract class StatefulWorkflow<
    * Internal flag used to determine if there is currently an @Action() running (executeUpdate).
    */
   protected actionRunning: boolean = false;
+
+  /** StatefulWorkflow keeps its 1.x default: an action Update still running when the workflow ends is abandoned silently. */
+  protected actionUnfinishedPolicy: HandlerUnfinishedPolicy = HandlerUnfinishedPolicy.ABANDON;
 
   /**
    * Determines whether the workflow is a long running continueAsNew type workflow or a short lived one.
@@ -547,7 +549,9 @@ export abstract class StatefulWorkflow<
    *
    * @param apiToken - The API token to set.
    */
-  @Property({ set: false, memo: 'apiToken' })
+  // Since 2.0 the token is neither queryable nor written to the memo (both are readable by anyone with namespace
+  // read access). It still reaches children through their arguments and can be rotated with the apiToken signal.
+  @Property({ set: false, get: false })
   protected apiToken?: string;
 
   /**
@@ -885,7 +889,9 @@ export abstract class StatefulWorkflow<
   /**
    * The apiUrl for this workflows entity.
    */
-  @Property()
+  // 2.0: set only at start, from params or the @Temporal options. A signal could point the workflow at another server
+  // while it keeps sending the real token.
+  @Property({ set: false })
   protected apiUrl?: string;
 
   /**
@@ -895,10 +901,24 @@ export abstract class StatefulWorkflow<
   protected ancestorWorkflowIds: string[] = [];
 
   /**
-   * The initial parameters as provided to this workflow when started.
+   * The initial parameters as provided to this workflow when started. 2.0: the `params` query returns them without
+   * `apiToken` (see paramsQuery).
    */
-  @Property({ set: false })
+  @Property({ set: false, get: false })
   protected params: P;
+
+  /**
+   * The `params` query: the start parameters with `apiToken` removed. 1.x returned the token to anyone who could query.
+   */
+  @Query('params')
+  protected paramsQuery(): Partial<P> | undefined {
+    if (!this.params || typeof this.params !== 'object') {
+      return this.params;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { apiToken, ...rest } = this.params as any;
+    return rest;
+  }
 
   /**
    * The initial options as provided to this workflow when started.
@@ -978,7 +998,10 @@ export abstract class StatefulWorkflow<
     };
 
     if (!isEmpty(memo?.properties ?? {})) {
-      this._memoProperties = memo.properties;
+      // 2.0: a 1.x memo may still hold the token; it is never loaded back, and continue-as-new drops it.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { apiToken, ...properties } = memo.properties;
+      this._memoProperties = properties;
     }
 
     if (memo?.state && !isEmpty(memo.state)) {
@@ -1065,6 +1088,11 @@ export abstract class StatefulWorkflow<
           await this.emitAsync('paused');
           await this.forwardSignalToChildren('pause');
           await workflow.condition(() => this.status !== 'paused' || this.isInTerminalState());
+        }
+
+        // 2.0: a cancel stops here, cancels the children and fails the run (1.x ended it COMPLETED).
+        if (this.isCancelRequested()) {
+          await this.finishCancel();
         }
 
         if (!this.isInTerminalState() && this.shouldLoadData()) {
@@ -1267,7 +1295,30 @@ export abstract class StatefulWorkflow<
   }
 
   /**
+   * Register the `subscribe` and `unsubscribe` signals when the workflow opts in with
+   * @Temporal({ subscribeSignals: true }). 2.0: off by default, because signals don't say who sent them, so anyone who
+   * can signal the workflow could have it send its state to any workflow ID. Subscriptions passed in `params`
+   * (how parents and children subscribe) work either way.
+   */
+  @On('init')
+  protected bindSubscribeSignals() {
+    // @ts-ignore
+    if (this.options?.subscribeSignals !== true) {
+      return;
+    }
+    for (const name of ['subscribe', 'unsubscribe'] as const) {
+      const handler = async (subscription: Subscription) => {
+        this.log.trace(`[SIGNAL]:(${name})`);
+        await this[name](subscription);
+      };
+      this.signalHandlers[name] = handler as any;
+      workflow.setHandler(workflow.defineSignal<[Subscription]>(name), handler);
+    }
+  }
+
+  /**
    * Adds a subscription to the current instance, ensuring that it is unique.
+   * 2.0: a signal only with @Temporal({ subscribeSignals: true }).
    *
    * @signal
    * @public
@@ -1284,7 +1335,6 @@ export abstract class StatefulWorkflow<
    * - If the subscription is unique, it adds the subscription to the `subscriptions` list.
    * - Sets up a handle for interacting with the specified workflow via `subscriptionHandles`.
    */
-  @Signal()
   public async subscribe(subscription: Subscription): Promise<void> {
     this.log.trace(`subscribe`);
 
@@ -1313,7 +1363,6 @@ export abstract class StatefulWorkflow<
    * - If a matching subscription is found, it deletes the corresponding workflow handle from `subscriptionHandles`.
    * - Removes the identified subscription from the `subscriptions` list.
    */
-  @Signal()
   public async unsubscribe(subscription: Subscription): Promise<void> {
     this.log.trace(`unsubscribe`);
 
@@ -2624,8 +2673,8 @@ export abstract class StatefulWorkflow<
 
     const continueFn = workflow.makeContinueAsNewFunc({
       workflowType: String(this.workflowType),
-      memo: workflow.workflowInfo().memo,
-      searchAttributes: workflow.workflowInfo().searchAttributes
+      memo: withoutMemoToken(workflow.workflowInfo().memo),
+      typedSearchAttributes: workflow.workflowInfo().typedSearchAttributes
     });
 
     // Default parameters for continue-as-new
@@ -2802,73 +2851,6 @@ export abstract class StatefulWorkflow<
   }
 
   /**
-   * Binds action methods to workflow handlers based on metadata decorators.
-   *
-   * This method configures workflow action handlers for methods that have been decorated
-   * with action metadata. It sets up the execution context, validation, and behavior
-   * policies for each action method.
-   *
-   * @returns {Promise<void>} A promise that resolves when all actions have been bound.
-   *
-   * ## Key Features
-   * - Metadata-driven action configuration
-   * - Automatic validation of action inputs
-   * - Prevention of redundant action binding
-   * - Configurable handler unfinished policies
-   *
-   * ## Action Binding Process
-   * 1. Checks if actions have already been bound to prevent redundancy
-   * 2. Collects action metadata from class decorators
-   * 3. Retrieves associated validators for input validation
-   * 4. Iterates through each action with metadata
-   * 5. Configures workflow handlers with appropriate execution policies
-   * 6. Marks actions as bound to prevent future rebinding
-   *
-   * ## Handler Configuration
-   * - **method**: The class method to be executed when the action is triggered
-   * - **validator**: Optional function to validate action inputs
-   * - **unfinishedPolicy**: Policy for handling unfinished actions (defaults to ABANDON)
-   *
-   * ## Usage Example
-   * ```typescript
-   * await bindActions();
-   * ```
-   *
-   * ## Notes
-   * - Triggered automatically during workflow initialization via the @On('init') decorator
-   * - Uses the ACTIONS_METADATA_KEY and VALIDATOR_METADATA_KEY for metadata access
-   * - Sets the HandlerUnfinishedPolicy.ABANDON as the default unfinished policy
-   * - Prevents multiple bindings of the same actions through the _actionsBound flag
-   */
-  @On('init')
-  protected async bindActions() {
-    if (this._actionsBound) {
-      return;
-    }
-
-    const actions: ActionMetadata[] = Reflect.getMetadata(ACTIONS_METADATA_KEY, this.constructor.prototype) ?? [];
-    const validators = Reflect.getMetadata(VALIDATOR_METADATA_KEY, this.constructor.prototype) ?? {};
-
-    for (const { method } of actions) {
-      const methodName = method;
-      const updateOptions: UpdateHandlerOptions<any[]> = {};
-      const validatorMethod = validators[methodName];
-      if (validatorMethod) {
-        updateOptions.validator = (this as any)[validatorMethod].bind(this);
-      }
-      updateOptions.unfinishedPolicy = HandlerUnfinishedPolicy.ABANDON;
-
-      workflow.setHandler(
-        workflow.defineUpdate<any, any>(method),
-        (input: any) => this.runAction(methodName, input),
-        updateOptions
-      );
-    }
-
-    this._actionsBound = true;
-  }
-
-  /**
    * Binds event handlers to workflow and state manager events based on metadata decorators.
    *
    * This method configures event listeners for methods that have been decorated with event
@@ -2965,13 +2947,13 @@ export abstract class StatefulWorkflow<
    * - Provides consistent error handling for all action methods
    * - Sets pendingUpdate to true to ensure state is processed after action execution
    */
-  protected async runAction(methodName: keyof StatefulWorkflow<any, any>, input: any): Promise<any> {
+  protected async runAction(methodName: string, ...args: any[]): Promise<any> {
     this.actionRunning = true;
     let result: any;
     let error: any;
 
     try {
-      result = await (this[methodName] as (input: any) => any).call(this, input);
+      result = await (this as any)[methodName].apply(this, args);
     } catch (err: any) {
       error = err;
       this.log.error(error);
@@ -2982,9 +2964,10 @@ export abstract class StatefulWorkflow<
 
     await workflow.condition(() => !this.stateManager.processing && !this.pendingIteration);
 
-    // Return the result or the error if it exists
+    // 2.0: an error fails the Update, not the workflow task (1.x made it a plain Error, so the caller hung and the
+    // workflow timed out).
     if (error !== undefined) {
-      return Promise.reject(!(error instanceof Error) ? new Error(error) : error);
+      throw toNonRetryableFailure(error, 'ActionError');
     }
     return result !== undefined ? result : this.data;
   }
@@ -3006,7 +2989,6 @@ export abstract class StatefulWorkflow<
    */
   protected cleanup(): void {
     try {
-      this._actionsBound = false;
       this.actionRunning = false;
       this.pendingIteration = false;
       this.pendingUpdate = false;
@@ -3025,4 +3007,21 @@ export abstract class StatefulWorkflow<
       this.log.error(`Error cleaning up event listeners: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
+}
+
+/**
+ * A copy of a memo without the 1.x `properties.apiToken`, in nested or flattened form.
+ */
+function withoutMemoToken(memo: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!memo) {
+    return memo;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { 'properties.apiToken': flatToken, ...rest } = memo as Record<string, any>;
+  if (rest.properties && typeof rest.properties === 'object' && 'apiToken' in rest.properties) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { apiToken, ...properties } = rest.properties;
+    rest.properties = properties;
+  }
+  return rest;
 }

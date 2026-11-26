@@ -46,6 +46,8 @@ The `Workflow` class provides several key methods and mechanisms for controlling
    - **Resuming Workflows**:
      - To resume a paused workflow, another signal handler can be defined that updates the workflow's state to "resumed" and continues execution.
 
+   - **Built-in control signals (2.0)**: the base `Workflow` has `pause()`, `resume()` and `cancel()` methods. They are registered as `pause`, `resume` and `cancel` signals only with `@Temporal({ controlSignals: true })`, because otherwise anyone who can signal the workflow could stop it. A pause waits before the next step; a `cancel` signal cancels the children and fails the run with a `CancelledFailure` (use Temporal's own cancel for a `CANCELLED` close).
+
    ```typescript
    import { Workflow, Signal } from 'temporal-forge';
 

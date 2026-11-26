@@ -2,14 +2,20 @@ import { Workflow } from '../../workflows';
 import { Temporal } from '../../workflows';
 import { Query, Signal, Step } from '../../decorators';
 import { DSLDefinition } from '../../workflows/DSLInterpreter';
-import { sleep } from '@temporalio/workflow';
+import { proxyActivities, sleep } from '@temporalio/workflow';
 import { Duration } from '@temporalio/common';
+
+// 2.0: the DSL runs only the activities a workflow hands it. Name them in a plain object: a proxyActivities() proxy
+// answers to any name, so it would not limit what a plan can call.
+const { makeHTTPRequest, formatData, processResult } = proxyActivities<
+  Record<'makeHTTPRequest' | 'formatData' | 'processResult', (...args: string[]) => Promise<string | undefined>>
+>({ startToCloseTimeout: '1 minute' });
 
 /**
  * Example workflow that demonstrates how to use the DSLInterpreter
  * within the Temporal Forge framework.
  */
-@Temporal()
+@Temporal({ activities: { makeHTTPRequest, formatData, processResult } })
 export class DSLWorkflowExample extends Workflow {
   /**
    * Signal to update the DSLDefinition definition during workflow execution

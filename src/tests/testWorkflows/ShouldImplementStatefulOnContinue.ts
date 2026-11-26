@@ -17,6 +17,10 @@ export class ShouldImplementStatefulOnContinue extends StatefulWorkflow {
   @Property()
   protected counter: number = 0;
 
+  // 2.0: the test triggers continue-as-new by signal, so this workflow opts in to setting continueAsNew.
+  @Property({ set: true })
+  protected continueAsNew: boolean = false;
+
   /**
    * Main execution method for the workflow
    */

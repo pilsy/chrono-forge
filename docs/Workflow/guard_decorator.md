@@ -20,7 +20,7 @@ The `@Guard` decorator wraps the target method with additional logic that:
 1. Executes a check function before the method is called
 2. Passes all the original method arguments to the check function
 3. Only allows the original method to execute if the check function returns `true`
-4. Throws an error if the check function returns `false`
+4. Fails with an `ApplicationFailure` of type `GuardFailed` (non-retryable) if the check function returns `false`
 
 ## Usage Example
 
@@ -143,14 +143,16 @@ class AdminWorkflow extends Workflow {
 
 ### Error Customization
 
-By default, the `@Guard` decorator throws a generic error when the guard check fails. For more informative errors, you can create custom guard factories:
+By default, the `@Guard` decorator throws an `ApplicationFailure` of type `GuardFailed` when the guard check fails (since 2.0; 1.x threw a plain `Error`, which fails the workflow task and retries forever). For more informative errors, you can create custom guard factories. Throw an `ApplicationFailure` from them too, not a plain `Error`:
 
 ```typescript
+import { ApplicationFailure } from '@temporalio/workflow';
+
 function requirePermission(permission: string) {
   return function(this: any) {
     const hasPermission = this.hasPermission(permission);
     if (!hasPermission) {
-      throw new Error(`Permission denied: ${permission} is required`);
+      throw ApplicationFailure.nonRetryable(`Permission denied: ${permission} is required`, 'PermissionDenied');
     }
     return hasPermission;
   };

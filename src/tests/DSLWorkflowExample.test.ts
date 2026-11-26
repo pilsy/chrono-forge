@@ -18,7 +18,7 @@ describe('DSLWorkflowExample', () => {
   afterAll(async () => {
     await global.shutdown();
     // @ts-ignore
-    global.workflowCoverage.mergeIntoGlobalCoverage();
+    global.mergeWorkflowCoverage();
   });
 
   beforeEach(() => {

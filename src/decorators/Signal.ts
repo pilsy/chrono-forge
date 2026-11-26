@@ -1,5 +1,5 @@
-import 'reflect-metadata';
 import { SIGNAL_METADATA_KEY } from './metadata';
+import { defineMetadata, getOwnMetadata } from '../utils/metadata';
 
 export interface SignalOptions {
   /**
@@ -87,9 +87,9 @@ export interface SignalOptions {
  */
 export const Signal = (options?: string | SignalOptions) => {
   return (target: any, propertyKey: string) => {
-    const signals = Reflect.getOwnMetadata(SIGNAL_METADATA_KEY, target) ?? [];
+    const signals = getOwnMetadata(SIGNAL_METADATA_KEY, target) ?? [];
     const signalName = typeof options === 'string' ? options : (options?.name ?? propertyKey);
     signals.push([signalName, propertyKey, options && typeof options === 'object' ? options : undefined]);
-    Reflect.defineMetadata(SIGNAL_METADATA_KEY, signals, target);
+    defineMetadata(SIGNAL_METADATA_KEY, signals, target);
   };
 };

@@ -1,4 +1,5 @@
 import { condition, CancellationScope } from '@temporalio/workflow';
+import { ApplicationFailure } from '@temporalio/common';
 import type { Duration } from '@temporalio/common';
 
 /**
@@ -52,16 +53,26 @@ import type { Duration } from '@temporalio/common';
  * @see {@link condition} from '@temporalio/workflow'
  * @see {@link CancellationScope} from '@temporalio/workflow'
  */
-export const Condition = (conditionFn: () => boolean, timeout?: Duration) => {
+export const Condition = (conditionFn: (this: any) => boolean, timeout?: Duration) => {
   return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
     const originalMethod = descriptor.value;
 
-    descriptor.value = async function (...args: any[]) {
+    descriptor.value = async function (this: any, ...args: any[]) {
       return await CancellationScope.cancellable(async () => {
+        // 2.0: the condition sees the workflow as `this`, and a timeout fails closed. 1.x called it without `this`
+        // and ran the method anyway after the timeout.
+        const check = () => conditionFn.call(this);
         if (timeout) {
-          await condition(conditionFn, timeout);
+          const met = await condition(check, timeout);
+          if (!met) {
+            throw ApplicationFailure.create({
+              type: 'ConditionTimeout',
+              message: `@Condition for ${String(propertyKey)} was not met within ${String(timeout)}`,
+              nonRetryable: true
+            });
+          }
         } else {
-          await condition(conditionFn);
+          await condition(check);
         }
         return originalMethod.apply(this, args);
       });

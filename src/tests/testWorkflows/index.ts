@@ -17,3 +17,33 @@ export { ShouldImplementOnContinue } from './ShouldImplementOnContinue';
 export { ShouldImplementStatefulOnContinue } from './ShouldImplementStatefulOnContinue';
 export { DSLWorkflowExample } from './DSLWorkflowExample';
 export { ShouldExecuteSteps } from './ShouldExecuteSteps';
+export { ShouldAllowExplicitPropertySet } from './ShouldAllowExplicitPropertySet';
+export { ShouldNotAllowSettingBaseFields } from './ShouldNotAllowSettingBaseFields';
+export { ShouldRunActionsOnBaseWorkflow, ShouldRejectAsyncValidator } from './ShouldRunActionsOnBaseWorkflow';
+export {
+  ShouldCancelCleanly,
+  ShouldPassConditionWithThis,
+  ShouldFailOnConditionTimeout,
+  ShouldFailOnGuard,
+  ShouldPropagateConditionalMethodError,
+  ShouldFailOnConditionalConditionError,
+  ShouldNotEmitOnQuery
+} from './ShouldFailClosed';
+export {
+  ShouldInheritValidator,
+  ShouldUseSubclassValidator,
+  ShouldUseActionName,
+  ShouldRunDSLCodeWhenAllowed,
+  ShouldNotRunDSLCodeByDefault,
+  cancellableChild,
+  stubbornChild,
+  ShouldCancelChildOutsideScope
+} from './ShouldCoverStrictDefaults';
+export {
+  ShouldPauseBetweenSteps,
+  ShouldStopOnCancelSignal,
+  ShouldHaveNoControlSignalsByDefault,
+  ShouldRejectOnlyTheUpdate,
+  ShouldFailOnMisnamedValidator,
+  ShouldFailOnInitError
+} from './ShouldFixReviewFindings';

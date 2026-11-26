@@ -36,7 +36,7 @@ describe('StatefulWorkflow', () => {
 
   afterAll(() => {
     // @ts-ignore
-    global.workflowCoverage.mergeIntoGlobalCoverage();
+    global.mergeWorkflowCoverage();
   });
 
   describe('Workflow Initialization and State Validation', () => {
@@ -428,12 +428,79 @@ describe('StatefulWorkflow', () => {
 
       // Cancel the workflow
       await handle.signal('cancel');
-      await sleep();
 
-      // Verify workflow is in cancelling state
-      const statusAfterCancel = await handle.query('status');
-      expect(['cancelling', 'cancelled']).toContain(statusAfterCancel);
+      // 2.0: a cancel signal stops the workflow and fails the run (1.x ended it COMPLETED).
+      await expect(handle.result()).rejects.toThrow();
+      expect(await handle.query('status')).toBe('cancelled');
+      expect((await handle.describe()).status.name).toBe('FAILED');
+    });
 
+    it('Should cancel child workflows when the parent is cancelled (2.0: children end CANCELLED, not TERMINATED)', async () => {
+      const listingId = uuid4();
+      const data = { id: uuid4(), listings: [{ id: listingId, name: 'Test Listing' }] };
+      const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
+      await sleep(5000);
+
+      const childHandle = getClient().workflow.getHandle(`Listing-${listingId}`);
+      expect((await childHandle.describe()).status.name).toBe('RUNNING');
+
+      await handle.cancel();
+      await expect(handle.result()).rejects.toThrow();
+      await sleep(1000);
+
+      expect((await handle.describe()).status.name).toBe('CANCELLED');
+      expect((await childHandle.describe()).status.name).toBe('CANCELLED');
+    });
+
+    it('Should register no signal for data, managedPaths, pendingUpdate or continueAsNew, and no apiToken query (2.0)', async () => {
+      const data = { id: uuid4(), listings: [] };
+      const handle = await execute(workflows.ShouldExecuteStateful, { id: data.id, entityName: 'User', data });
+      await sleep(2000);
+      const meta = await handle.query('__temporal_workflow_metadata');
+      const names = (list) => (list ?? []).map((d) => d.name);
+      const signals = names(meta?.definition?.signalDefinitions);
+      const queries = names(meta?.definition?.queryDefinitions);
+      for (const field of ['data', 'managedPaths', 'pendingUpdate', 'continueAsNew']) {
+        expect(signals).not.toContain(field);
+      }
+      expect(signals).toEqual(expect.arrayContaining(['update', 'delete', 'apiToken']));
+      expect(queries).toEqual(expect.arrayContaining(['data', 'managedPaths', 'state']));
+      expect(queries).not.toContain('apiToken');
+    });
+
+    it('Should keep apiToken out of the params query, take apiUrl only at start, and register no subscribe signal (2.0)', async () => {
+      const listingId = uuid4();
+      const data = { id: uuid4(), listings: [{ id: listingId, name: 'Test Listing' }] };
+      const handle = await execute(workflows.ShouldExecuteStateful, {
+        id: data.id,
+        entityName: 'User',
+        data,
+        apiUrl: 'https://api.example.test',
+        apiToken: 'secret-token-value'
+      });
+      await sleep(5000);
+
+      const params = await handle.query('params');
+      expect(params).toMatchObject({ id: data.id, entityName: 'User', apiUrl: 'https://api.example.test' });
+      expect(params).not.toHaveProperty('apiToken');
+      expect(JSON.stringify(params)).not.toContain('secret-token-value');
+
+      const child = getClient().workflow.getHandle(`Listing-${listingId}`);
+      const childParams = await child.query('params');
+      expect(childParams).toMatchObject({ id: listingId });
+      expect(JSON.stringify(childParams)).not.toContain('secret-token-value');
+
+      const meta = await handle.query('__temporal_workflow_metadata');
+      const signals = (meta?.definition?.signalDefinitions ?? []).map((d) => d.name);
+      for (const name of ['apiUrl', 'subscribe', 'unsubscribe']) {
+        expect(signals).not.toContain(name);
+      }
+      // A signal with no handler changes nothing.
+      await handle.signal('apiUrl', 'https://attacker.example.test');
+      await sleep(500);
+      expect(await handle.query('apiUrl')).toBe('https://api.example.test');
+
+      await handle.signal('status', 'complete');
       await handle.result();
     });
 
@@ -748,7 +815,7 @@ describe('StatefulWorkflow', () => {
       expect(['CANCELLED', 'TERMINATED']).toContain(childStatus.name);
     });
 
-    it('should cancel child workflow when parent updated and child is no longer referenced using data signal', async () => {
+    it('should cancel child workflow when parent updated and child is no longer referenced (explicit signal)', async () => {
       const userId = uuid4();
       const listingId = uuid4();
       const listingData = {
@@ -776,7 +843,9 @@ describe('StatefulWorkflow', () => {
 
       // Update parent data to remove the listing
       data.listings = [];
-      await handle.signal('data', data);
+      // 2.0: 'data' is no longer settable by signal; the workflow's explicit deleteListing signal removes the reference
+      // through the same data proxy the old 'data' setter used.
+      await handle.signal('deleteListing', { listingId });
       await sleep(2500);
 
       // Verify child workflow is canceled

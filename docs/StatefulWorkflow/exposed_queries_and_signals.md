@@ -31,8 +31,10 @@ Queries in `StatefulWorkflow` allow you to retrieve information about the curren
 7. **`apiUrl`**
    - **Description**: Returns the current API URL used for making external data requests. This is useful for debugging or confirming which data source the workflow is configured to use, ensuring that it is pointing to the correct endpoint.
 
-8. **`apiToken`**
-   - **Description**: Returns the current API token used for authenticating API calls. This query is read-only and provides insight into the token value currently set for the workflow, which is important for ensuring secure access to external APIs.
+8. **`params`**
+   - **Description**: Returns the parameters the workflow was started with, **without `apiToken`** (since 2.0; 1.x returned the token too).
+
+Since 2.0 there is no `apiToken` query, and the token is no longer written to the memo: both are readable by anyone with read access to the namespace. The token still reaches child workflows through their arguments, and the `apiToken` signal below still rotates it.
 
 #### Exposed Signals
 
@@ -41,20 +43,23 @@ Signals in `StatefulWorkflow` allow external systems or other workflows to inter
 1. **`apiToken`**
    - **Description**: Sets the `apiToken` for the workflow and propagates it to all direct children. This signal is essential for synchronizing API tokens across all workflows interacting with external APIs, ensuring secure and consistent access.
 
-2. **`apiUrl`**
-   - **Description**: Sets the `apiUrl` for the workflow. This signal allows dynamic modification of the API endpoint used for data requests, providing flexibility to switch between different data sources as needed.
+Since 2.0 there is no `apiUrl` signal. A signal could point the workflow at another server while it kept sending the real token, so `apiUrl` is set only at start, from the workflow's start parameters or its `@Temporal` options. (Children take theirs the same way; a parent does not pass its `apiUrl` down.)
 
-3. **`update`**
+2. **`update`**
    - **Description**: Updates the workflow's state with new data or changes. This signal is crucial for dynamic state management and ensuring the workflow remains in sync with new information from external sources or other workflows.
 
-4. **`delete`**
+3. **`delete`**
    - **Description**: Removes specified entities from the workflow's state. This is important for cleaning up and optimizing the workflow state by removing unneeded data, thereby maintaining an efficient and accurate state representation.
 
-5. **`subscribe`**
+4. **`subscribe`** (opt-in since 2.0)
    - **Description**: Subscribes the workflow to state changes from another workflow. This signal allows the workflow to dynamically listen and react to changes in related workflows, ensuring that it remains responsive to the broader context of the system.
 
-6. **`unsubscribe`**
+5. **`unsubscribe`** (opt-in since 2.0)
    - **Description**: Unsubscribes the workflow from listening to another workflow's state changes. This signal is useful for managing and cleaning up unnecessary subscriptions, reducing overhead, and preventing potential data synchronization issues.
+
+Since 2.0, `subscribe` and `unsubscribe` are registered only with `@Temporal({ subscribeSignals: true })`. Signals don't say who sent them, so otherwise anyone who can signal the workflow could make it send its state to any workflow ID. Subscriptions passed in the start parameters, which is how parents and children subscribe to each other, work either way.
+
+The base `Workflow`'s `pause`, `resume` and `cancel` signals are likewise registered only with `@Temporal({ controlSignals: true })`; see the [migration guide](../../MIGRATION-2.0.md).
 
 #### Summary
 

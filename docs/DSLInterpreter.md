@@ -115,6 +115,11 @@ The DSL interpreter uses a dependency graph to manage execution:
 
 ### Code Execution
 
+> **Off by default since 2.0.** A `code` statement is JavaScript compiled from a string, so a plan from an untrusted
+> source could run anything inside the workflow. Enable it only for plans you wrote yourself: `@Temporal({ allowDSLCode:
+> true })` on the workflow, or `DSLInterpreter(dsl, activities, steps, { allowCode: true })`. Otherwise a code statement
+> fails with `ApplicationFailure` type `DSLCodeDisabled`.
+
 The DSL supports direct code execution with the `code` property:
 
 ```typescript
@@ -296,7 +301,10 @@ const dsl: DSLDefinition = {
   }
 };
 
-const interpreter = DSLInterpreter(dsl, activities, steps);
+// Only the activities and steps you pass in can run (since 2.0). An unknown name fails with `DSLActivityNotFound` /
+// `DSLStepNotFound` instead of falling back to a proxy for any activity. This example's first statement is code, so it
+// also needs `{ allowCode: true }`.
+const interpreter = DSLInterpreter(dsl, activities, steps, { allowCode: true });
 
 for await (const generation of interpreter) {
   const result = await generation.execute();

@@ -103,7 +103,7 @@ const status = await handle.query.getOrderStatus();
 
 ## Property Management
 
-The `@Property` decorator simplifies state management by automatically generating signal and query handlers for class properties.
+The `@Property` decorator simplifies state management by generating a query handler for a class property and, when you opt in with `set`, a signal handler that sets it. Since 2.0 properties are read-only by default.
 
 ### Using Property Decorators
 
@@ -112,17 +112,13 @@ import { Workflow, Temporal, Property } from 'chrono-forge';
 
 @Temporal({ name: 'UserWorkflow' })
 class UserWorkflow extends Workflow {
-  @Property()
+  @Property({ set: true })            // queryable, and settable by the 'username' signal
   private username: string = '';
   
-  @Property({ readonly: true })
-  private createdAt: Date = new Date();
+  @Property()                         // queryable only (the default since 2.0)
+  private createdAt: string = '';
   
-  @Property({
-    onUpdate: function(newValue) {
-      this.log.info(`Email updated to: ${newValue}`);
-    }
-  })
+  @Property({ set: 'changeEmail' })   // settable by a signal with its own name
   private email: string = '';
   
   protected async execute(): Promise<any> {
@@ -135,10 +131,10 @@ class UserWorkflow extends Workflow {
 
 The `@Property` decorator accepts an options object with the following properties:
 
-- `readonly`: If true, only generates a query handler (no signal handler)
-- `name`: Custom name for the property (defaults to the property name)
-- `onUpdate`: Function to call when the property is updated via a signal
-- `validate`: Function to validate new values before updating the property
+- `get`: `true` (default) creates a query named after the property; a string sets the query name; `false` creates none
+- `set`: `false` (default since 2.0) creates no signal; `true` creates a signal named after the property; a string sets the signal name
+- `path`: for `StatefulWorkflow`, read and write the property at this path in the workflow's `data`
+- `memo`: also keep the value in the workflow memo (`true` uses the property name, a string sets the memo key)
 
 ### Accessing Properties
 
@@ -148,8 +144,8 @@ From a client or activity:
 // Get a handle to the workflow
 const handle = client.workflow.getHandle('workflowId');
 
-// Update a property
-await handle.signal.setEmail('user@example.com');
+// Update a property that opted in with `set: 'changeEmail'`
+await handle.signal('changeEmail', 'user@example.com');
 
 // Query a property
 const username = await handle.query.getUsername();

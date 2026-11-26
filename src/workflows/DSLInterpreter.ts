@@ -1,4 +1,5 @@
-import { proxyActivities, inWorkflowContext, condition } from '@temporalio/workflow';
+import { inWorkflowContext, condition } from '@temporalio/workflow';
+import { ApplicationFailure, TemporalFailure } from '@temporalio/common';
 import { DirectedGraph } from 'eventemitter3-graphology';
 import { hasCycle, topologicalGenerations } from 'graphology-dag';
 import { StepMetadata } from '../decorators/Step';
@@ -89,13 +90,17 @@ export async function* DSLInterpreter(
   injectedSteps?: Record<string, (...args: string[]) => Promise<string | undefined>>,
   options?: {
     visualizationFormat?: 'list' | 'tree';
+    /**
+     * Run `execute.code` statements. Off by default since 2.0: a code statement is JavaScript compiled from a string
+     * (`new Function`), so a plan from an untrusted source could run anything inside the workflow.
+     */
+    allowCode?: boolean;
   }
 ): AsyncGenerator<DSLGeneration, void, unknown> {
-  const acts =
-    injectedActivities ||
-    proxyActivities<Record<string, (...args: string[]) => Promise<string | undefined>>>({
-      startToCloseTimeout: '1 minute'
-    });
+  // 2.0: only the activities the workflow passes in can run. 1.x fell back to proxyActivities for any name, with the
+  // default retry policy (retries without limit).
+  const acts = injectedActivities ?? {};
+  const dslOptions = { allowCode: options?.allowCode === true };
 
   const steps = injectedSteps || {};
   const visualizationFormat = options?.visualizationFormat ?? 'tree';
@@ -114,7 +119,7 @@ export async function* DSLInterpreter(
     }
   });
 
-  const graph = buildDependencyGraph(dsl.plan, bindings);
+  const graph = buildDependencyGraph(dsl.plan, bindings, undefined, undefined, dslOptions);
   const generations = topologicalGenerations(graph);
 
   if (generations.length === 0) {
@@ -174,20 +179,29 @@ export async function* DSLInterpreter(
             continue;
           }
         } catch (error) {
-          console.error(`Error evaluating condition for ${nodeId}:`, error);
-          skippedNodes.add(nodeId);
-          continue;
+          // 2.0: a `when` that throws fails the run. 1.x skipped the node silently.
+          throw ApplicationFailure.create({
+            type: 'DSLConditionError',
+            message: `DSL 'when' for ${nodeId} threw: ${error instanceof Error ? error.message : String(error)}`,
+            nonRetryable: true,
+            cause: error instanceof Error ? error : undefined
+          });
         }
       }
 
       // Handle wait if it exists
       if (node.wait) {
+        let waitTimedOut = false;
         try {
           if (inWorkflowContext()) {
-            await condition(
-              Array.isArray(node.wait) ? node.wait[0] : node.wait,
-              Array.isArray(node.wait) ? node.wait[1] : undefined
-            );
+            const timeout = Array.isArray(node.wait) ? node.wait[1] : undefined;
+            const waitFn = Array.isArray(node.wait) ? node.wait[0] : node.wait;
+            if (timeout !== undefined && timeout !== null) {
+              // condition() resolves false when the timeout passes first.
+              waitTimedOut = !(await condition(waitFn, timeout));
+            } else {
+              await condition(waitFn);
+            }
           } else {
             // Non-workflow context handling
             const waitFn = Array.isArray(node.wait) ? node.wait[0] : node.wait;
@@ -198,21 +212,29 @@ export async function* DSLInterpreter(
 
             while (!waitFn(dsl.variables, dsl.plan)) {
               if (hasTimeout && Date.now() - startTime > timeoutMs) {
-                console.log(`Timeout waiting for condition on node ${nodeId}`);
-                skippedNodes.add(nodeId);
+                waitTimedOut = true;
                 break;
               }
               await new Promise((resolve) => setTimeout(resolve, 100));
             }
-
-            if (skippedNodes.has(nodeId)) {
-              continue;
-            }
           }
         } catch (error) {
-          console.error(`Error in wait condition for ${nodeId}:`, error);
-          skippedNodes.add(nodeId);
-          continue;
+          // 2.0: a wait condition that throws fails the run. 1.x skipped the node silently.
+          throw ApplicationFailure.create({
+            type: 'DSLConditionError',
+            message: `DSL 'wait' for ${nodeId} threw: ${error instanceof Error ? error.message : String(error)}`,
+            nonRetryable: true,
+            cause: error instanceof Error ? error : undefined
+          });
+        }
+        if (waitTimedOut) {
+          // 2.0: fail closed, like @Condition. 1.x ran the node after the timeout even though the condition never
+          // became true.
+          throw ApplicationFailure.create({
+            type: 'DSLWaitTimeout',
+            message: `DSL 'wait' for ${nodeId} timed out before its condition became true`,
+            nonRetryable: true
+          });
         }
       }
 
@@ -247,7 +269,8 @@ function buildDependencyGraph(
   plan: Statement,
   bindings: Record<string, string | undefined>,
   existingGraph?: DirectedGraph,
-  startId?: number
+  startId?: number,
+  dslOptions: { allowCode?: boolean } = {}
 ): DirectedGraph {
   let autoIncrementId = startId ?? 0;
 
@@ -264,8 +287,18 @@ function buildDependencyGraph(
   ) => {
     return async ({ activities, steps, variables, plan }: ExecutionContext) => {
       executorMap = executorMap ?? (type === 'activity' ? activities : steps);
-      if (!executorMap?.[name]) {
-        throw new Error(`${type} function '${name}' not found`);
+      // 2.0: only the map's own entries count. 1.x used map[name], so inherited names such as 'constructor' or
+      // 'hasOwnProperty' passed the allow-list.
+      if (
+        !executorMap ||
+        !Object.prototype.hasOwnProperty.call(executorMap, name) ||
+        typeof executorMap[name] !== 'function'
+      ) {
+        throw ApplicationFailure.create({
+          type: type === 'activity' ? 'DSLActivityNotFound' : 'DSLStepNotFound',
+          message: `${type} function '${name}' not found${type === 'activity' ? ' in the activities given to the workflow' : ''}`,
+          nonRetryable: true
+        });
       }
 
       const resolvedArgs = args.map((arg) => {
@@ -337,7 +370,13 @@ function buildDependencyGraph(
           wait,
           required,
           execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
-            const tempGraph = buildDependencyGraph({ sequence: { elements } }, bindings, undefined, autoIncrementId);
+            const tempGraph = buildDependencyGraph(
+              { sequence: { elements } },
+              bindings,
+              undefined,
+              autoIncrementId,
+              dslOptions
+            );
             autoIncrementId += 1000;
 
             await executeGraphByGenerations(
@@ -386,7 +425,13 @@ function buildDependencyGraph(
             for (const as of itemsArray) {
               bindings[statement.foreach!.as] = as;
 
-              const tempGraph = buildDependencyGraph(statement.foreach!.body, bindings, undefined, autoIncrementId);
+              const tempGraph = buildDependencyGraph(
+                statement.foreach!.body,
+                bindings,
+                undefined,
+                autoIncrementId,
+                dslOptions
+              );
               autoIncrementId += 1000;
 
               await executeGraphByGenerations(
@@ -409,7 +454,13 @@ function buildDependencyGraph(
           wait: statement.wait,
           execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
             while (await statement.while!.condition(variables, plan)) {
-              const tempGraph = buildDependencyGraph(statement.while!.body, bindings, undefined, autoIncrementId);
+              const tempGraph = buildDependencyGraph(
+                statement.while!.body,
+                bindings,
+                undefined,
+                autoIncrementId,
+                dslOptions
+              );
               autoIncrementId += 1000;
 
               await executeGraphByGenerations(
@@ -432,7 +483,13 @@ function buildDependencyGraph(
           wait: statement.wait,
           execute: async ({ activities, steps, variables, plan }: ExecuteInput) => {
             do {
-              const tempGraph = buildDependencyGraph(statement.doWhile!.body, bindings, undefined, autoIncrementId);
+              const tempGraph = buildDependencyGraph(
+                statement.doWhile!.body,
+                bindings,
+                undefined,
+                autoIncrementId,
+                dslOptions
+              );
               autoIncrementId += 1000;
 
               await executeGraphByGenerations(
@@ -456,6 +513,13 @@ function buildDependencyGraph(
         } else if (code) {
           nodeId = addNodeAndDependencies('code', name, args, store, statement, {
             [name]: async (...vals: any[]) => {
+              if (!dslOptions.allowCode) {
+                throw ApplicationFailure.create({
+                  type: 'DSLCodeDisabled',
+                  message: `DSL code statement '${name}' is disabled; set allowCode (or @Temporal({ allowDSLCode: true })) to run it`,
+                  nonRetryable: true
+                });
+              }
               const context: Record<string, any> = {};
 
               for (let i = 0; i < args.length; i++) {
@@ -645,10 +709,31 @@ async function executeGenerationWithErrorHandling(
     })
   );
 
-  // Check if any operations failed
-  const failures = results.filter((r) => r.status === 'rejected');
-  if (failures.length > 0) {
-    throw new Error(`${failures.length} operations failed in this generation`);
+  // 2.0: keep the failure's type. A single failure is rethrown as it is; several become one non-retryable failure
+  // carrying the first one's type. 1.x replaced them with a plain Error, so a nested gate (code disabled, unknown
+  // activity) made Temporal retry the workflow task forever instead of failing the run.
+  const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+  if (failures.length === 1) {
+    throw failures[0].reason;
+  }
+  if (failures.length > 1) {
+    const first = failures[0].reason;
+    const type =
+      first instanceof ApplicationFailure && first.type
+        ? first.type
+        : first instanceof TemporalFailure
+          ? first.name
+          : first instanceof Error && first.name !== 'Error'
+            ? first.name
+            : 'DSLGenerationFailed';
+    throw ApplicationFailure.create({
+      type,
+      message: `${failures.length} operations failed in this generation; first: ${
+        first instanceof Error ? first.message : String(first)
+      }`,
+      nonRetryable: true,
+      cause: first instanceof Error ? first : undefined
+    });
   }
 }
 

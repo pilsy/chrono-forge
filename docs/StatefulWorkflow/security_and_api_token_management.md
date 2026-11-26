@@ -11,7 +11,7 @@
 Managing API tokens within a hierarchical workflow system is challenging due to the need for consistency and security. `StatefulWorkflow` addresses these challenges by centralizing the management of API tokens and providing a seamless mechanism for propagating these tokens across workflows.
 
 - **Centralized API Token Setting**: A parent workflow can set an API token that is propagated to all its direct children, ensuring that each child workflow has access to the necessary credentials. This centralized approach simplifies token management and ensures consistency across the workflow hierarchy.
-- **Read-Only Queries for Token Retrieval**: Workflows can use the `apiToken` query to retrieve the current API token being used. This read-only access helps monitor and debug token usage without exposing the token to potential modifications.
+- **No Token Read-Back**: Since 2.0 the token can't be read from outside: there is no `apiToken` query and it isn't kept in the workflow memo, because both are readable by anyone with read access to the namespace.
 - **Controlled Token Updates**: If an API token needs to be updated (e.g., during a token rotation), the parent workflow can use the `apiToken` signal to set a new token. This signal-based approach ensures that all child workflows receive the updated token in real time.
 
 By centralizing token management, `StatefulWorkflow` reduces the risk of security breaches and ensures consistent token usage across all workflows.
@@ -42,7 +42,7 @@ To ensure secure and efficient communication across workflows, `StatefulWorkflow
 
 - **Regular Token Rotation**: Regularly rotate API tokens to minimize the risk of exposure or misuse. Use signals to propagate new tokens across workflows in real-time to ensure consistency and security.
 - **Use Least Privilege Principle**: Only propagate API tokens to workflows that require them. This reduces the risk of unauthorized access and ensures that sensitive credentials are only shared where necessary.
-- **Monitor and Audit Token Usage**: Use the `apiToken` query to monitor token usage across workflows and audit access logs to detect any unusual or unauthorized behavior.
+- **Monitor and Audit Token Usage**: Audit token use where it is checked (your API's access logs), not by reading tokens back from workflows.
 - **Ensure Secure Signal Handling**: Secure signal-based propagation by ensuring that only authorized workflows can send or receive signals that involve sensitive information, such as API tokens.
 
 By following these best practices, developers can ensure that `StatefulWorkflow` systems remain secure, efficient, and compliant with best practices for API management and secure communication.

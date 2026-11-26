@@ -1,3 +1,5 @@
+import { ApplicationFailure } from '@temporalio/common';
+
 /**
  * Decorator that conditionally executes a method based on a supplied condition function.
  * Unlike the @Condition decorator which waits for a condition to be met, @Conditional
@@ -55,17 +57,25 @@ export function Conditional<T = any>(
     const originalMethod = descriptor.value;
 
     descriptor.value = async function (this: T, ...args: any[]) {
+      // 2.0: only the condition is guarded here. A condition that throws fails closed (the method is not run and the
+      // error propagates), and an error from the method itself propagates. 1.x caught both and returned undefined.
+      let shouldExecute: boolean;
       try {
-        const shouldExecute = await condition.apply(this, [this, ...args]);
-        if (shouldExecute) {
-          return await originalMethod.apply(this, args);
-        } else {
-          // @ts-ignore
-          this.log?.info?.(`Conditional: Skipping ${String(propertyKey)} as condition not met.`);
-        }
+        shouldExecute = await condition.apply(this, [this, ...args]);
       } catch (error) {
-        console.error(`Error executing condition for ${String(propertyKey)}:`, error);
+        throw ApplicationFailure.create({
+          type: 'ConditionalError',
+          message: `@Conditional condition for ${String(propertyKey)} threw: ${error instanceof Error ? error.message : String(error)}`,
+          nonRetryable: true,
+          cause: error instanceof Error ? error : undefined
+        });
       }
+      if (shouldExecute) {
+        return await originalMethod.apply(this, args);
+      }
+      // @ts-ignore
+      this.log?.info?.(`Conditional: Skipping ${String(propertyKey)} as condition not met.`);
+      return undefined;
     };
   };
 }

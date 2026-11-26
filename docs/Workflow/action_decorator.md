@@ -14,6 +14,8 @@ The `@Action` decorator is a core feature in the ChronoForge framework that allo
 
 #### **How the `@Action` Decorator Works**
 
+Since 2.0, `@Action` works on every `Workflow`, not only `StatefulWorkflow`: each action is bound as a Temporal **Workflow Update** named after the method (or `options.name`). Clients call it with `handle.executeUpdate('name', { args: [input] })`.
+
 When the `@Action` decorator is applied to a method in a workflow class, it performs the following:
 
 1. **Registers the Method as an Action**: The method is registered in the workflow's metadata as an executable action.
@@ -27,6 +29,8 @@ The `@Action` decorator accepts an optional configuration object with the follow
 
 ```typescript
 export interface ActionOptions<TInput = any, TOutput = any> {
+  name?: string;                                // Update name (defaults to the method name)
+  unfinishedPolicy?: HandlerUnfinishedPolicy;   // what happens if the workflow closes while the Update runs
   blocking?: boolean;
   inputType?: TInput;
   outputType?: TOutput;
@@ -180,15 +184,17 @@ class OrderWorkflow extends StatefulWorkflow {
 }
 ```
 
-The validator runs automatically before the action is executed. If the validator throws an error, the action won't execute and the error will be propagated to the caller.
+The validator runs as the Update's validator, before the Update is accepted. If it throws, the Update is rejected, the action doesn't run, the caller gets the error, and nothing is written to the workflow history.
+
+**Validators must be synchronous.** Temporal ignores a validator's return value, so an `async` validator that rejects would still accept the Update. Since 2.0 an `async` validator fails the workflow at start-up (`ApplicationFailure` type `InvalidValidator`), and a validator that returns a Promise rejects the Update. Validators are collected along the class chain; a subclass's validator for the same action wins.
 
 #### **Action Execution Flow**
 
 When an action is executed, the following occurs:
 
-1. The `actionRunning` flag is set to prevent concurrent execution of blocking actions.
-2. If a validator exists for the action, it runs to validate the input.
-3. The action method is called with the provided input.
+1. If a validator exists for the action, it runs first; if it throws, the Update is rejected and nothing below happens.
+2. In `StatefulWorkflow`, the `actionRunning` flag is set to prevent concurrent execution of blocking actions.
+3. The action method is called with the provided input. On a plain `Workflow`, its result or error goes straight back to the caller; the remaining steps apply to `StatefulWorkflow`.
 4. Any errors during execution are caught and logged.
 5. The `pendingIteration` flag is set to trigger a state update cycle.
 6. The system waits for any pending state operations to complete.

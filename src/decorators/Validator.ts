@@ -1,5 +1,5 @@
-import 'reflect-metadata';
 import { VALIDATOR_METADATA_KEY } from './metadata';
+import { defineMetadata, getOwnMetadata } from '../utils/metadata';
 
 /**
  * Validator decorator for type-safe action validation in StatefulWorkflow.
@@ -21,9 +21,9 @@ import { VALIDATOR_METADATA_KEY } from './metadata';
  */
 export function Validator<T = any>(actionName: string) {
   return (target: any, propertyKey: string) => {
-    const validators = Reflect.getMetadata(VALIDATOR_METADATA_KEY, target) ?? {};
+    const validators = { ...(getOwnMetadata(VALIDATOR_METADATA_KEY, target) ?? {}) };
     validators[actionName] = propertyKey;
 
-    Reflect.defineMetadata(VALIDATOR_METADATA_KEY, validators, target);
+    defineMetadata(VALIDATOR_METADATA_KEY, validators, target);
   };
 }

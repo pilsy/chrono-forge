@@ -96,10 +96,10 @@ This document provides an overview of the decorators provided by ChronoForge. Fo
 
 ## 6. `@Property` Decorator
 
-- **Purpose**: The `@Property` decorator simplifies the creation of properties with associated query and signal handlers, allowing external systems to get and set property values.
+- **Purpose**: The `@Property` decorator exposes a class property to external systems through a query, and optionally lets them set it through a signal.
 - **Key Features**:
-  - Automatically creates query handlers for getting property values.
-  - Automatically creates signal handlers for setting property values.
+  - Automatically creates a query handler for getting the property value.
+  - Creates a signal handler for setting the value only when you opt in with `set: true` or `set: 'signalName'` (since 2.0; 1.x created one for every property).
   - Supports custom naming for query and signal handlers.
 - **Usage**: Place the `@Property` decorator above a class property.
 - **Example**:
@@ -109,14 +109,14 @@ This document provides an overview of the decorators provided by ChronoForge. Fo
 
   @Temporal()
   class ExampleWorkflow extends Workflow {
-    @Property()
-    protected status: string = 'running';
+    @Property({ set: true })
+    protected label: string = 'draft';
 
-    @Property({ get: 'getCustomStatus', set: false })
+    @Property({ get: 'getCustomStatus' })
     protected internalStatus: string = 'initialized';
 
     protected async execute() {
-      // The status property can be queried with 'status' and set with 'status'
+      // The label property can be queried with 'label' and set with the 'label' signal
       // The internalStatus property can be queried with 'getCustomStatus' but cannot be set
     }
   }
