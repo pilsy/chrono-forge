@@ -28,9 +28,34 @@ declare global {
   var getClient: () => Client;
   var execute: (workflowName: string, params: any, timeout: number) => () => any;
   var workflowCoverage: WorkflowCoverage;
+  var mergeWorkflowCoverage: () => void;
   var sleep: (duration?: number) => Promise<void>;
   var activities: { [key: string]: (...args: any[]) => Promise<any> };
 }
+
+/**
+ * Merge the coverage collected inside the workflow sandbox into Jest's global coverage, then unwrap any entry that
+ * arrives as `{ data: … }`. Jest's coverage reporter rejects wrapped entries ("Invalid file coverage object, missing
+ * keys, found:data"); in a parallel run that silently dropped whole suites from the report while `npm test` still
+ * exited 0, and in a serial run it failed later suites in the same process.
+ */
+export const normalizeCoverage = () => {
+  const coverage = (globalThis as any).__coverage__ as Record<string, any> | undefined;
+  for (const [file, original] of Object.entries(coverage ?? {})) {
+    let entry = original;
+    while (entry && !entry.statementMap && (entry.data || typeof entry.toJSON === 'function')) {
+      const next = typeof entry.toJSON === 'function' ? entry.toJSON() : entry.data;
+      if (next === entry) break;
+      entry = next;
+    }
+    coverage![file] = entry;
+  }
+};
+
+global.mergeWorkflowCoverage = () => {
+  global.workflowCoverage.mergeIntoGlobalCoverage();
+  normalizeCoverage();
+};
 
 global.activities = {
   // @ts-ignore
@@ -110,9 +135,11 @@ export const setup = async () => {
 
   const runPromise = global.worker.run();
   global.shutdown = async () => {
-    global.worker.shutdown();
+    if (global.worker.getState() === 'RUNNING') {
+      global.worker.shutdown();
+    }
     await runPromise;
     await global.testEnv.teardown();
-    await Runtime._instance?.shutdown();
+    // The Runtime is process-wide; with --runInBand the next test file creates its worker on the same Runtime.
   };
 };

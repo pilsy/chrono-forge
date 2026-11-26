@@ -5,10 +5,20 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
 
 jobs:
   run-tests:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['22', '24']
 
     steps:
       - name: Checkout repository
@@ -17,10 +27,15 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node-version }}
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Build
+        run: npm run build
+
+      # Unit suites, then each integration suite in its own process (see package.json).
       - name: Run tests
         run: npm test

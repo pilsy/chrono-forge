@@ -1,7 +1,12 @@
-import 'reflect-metadata';
 import { ACTIONS_METADATA_KEY } from './metadata';
+import { defineMetadata, getOwnMetadata } from '../utils/metadata';
+import type { HandlerUnfinishedPolicy } from '@temporalio/common';
 
 export interface ActionOptions<TInput = any, TOutput = any> {
+  /** The Update name (defaults to the method name). */
+  name?: string;
+  /** What happens when the workflow finishes while this Update is still running (defaults to the workflow's policy). */
+  unfinishedPolicy?: HandlerUnfinishedPolicy;
   blocking?: boolean;
   inputType?: TInput;
   outputType?: TOutput;
@@ -52,11 +57,11 @@ export interface ActionOptions<TInput = any, TOutput = any> {
  */
 export function Action<TInput, TOutput>(options?: ActionOptions<TInput, TOutput>) {
   return (target: any, propertyKey: string) => {
-    const actions = Reflect.getMetadata(ACTIONS_METADATA_KEY, target) || [];
+    const actions = [...(getOwnMetadata(ACTIONS_METADATA_KEY, target) ?? [])];
     actions.push({
       method: propertyKey,
       options: options || {}
     });
-    Reflect.defineMetadata(ACTIONS_METADATA_KEY, actions, target);
+    defineMetadata(ACTIONS_METADATA_KEY, actions, target);
   };
 }

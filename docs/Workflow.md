@@ -15,7 +15,7 @@ The core philosophy behind the `Workflow` class is to simplify the development o
 - **Action System**: Type-safe business logic operations using the `@Action` decorator.
 - **Event-Based Communication**: Integrated EventEmitter functionality for event-driven workflow design.
 - **Child Workflow Management**: Support for creating and managing child workflows.
-- **Execution Flow Control**: Built-in capabilities to pause, resume, and cancel workflows.
+- **Execution Flow Control**: Built-in capabilities to pause, resume, and cancel workflows (as signals only with `@Temporal({ controlSignals: true })` since 2.0).
 - **Continuation Support**: Handling of workflow continuation through the `continueAsNew` mechanism.
 - **Structured Logging**: Integrated logging with workflow context information.
 - **OpenTelemetry Integration**: Built-in tracing for monitoring and debugging workflow execution.

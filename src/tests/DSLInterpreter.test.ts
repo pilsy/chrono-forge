@@ -2,7 +2,11 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
-import { DSLInterpreter, DSLDefinition, convertStepsToDSL } from '../workflows/DSLInterpreter';
+import { DSLInterpreter as StrictDSLInterpreter, DSLDefinition, convertStepsToDSL } from '../workflows/DSLInterpreter';
+
+// These tests exercise the interpreter's mechanics, code statements included, so they opt in to code (2.0 default: off).
+const DSLInterpreter: typeof StrictDSLInterpreter = (dsl, activities, steps, options) =>
+  StrictDSLInterpreter(dsl, activities, steps, { allowCode: true, ...options });
 import { StepMetadata } from '../decorators/Step';
 
 // Mock the @temporalio/workflow module
@@ -912,7 +916,7 @@ describe('DSLInterpreter', () => {
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('should skip node when wait condition times out', async () => {
+  it('should fail when a wait condition times out (2.0: fail closed)', async () => {
     const dsl: DSLDefinition = {
       variables: { ready: false },
       plan: {
@@ -925,13 +929,9 @@ describe('DSLInterpreter', () => {
     };
 
     const interpreter = DSLInterpreter(dsl, global.activities);
-    const generation = await interpreter.next();
 
-    console.log(generation);
-
-    // The node should be skipped due to timeout
-    // The interpreter should not yield a generation for this node
-    expect(generation.done).toBe(true);
+    // 1.x skipped the node; 2.0 fails the run, like @Condition.
+    await expect(interpreter.next()).rejects.toMatchObject({ type: 'DSLWaitTimeout', nonRetryable: true });
     expect(global.activities.makeHTTPRequest).not.toHaveBeenCalled();
     expect(dsl.variables.result).toBeUndefined();
   });
@@ -1020,7 +1020,7 @@ describe('DSLInterpreter', () => {
     expect(global.activities.makeHTTPRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('should handle error in condition evaluation', async () => {
+  it('should fail when a condition throws (2.0: fail closed)', async () => {
     const dsl: DSLDefinition = {
       variables: {},
       plan: {
@@ -1035,10 +1035,9 @@ describe('DSLInterpreter', () => {
     };
 
     const interpreter = DSLInterpreter(dsl, global.activities);
-    const generation = await interpreter.next();
-    expect(generation.done).toBe(true);
 
-    // Activity should be skipped due to condition error
+    // 1.x skipped the node silently; 2.0 fails the run.
+    await expect(interpreter.next()).rejects.toMatchObject({ type: 'DSLConditionError', nonRetryable: true });
     expect(global.activities.makeHTTPRequest).not.toHaveBeenCalled();
   });
 
@@ -2044,6 +2043,87 @@ describe('DSLInterpreter', () => {
       }
 
       expect(containsStep4).toBe(true);
+    });
+  });
+});
+
+describe('DSLInterpreter 2.0 defaults', () => {
+  const run = async (interpreter: AsyncGenerator<any, void, unknown>) => {
+    for await (const generation of interpreter) {
+      await generation.execute();
+    }
+  };
+
+  it('refuses code statements unless allowCode is set', async () => {
+    const dsl: DSLDefinition = {
+      variables: {},
+      plan: { execute: { name: 'compute', code: 'return 1 + 1;', store: 'result' } }
+    };
+    await expect(run(StrictDSLInterpreter(dsl, {}))).rejects.toMatchObject({ type: 'DSLCodeDisabled' });
+    await run(StrictDSLInterpreter({ variables: {}, plan: dsl.plan }, {}, undefined, { allowCode: true }));
+  });
+
+  it('runs only the activities it is given (no implicit proxy for any name)', async () => {
+    const dsl: DSLDefinition = {
+      variables: { input: 'x' },
+      plan: { execute: { activity: 'notGiven', with: ['input'], store: 'out' } }
+    };
+    await expect(run(StrictDSLInterpreter(dsl))).rejects.toMatchObject({ type: 'DSLActivityNotFound' });
+    await expect(run(StrictDSLInterpreter(dsl, { other: async () => 'y' }))).rejects.toMatchObject({
+      type: 'DSLActivityNotFound'
+    });
+  });
+
+  it("rejects inherited names: only the map's own activities and steps run", async () => {
+    for (const name of ['constructor', 'hasOwnProperty', 'toString', '__proto__']) {
+      const activityPlan: DSLDefinition = { variables: {}, plan: { execute: { activity: name, store: 'out' } } };
+      await expect(run(StrictDSLInterpreter(activityPlan, { real: async () => 'r' }))).rejects.toMatchObject({
+        type: 'DSLActivityNotFound'
+      });
+      const stepPlan: DSLDefinition = { variables: {}, plan: { execute: { step: name, store: 'out' } } };
+      await expect(run(StrictDSLInterpreter(stepPlan, {}, { real: async () => 'r' }))).rejects.toMatchObject({
+        type: 'DSLStepNotFound'
+      });
+    }
+  });
+
+  it('keeps the type of a failure nested in foreach, while, doWhile and when sequences', async () => {
+    const codeStatement = { execute: { name: 'nestedCode', code: 'return 1;', store: 'x' } };
+    const unknownActivity = { execute: { activity: 'missing', store: 'y' } };
+    const plans = [
+      { foreach: { in: 'items', as: 'item', body: codeStatement } },
+      { while: { condition: async (v) => !v.done, body: unknownActivity } },
+      { doWhile: { condition: async () => false, body: codeStatement } },
+      { sequence: { elements: [unknownActivity] }, when: () => true }
+    ];
+    const expected = ['DSLCodeDisabled', 'DSLActivityNotFound', 'DSLCodeDisabled', 'DSLActivityNotFound'];
+    for (let i = 0; i < plans.length; i++) {
+      const dsl: DSLDefinition = { variables: { items: [1], done: false }, plan: plans[i] };
+      await expect(run(StrictDSLInterpreter(dsl, {}))).rejects.toMatchObject({ type: expected[i], nonRetryable: true });
+    }
+  });
+
+  it('turns several failures in one nested generation into one non-retryable failure with the first type', async () => {
+    const dsl: DSLDefinition = {
+      variables: { items: [1] },
+      plan: {
+        foreach: {
+          in: 'items',
+          as: 'item',
+          body: {
+            parallel: {
+              branches: [
+                { execute: { activity: 'missingA', store: 'a' } },
+                { execute: { activity: 'missingB', store: 'b' } }
+              ]
+            }
+          }
+        }
+      }
+    };
+    await expect(run(StrictDSLInterpreter(dsl, {}))).rejects.toMatchObject({
+      type: 'DSLActivityNotFound',
+      nonRetryable: true
     });
   });
 });

@@ -89,8 +89,12 @@ yarn add temporal-forge
 
 **🔧 Requirements:**  
 
-- Node.js 20+  
-- Temporal.io’s TypeScript SDK 1.11.7+
+- Node.js 20.3+ (22 or 24 recommended)  
+- Temporal.io’s TypeScript SDK 1.27+, installed alongside (`@temporalio/workflow`, `@temporalio/common`,
+  `@temporalio/client`, `@temporalio/interceptors-opentelemetry`, all on the same version)
+
+> **Upgrading from 1.x?** 2.0 is strict by default: properties are read-only unless you opt in, gates fail closed and
+> DSL code statements are off. See [MIGRATION-2.0.md](./MIGRATION-2.0.md).
 
 ---
 

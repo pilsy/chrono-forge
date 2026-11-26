@@ -1,5 +1,5 @@
-import 'reflect-metadata';
 import { EVENTS_METADATA_KEY } from './metadata';
+import { defineMetadata, getOwnMetadata } from '../utils/metadata';
 
 /**
  * Decorator that binds a method to handle specific workflow or state events.
@@ -53,10 +53,10 @@ import { EVENTS_METADATA_KEY } from './metadata';
  */
 export const On = (event: string) => {
   return (target: any, propertyKey: string) => {
-    const eventHandlers = Reflect.getOwnMetadata(EVENTS_METADATA_KEY, target) ?? [];
+    const eventHandlers = getOwnMetadata(EVENTS_METADATA_KEY, target) ?? [];
 
     eventHandlers.push({ event, method: propertyKey });
 
-    Reflect.defineMetadata(EVENTS_METADATA_KEY, eventHandlers, target);
+    defineMetadata(EVENTS_METADATA_KEY, eventHandlers, target);
   };
 };

@@ -1,6 +1,6 @@
-import 'reflect-metadata';
 import { STEP_METADATA_KEY } from './metadata';
 import { Statement } from '../workflows/DSLInterpreter';
+import { defineMetadata, getOwnMetadata } from '../utils/metadata';
 
 export interface StepOptions {
   /**
@@ -153,7 +153,7 @@ export const Step = (options: StepOptions = {}) => {
       }
     };
 
-    const steps = Reflect.getMetadata(STEP_METADATA_KEY, target) ?? [];
+    const steps = [...(getOwnMetadata(STEP_METADATA_KEY, target) ?? [])];
     steps.push({
       name: stepName,
       method: propertyKey,
@@ -167,7 +167,7 @@ export const Step = (options: StepOptions = {}) => {
       onError: options.onError,
       executed: false
     });
-    Reflect.defineMetadata(STEP_METADATA_KEY, steps, target);
+    defineMetadata(STEP_METADATA_KEY, steps, target);
 
     return descriptor;
   };

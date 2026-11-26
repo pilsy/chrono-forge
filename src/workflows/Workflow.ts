@@ -1,4 +1,3 @@
-import 'reflect-metadata';
 import * as workflow from '@temporalio/workflow';
 import EventEmitter from 'eventemitter3';
 import {
@@ -10,11 +9,21 @@ import {
   SIGNAL_METADATA_KEY,
   EVENTS_METADATA_KEY,
   HOOKS_METADATA_KEY,
-  STEP_METADATA_KEY
+  STEP_METADATA_KEY,
+  ACTIONS_METADATA_KEY,
+  VALIDATOR_METADATA_KEY
 } from '../decorators';
-import { Duration } from '@temporalio/common';
+import type { ActionOptions } from '../decorators/Action';
+import {
+  ApplicationFailure,
+  CancelledFailure,
+  Duration,
+  HandlerUnfinishedPolicy,
+  TemporalFailure
+} from '@temporalio/common';
 import { LRUCacheWithDelete } from 'mnemonist';
 import { DSLInterpreter, DSLDefinition, DSLGeneration, convertStepsToDSL } from './DSLInterpreter';
+import { getMetadata, getOwnMetadata } from '../utils/metadata';
 
 /**
  * Options for configuring a Temporal Workflow.
@@ -34,6 +43,20 @@ export interface TemporalOptions {
    * If not provided, will use default activity proxy.
    */
   activities?: Record<string, (...args: string[]) => Promise<string | undefined>>;
+
+  /**
+   * 2.0: register the `pause`, `resume` and `cancel` signals. Off by default, because anyone who can signal the
+   * workflow could otherwise pause or end it. Calling `this.pause()`, `this.resume()` or `this.cancel()` from the
+   * workflow's own code works either way.
+   */
+  controlSignals?: boolean;
+
+  /**
+   * 2.0 (StatefulWorkflow): register the `subscribe` and `unsubscribe` signals. Off by default, because anyone who can
+   * signal the workflow could otherwise have it send its state to any workflow ID. Subscriptions made in code
+   * (parents and children) work either way.
+   */
+  subscribeSignals?: boolean;
 
   /**
    * Additional arbitrary options.
@@ -90,9 +113,7 @@ export function Temporal(options?: TemporalOptions) {
           instance.workflowType = '${workflowName}';
 
           await instance.bindEventHandlers();
-          await instance.emitAsync('setup');
-          await instance.emitAsync('hooks');
-          await instance.emitAsync('init');
+          await instance.startUp();
 
           const executionMethod = instance.isContinueable
             ? 'executeWorkflow'
@@ -111,9 +132,13 @@ export function Temporal(options?: TemporalOptions) {
           }
           return result;
         } catch (e) {
-          if (workflow.isCancellation(e)) {
+          // 2.0: cancellation finishes here for every workflow. 1.x waited for status 'cancelled', which only the
+          // continueAsNew path ever set, so a cancelled plain workflow never closed.
+          if (workflow.isCancellation(e) && instance.status !== 'cancelled') {
             await workflow.CancellationScope.nonCancellable(async () => {
-              await workflow.condition(() => instance.status === 'cancelled');
+              instance.status = 'cancelling';
+              await instance.cancelChildren();
+              instance.status = 'cancelled';
             });
           }
           throw e;
@@ -165,6 +190,19 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   private _queriesBound = false;
   private _propertiesBound = false;
   private _stepsBound = false;
+  private _actionsBound = false;
+
+  /**
+   * Lifecycle events emitted while the workflow starts. An error in one of their listeners (for example a handler that
+   * cannot be bound) fails the workflow instead of being logged and ignored, so a workflow never runs half-configured.
+   */
+  protected static readonly LIFECYCLE_EVENTS: ReadonlySet<string> = new Set(['setup', 'hooks', 'init']);
+
+  /**
+   * What happens when the workflow finishes while an @Action Update is still running. Defaults to Temporal's own
+   * default (abandon with a warning); an @Action can set its own with `unfinishedPolicy`.
+   */
+  protected actionUnfinishedPolicy: HandlerUnfinishedPolicy = HandlerUnfinishedPolicy.WARN_AND_ABANDON;
 
   @Property()
   protected dsl!: DSLDefinition;
@@ -285,7 +323,8 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   protected pendingUpdate = true;
 
   /**
-   * Signal to pause workflow execution.
+   * Pause workflow execution. 2.0: a signal only when the workflow opts in with @Temporal({ controlSignals: true });
+   * calling it from the workflow's own code always works.
    *
    * When this signal is received, the workflow will:
    * 1. Change its status to 'paused'
@@ -296,7 +335,6 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    *
    * The workflow will not process any further iterations until resumed.
    */
-  @Signal()
   public pause(): void {
     if (this.status !== 'paused') {
       this.log.info(`Pausing...`);
@@ -312,7 +350,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   }
 
   /**
-   * Signal to resume workflow execution.
+   * Resume workflow execution. 2.0: a signal only with @Temporal({ controlSignals: true }).
    *
    * When this signal is received, the workflow will:
    * 1. Change its status from 'paused' to 'running'
@@ -322,7 +360,6 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    *
    * If the workflow is already running, this signal has no effect.
    */
-  @Signal()
   public resume(): void {
     if (this.status !== 'running') {
       this.log.info(`Resuming...`);
@@ -338,7 +375,9 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   }
 
   /**
-   * Signal to cancel workflow execution.
+   * Cancel workflow execution. 2.0: a signal only with @Temporal({ controlSignals: true }). The workflow stops before
+   * its next step, cancels its children and fails with a CancelledFailure ('Cancelled by the cancel signal'), so the
+   * caller never sees a cancelled run as a success. Use Temporal's own cancel (handle.cancel()) for a CANCELLED close.
    *
    * When this signal is received, the workflow will:
    * 1. Change its status to 'cancelling'
@@ -349,7 +388,6 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    * The workflow will terminate after completing any necessary cleanup operations.
    * If the workflow is already cancelling, this signal has no effect.
    */
-  @Signal()
   public cancel(): void {
     if (this.status !== 'cancelling') {
       this.log.info(`Cancelling...`);
@@ -361,6 +399,52 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       this.forwardSignalToChildren('cancel');
     } else {
       this.log.info(`Already cancelling...`);
+    }
+  }
+
+  /** Status values the `cancel` signal or method sets. */
+  protected isCancelRequested(): boolean {
+    return this.status === 'cancel' || this.status === 'cancelling' || this.status === 'cancelled';
+  }
+
+  /**
+   * Finish a cancel requested by the `cancel` signal or method: cancel the children, mark the workflow cancelled and
+   * fail it with a CancelledFailure. Nothing else runs after it. 1.x returned normally (the run ended COMPLETED), and a
+   * continue-as-new workflow ran one more iteration first.
+   */
+  protected async finishCancel(): Promise<never> {
+    await workflow.CancellationScope.nonCancellable(async () => {
+      this.status = 'cancelling';
+      await this.cancelChildren();
+      this.status = 'cancelled';
+      workflow.upsertMemo({ status: this.status, lastUpdated: new Date().toISOString() });
+    });
+    throw new CancelledFailure('Cancelled by the cancel signal');
+  }
+
+  /**
+   * Wait while the workflow is paused. Returns when it resumes or is cancelled.
+   */
+  protected async waitWhilePaused(): Promise<void> {
+    if (this.status !== 'paused') {
+      return;
+    }
+    await this.emitAsync('paused');
+    await this.forwardSignalToChildren('pause');
+    await workflow.condition(() => this.status !== 'paused');
+  }
+
+  /**
+   * Run the start-up events (setup, hooks, init). 2.0: any error in their listeners fails the workflow. A plain Error
+   * would otherwise fail only the workflow task, which Temporal retries forever while the workflow stays RUNNING.
+   */
+  protected async startUp(): Promise<void> {
+    try {
+      await this.emitAsync('setup');
+      await this.emitAsync('hooks');
+      await this.emitAsync('init');
+    } catch (error) {
+      throw toNonRetryableFailure(error, 'WorkflowStartupError');
     }
   }
 
@@ -489,7 +573,14 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
               this.currentGeneration = next.value;
             }
 
-            // Check if workflow has been paused, cancelled, or otherwise interrupted
+            // 2.0: a pause waits here and the next step runs after resume (1.x broke out of the loop, so the run
+            // ended COMPLETED with steps skipped); a cancel stops before the next step and fails the run.
+            if (this.status === 'paused' && this.currentGeneration) {
+              await this.waitWhilePaused();
+            }
+            if (this.isCancelRequested()) {
+              await this.finishCancel();
+            }
             if (this.status !== 'running') {
               break;
             }
@@ -552,16 +643,16 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
           this.conditionTimeout ?? undefined
         );
 
-        if (this.status === 'paused') {
-          await this.emitAsync('paused');
-          await this.forwardSignalToChildren('pause');
-          await workflow.condition(() => this.status !== 'paused');
+        await this.waitWhilePaused();
+
+        if (this.isCancelRequested()) {
+          await this.finishCancel();
         }
 
-        if (this.status === 'cancelled') {
-          break;
-        } else {
-          this.result = await Promise.resolve().then(() => this.execute());
+        this.result = await Promise.resolve().then(() => this.execute());
+
+        if (this.isCancelRequested()) {
+          await this.finishCancel();
         }
 
         if (this.isInTerminalState()) {
@@ -615,7 +706,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     const continueFn = workflow.makeContinueAsNewFunc({
       workflowType: String(this.workflowType),
       memo: workflow.workflowInfo().memo,
-      searchAttributes: workflow.workflowInfo().searchAttributes
+      typedSearchAttributes: workflow.workflowInfo().typedSearchAttributes
     });
 
     // If onContinue is defined, call it to get custom parameters, otherwise throw error
@@ -647,18 +738,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
       await workflow.CancellationScope.nonCancellable(async () => {
         this.status = 'cancelling';
-        await Promise.all(
-          Array.from(this.handles.values()).flatMap((handles) =>
-            Object.values(handles).map((handle) => async () => {
-              try {
-                const extHandle = workflow.getExternalWorkflowHandle(handle.workflowId);
-                await extHandle.cancel();
-              } catch (error) {
-                this.log.error(`Failed to cancel child workflow:`, error);
-              }
-            })
-          )
-        );
+        await this.cancelChildren();
         this.status = 'cancelled';
       });
       reject(err);
@@ -666,6 +746,38 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       this.log.error(`Handling non-cancellation error: ${err?.message} \n ${err.stack}`);
       reject(err);
     }
+  }
+
+  /**
+   * How long a cancelled workflow waits for its child workflows to close after asking them to cancel.
+   */
+  protected childCancellationTimeout: Duration = '30 seconds';
+
+  /**
+   * Ask every child workflow this workflow started to cancel, then wait (up to `childCancellationTimeout`) for them
+   * to close. Children therefore end CANCELLED instead of being terminated by the parent-close policy when this
+   * workflow closes. 1.x built the cancel calls but never invoked them.
+   */
+  protected async cancelChildren(): Promise<void> {
+    const handles = Array.from(this.handles.values());
+    if (!handles.length) {
+      return;
+    }
+    await Promise.all(
+      handles.map(async (handle) => {
+        try {
+          await workflow.getExternalWorkflowHandle(handle.workflowId).cancel();
+        } catch (error) {
+          this.log.error(
+            `Failed to cancel child workflow ${handle.workflowId}: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      })
+    );
+    await Promise.race([
+      Promise.allSettled(handles.map((handle) => handle.result())),
+      workflow.sleep(this.childCancellationTimeout)
+    ]);
   }
 
   /**
@@ -700,7 +812,12 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       try {
         await Promise.resolve().then(() => listener.apply(this, args));
       } catch (error) {
-        console.error(`Error in listener for event '${event}':`, error);
+        if (Workflow.LIFECYCLE_EVENTS.has(event)) {
+          throw error;
+        }
+        this.log.error(
+          `Error in listener for event '${event}': ${error instanceof Error ? error.message : String(error)}`
+        );
       }
     }
 
@@ -740,6 +857,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
       this._queriesBound = false;
       this._propertiesBound = false;
       this._stepsBound = false;
+      this._actionsBound = false;
     } catch (error) {
       this.log.error(`Error cleaning up event listeners: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -892,7 +1010,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
         const setter = (value: any) => ((this as any)[propertyKey] = value);
         this.signalHandlers[signalName] = setter.bind(this);
         // @ts-ignore
-        workflow.setHandler(workflow.defineSignal(typeof g === 'string' ? s : signalName), setter);
+        workflow.setHandler(workflow.defineSignal(typeof s === 'string' ? s : signalName), setter);
       }
     });
     this._propertiesBound = true;
@@ -919,8 +1037,8 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
         const originalHandler = (this as any)[queryMethod].bind(this);
         const wrappedHandler = (...args: any[]) => {
           try {
+            // 2.0: a query only reads. 1.x also emitted an event here, running listeners inside a query.
             this.log.trace(`[QUERY]:(${queryName})`);
-            this.emitAsync(queryName).catch((err) => this.log.error(`[QUERY]:(${queryName}):emit error`, err));
             return originalHandler(...args);
           } catch (err) {
             if (options?.onError) {
@@ -995,6 +1113,27 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
   }
 
   /**
+   * Register the `pause`, `resume` and `cancel` signals when the workflow opts in with
+   * @Temporal({ controlSignals: true }). 2.0: off by default.
+   */
+  @On('init')
+  protected bindControlSignals() {
+    // @ts-ignore
+    if (this.options?.controlSignals !== true) {
+      return;
+    }
+    for (const name of ['pause', 'resume', 'cancel'] as const) {
+      const handler = async () => {
+        this.log.trace(`[SIGNAL]:(${name})`);
+        await this.emitAsync(name);
+        this[name]();
+      };
+      this.signalHandlers[name] = handler;
+      workflow.setHandler(workflow.defineSignal(name), handler);
+    }
+  }
+
+  /**
    * Bind step handlers for the workflow.
    *
    * This method finds all methods decorated with @Step and registers them as
@@ -1026,22 +1165,128 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     this._stepsBound = true;
   }
 
+  /**
+   * Bind @Action methods as Temporal Workflow Updates.
+   *
+   * Each @Action becomes an Update named after the method (or `options.name`). A @Validator for that name runs before
+   * the Update is accepted: if it throws, the Update is rejected and nothing is written to the workflow history.
+   * Validators must be synchronous, because Temporal ignores a validator's return value: an async validator that
+   * rejects would still let the Update through. An async validator therefore fails the workflow when it starts, and
+   * a validator that returns a Promise rejects the Update.
+   *
+   * Actions and validators are collected along the class chain; a subclass's validator for a name wins.
+   */
+  @On('init')
+  protected async bindActions() {
+    if (this._actionsBound) {
+      return;
+    }
+
+    const actions = this.collectMetadata(ACTIONS_METADATA_KEY, this.constructor.prototype) as {
+      method: string;
+      options?: ActionOptions;
+    }[];
+    const validators = this.collectValidatorMetadata(this.constructor.prototype);
+
+    // 2.0: a validator must name an action. A misspelt name ('aprove') would otherwise be ignored and the action
+    // would run unvalidated.
+    const actionNames = new Set(actions.flatMap(({ method, options }) => [options?.name ?? method, method]));
+    const orphans = Object.keys(validators).filter((name) => !actionNames.has(name));
+    if (orphans.length) {
+      const known = Array.from(new Set(actions.map(({ method, options }) => options?.name ?? method)));
+      throw ApplicationFailure.nonRetryable(
+        `@Validator(${orphans.map((name) => `'${name}'`).join(', ')}) in ${this.constructor.name} names no @Action. ` +
+          `Actions: ${known.length ? known.map((name) => `'${name}'`).join(', ') : 'none'}`,
+        'InvalidValidator'
+      );
+    }
+
+    for (const { method, options } of actions) {
+      const updateName = options?.name ?? method;
+      const handlerOptions: { validator?: (...args: any[]) => void; unfinishedPolicy?: HandlerUnfinishedPolicy } = {
+        unfinishedPolicy: options?.unfinishedPolicy ?? this.actionUnfinishedPolicy
+      };
+      const validatorMethod = validators[updateName] ?? validators[method];
+      if (validatorMethod) {
+        const validate = (this as any)[validatorMethod];
+        if (typeof validate !== 'function') {
+          throw ApplicationFailure.nonRetryable(
+            `@Validator('${updateName}') names '${validatorMethod}', which is not a method of ${this.constructor.name}`,
+            'InvalidValidator'
+          );
+        }
+        if (validate.constructor?.name === 'AsyncFunction') {
+          throw ApplicationFailure.nonRetryable(
+            `@Validator for '${updateName}' must be synchronous: Temporal ignores a validator's return value, so an ` +
+              `async validator that rejects would still accept the Update`,
+            'InvalidValidator'
+          );
+        }
+        handlerOptions.validator = (...args: any[]) => {
+          const result = validate.apply(this, args);
+          if (result && typeof result.then === 'function') {
+            // 2.0: handle the Promise first. Left unhandled, its rejection fails the workflow task, the Update is
+            // never rejected and the workflow eventually times out.
+            Promise.resolve(result).catch(() => undefined);
+            throw ApplicationFailure.nonRetryable(
+              `Validator for '${updateName}' returned a Promise; validators must be synchronous`,
+              'InvalidValidator'
+            );
+          }
+        };
+      }
+      workflow.setHandler(
+        workflow.defineUpdate<any, any[]>(updateName),
+        (...args: any[]) => this.runAction(method, ...args),
+        handlerOptions
+      );
+    }
+
+    this._actionsBound = true;
+  }
+
+  /**
+   * Run an @Action method for its Update. Subclasses can wrap it (StatefulWorkflow waits for state processing).
+   */
+  protected async runAction(methodName: string, ...args: any[]): Promise<any> {
+    try {
+      return await (this as any)[methodName].apply(this, args);
+    } catch (error) {
+      // 2.0: a plain Error fails the Update, not the workflow task. Left as it is, Temporal would retry the task, the
+      // caller would hang and the workflow would time out. Temporal failures and cancellation pass through unchanged.
+      throw toNonRetryableFailure(error, 'ActionError');
+    }
+  }
+
+  /** Validator names along the class chain, base class first, so a subclass's validator for an action wins. */
+  private collectValidatorMetadata(target: any): Record<string, string> {
+    const chain: any[] = [];
+    let current = target;
+    while (current && current !== Object.prototype) {
+      chain.unshift(current);
+      current = Object.getPrototypeOf(current);
+    }
+    return chain.reduce(
+      (merged, proto) => ({
+        ...merged,
+        ...(getOwnMetadata<Record<string, string>>(VALIDATOR_METADATA_KEY, proto) ?? {})
+      }),
+      {} as Record<string, string>
+    );
+  }
+
   @On('init')
   protected initDSL() {
     if (this.dsl && !this.interpreter) {
-      Object.defineProperty(this.dsl.variables, 'workflow', {
-        get: () => this,
-        set: () => {
-          throw new Error('workflow is read-only');
-        },
-        enumerable: false,
-        configurable: false
-      });
+      // 2.0: plans no longer see the workflow instance as a `workflow` variable (1.x exposed its activities, status
+      // and handlers to any plan), and code statements run only with @Temporal({ allowDSLCode: true }).
       this.interpreter = DSLInterpreter(
         this.dsl,
         // @ts-ignore
         this.options?.activities,
-        this.stepHandlers
+        this.stepHandlers,
+        // @ts-ignore
+        { allowCode: this.options?.allowDSLCode === true }
       );
     }
   }
@@ -1057,13 +1302,13 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
    * @param target - The target object to collect metadata from.
    * @returns {any[]} The collected metadata as an array.
    */
-  protected collectMetadata(metadataKey: Symbol, target: any): any[] {
+  protected collectMetadata(metadataKey: symbol | string, target: any): any[] {
     const collectedMetadata: any[] = [];
     const seen = new Set();
 
     let currentProto = target;
     while (currentProto && currentProto !== Object.prototype) {
-      const metadata = Reflect.getMetadata(metadataKey, currentProto) ?? [];
+      const metadata = getMetadata(metadataKey, currentProto) ?? [];
       for (const item of metadata) {
         const itemString = JSON.stringify(item);
         if (!seen.has(itemString)) {
@@ -1098,7 +1343,7 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
     }
 
     for (const proto of protoChain) {
-      const metadata = Reflect.getOwnMetadata(HOOKS_METADATA_KEY, proto) ?? {};
+      const metadata = getOwnMetadata(HOOKS_METADATA_KEY, proto) ?? {};
       for (const key of Object.keys(metadata)) {
         if (!collectedMetadata[key]) {
           collectedMetadata[key] = { before: [], after: [] };
@@ -1110,4 +1355,18 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
     return collectedMetadata;
   }
+}
+
+/**
+ * Turn any error into a non-retryable ApplicationFailure, so it fails the workflow (or the Update) instead of the
+ * workflow task. Temporal failures, cancellation and continue-as-new pass through unchanged.
+ */
+export function toNonRetryableFailure(error: unknown, type: string): unknown {
+  if (error instanceof TemporalFailure || error instanceof workflow.ContinueAsNew || workflow.isCancellation(error)) {
+    return error;
+  }
+  const cause = error instanceof Error ? error : undefined;
+  const message = error instanceof Error ? error.message : String(error);
+  const errorType = error instanceof Error && error.name && error.name !== 'Error' ? error.name : type;
+  return ApplicationFailure.create({ message, type: errorType, nonRetryable: true, cause });
 }

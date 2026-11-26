@@ -46,7 +46,7 @@ By managing workflow metadata and detecting circular relationships, `StatefulWor
 
 - **Granular Control of Responsibilities**: `StatefulWorkflow` allows developers to define `managedPaths` configurations that specify which workflows manage which entities. This granularity ensures that each workflow only manages the entities relevant to its scope, reducing overhead and enhancing clarity.
 
-- **Dynamic Delegation and Subscriptions**: In scenarios where a workflow needs to stay updated on state changes managed by another workflow, it can subscribe to state changes using the `subscribe` signal. This dynamic subscription model enables workflows to listen to relevant updates without taking over management responsibilities, maintaining a clear separation of concerns.
+- **Dynamic Delegation and Subscriptions**: In scenarios where a workflow needs to stay updated on state changes managed by another workflow, it can subscribe to state changes through the subscriptions in its start parameters, or with the `subscribe` signal when it opts in with `@Temporal({ subscribeSignals: true })` (2.0). This dynamic subscription model enables workflows to listen to relevant updates without taking over management responsibilities, maintaining a clear separation of concerns.
 
 - **Efficient Communication Between Workflows**: By using signals and queries, `StatefulWorkflow` provides a robust communication mechanism for workflows to notify each other of state changes or updates. This efficient communication model ensures that workflows operate cohesively, adapting to changes in real-time while maintaining consistency.
 

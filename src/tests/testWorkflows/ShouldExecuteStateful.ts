@@ -26,10 +26,17 @@ export type TestAction = {
 @Temporal({
   schemaName: 'User',
   schemas,
-  saveStateToMemo: true
+  saveStateToMemo: true,
+  // 2.0: the control-signal tests pause, resume and cancel this workflow by signal, so it opts in.
+  controlSignals: true
 })
 export class ShouldExecuteStateful extends StatefulWorkflow {
   protected maxIterations: number = 1000;
+
+  // 2.0: properties are read-only by default; the tests end this workflow by setting status, so it opts in.
+  // The initializer keeps a status passed in the arguments (field initializers run after the base constructor).
+  @Property({ set: true })
+  protected status: string = (this as any).args?.status ?? 'running';
   protected managedPaths: ManagedPaths = {
     listings: {
       autoStart: true,

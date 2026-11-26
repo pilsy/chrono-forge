@@ -1,5 +1,5 @@
-import 'reflect-metadata';
 import { QUERY_METADATA_KEY } from './metadata';
+import { defineMetadata, getOwnMetadata } from '../utils/metadata';
 
 export interface QueryOptions {
   /**
@@ -90,9 +90,9 @@ export interface QueryOptions {
  */
 export const Query = (options?: string | QueryOptions) => {
   return (target: any, propertyKey: string) => {
-    const queries = Reflect.getOwnMetadata(QUERY_METADATA_KEY, target) ?? [];
+    const queries = getOwnMetadata(QUERY_METADATA_KEY, target) ?? [];
     const queryName = typeof options === 'string' ? options : (options?.name ?? propertyKey);
     queries.push([queryName, propertyKey, options && typeof options === 'object' ? options : undefined]);
-    Reflect.defineMetadata(QUERY_METADATA_KEY, queries, target);
+    defineMetadata(QUERY_METADATA_KEY, queries, target);
   };
 };
