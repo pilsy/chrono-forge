@@ -69,3 +69,19 @@ export class ShouldLoadStartDataFirst extends StatefulWorkflow {
     return { count: this.listings.length };
   }
 }
+
+/** execute() must run for a state change that was processed before the loop first waited (e.g. signal-with-start). */
+@Temporal({ schemaName: 'User' })
+export class ShouldRunExecuteAfterEarlySignal extends StatefulWorkflow {
+  protected maxIterations: number = 1000;
+  protected managedPaths: ManagedPaths = {
+    listings: { autoStart: false, workflowType: 'ShouldExecuteStatefulChild', entityName: 'Listing' }
+  };
+
+  async execute() {
+    const user = this.data as Record<string, any> | undefined;
+    if (user && (user.listings ?? []).length && user.seen !== user.listings.length) {
+      user.seen = user.listings.length;
+    }
+  }
+}

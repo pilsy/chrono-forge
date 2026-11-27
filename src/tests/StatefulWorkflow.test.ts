@@ -969,6 +969,26 @@ describe('StatefulWorkflow', () => {
       await handle.terminate('test done');
     });
 
+    it('Should run execute for a change made by a signal sent with the start (no lost wake-up)', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const client = getClient();
+      const handle = await client.workflow.signalWithStart(workflows.ShouldRunExecuteAfterEarlySignal, {
+        taskQueue: 'test',
+        workflowId: `User-${userId}`,
+        args: [{ id: userId, entityName: 'User', data: { id: userId, listings: [] } }],
+        signal: 'update',
+        signalArgs: [
+          { data: { id: userId, listings: [{ id: listingId, name: 'From the signal' }] }, entityName: 'User' }
+        ]
+      });
+      await sleep(5000);
+
+      const state = await handle.query('state');
+      expect(state.User[userId]).toMatchObject({ listings: [listingId], seen: 1 });
+      await handle.terminate('test done');
+    });
+
     it('Should run an action sent with the start on the start data (update-with-start)', async () => {
       const userId = uuid4();
       const listingId = uuid4();

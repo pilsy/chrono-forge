@@ -19,6 +19,9 @@
 
 ### Fixed
 
+- `StatefulWorkflow`: the loop consumes a wake-up (`pendingIteration`) after it waits, not before. A state change made
+  before the loop first waited (by a signal sent with the start) or while `execute()` ran was dropped, and the
+  workflow slept with work pending.
 - Entity proxies: an entity whose id contains dots (such as `install.role`) no longer throws `"undefined" is not valid
   JSON` on any write through its proxy. The `<entity>.<id>.` prefix is now removed as a whole before the rest of the
   mutation path is split, and a proxy only handles mutations under its own exact prefix.

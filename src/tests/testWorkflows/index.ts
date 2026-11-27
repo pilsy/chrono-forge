@@ -51,5 +51,6 @@ export {
   ShouldBindProcessData,
   ShouldSkipExistingChild,
   ShouldUseStrictChildren,
-  ShouldLoadStartDataFirst
+  ShouldLoadStartDataFirst,
+  ShouldRunExecuteAfterEarlySignal
 } from './ShouldFixStatefulFindings';

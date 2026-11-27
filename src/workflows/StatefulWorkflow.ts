@@ -1080,10 +1080,6 @@ export abstract class StatefulWorkflow<
 
     try {
       while (this.iteration <= this.maxIterations) {
-        if (this.pendingIteration) {
-          this.pendingIteration = false;
-        }
-
         await workflow.condition(
           () =>
             (typeof (this as any).condition === 'function' && (this as any).condition()) ||
@@ -1096,6 +1092,10 @@ export abstract class StatefulWorkflow<
           // @ts-ignore
           this.conditionTimeout ?? undefined
         );
+        // 2.0.1: consume the wake-up after the wait, not before it. Clearing it before the wait dropped a wake-up that
+        // arrived before the loop first waited (a state change made by a signal sent with the start) or while
+        // execute() ran, and the loop slept with work pending.
+        this.pendingIteration = false;
         this.log.trace(`executeWorkflow: ${this.iteration}`);
 
         if (this.status === 'paused') {
