@@ -100,6 +100,53 @@ describe('EntityProxyManager', () => {
     });
   });
 
+  describe('Entity IDs', () => {
+    it('should handle mutations to an entity whose id contains dots', () => {
+      const user = EntityProxyManager.createEntityProxy(
+        'User',
+        'install.role-1',
+        { id: 'install.role-1', name: 'John' },
+        stateManager
+      );
+
+      expect(() => {
+        user.name = 'Johnny';
+      }).not.toThrow();
+
+      expect(stateManager.dispatch).toHaveBeenCalledWith(
+        [
+          {
+            entities: { User: { 'install.role-1': { id: 'install.role-1', name: 'Johnny' } } },
+            strategy: '$merge',
+            type: UPDATE_ENTITIES_PARTIAL
+          }
+        ],
+        false,
+        'test-instance'
+      );
+    });
+
+    it('should only handle mutations for its own entity, not one whose id starts with the same characters', () => {
+      EntityProxyManager.createEntityProxy('User', '1', { id: '1', name: 'One' }, stateManager);
+      const ten = EntityProxyManager.createEntityProxy('User', '10', { id: '10', name: 'Ten' }, stateManager);
+
+      ten.name = 'Ten!';
+
+      expect(stateManager.dispatch).toHaveBeenCalledTimes(1);
+      expect(stateManager.dispatch).toHaveBeenCalledWith(
+        [
+          {
+            entities: { User: { '10': { id: '10', name: 'Ten!' } } },
+            strategy: '$merge',
+            type: UPDATE_ENTITIES_PARTIAL
+          }
+        ],
+        false,
+        'test-instance'
+      );
+    });
+  });
+
   describe('Array Operations', () => {
     it('should handle push operation on arrays', () => {
       const userData = { id: '123', name: 'John', tags: ['developer', 'javascript'] };

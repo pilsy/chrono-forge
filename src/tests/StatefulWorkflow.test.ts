@@ -876,6 +876,49 @@ describe('StatefulWorkflow', () => {
     });
   });
 
+  describe('2.0.1 managed child fixes', () => {
+    it('Should call processData with the workflow as this', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const data = { id: userId, listings: [{ id: listingId, name: 'Listing' }] };
+      const handle = await execute(workflows.ShouldBindProcessData, { id: userId, entityName: 'User', data });
+      await sleep(3000);
+
+      const childState = await getClient().workflow.getHandle(`Listing-${listingId}`).query('state');
+      expect(childState.Listing[listingId].name).toEqual(`Listing via ${userId}`);
+      await handle.terminate('test done'); // also ends the child (parent close policy)
+    });
+
+    it('Should start the other children when one child ID already exists', async () => {
+      const userId = uuid4();
+      const [existingId, newId] = [uuid4(), uuid4()];
+      const client = getClient();
+      // A workflow already runs under the first listing's child ID.
+      const existing = await client.workflow.start(workflows.ShouldExecuteStatefulChild, {
+        taskQueue: 'test',
+        workflowId: `Listing-${existingId}`,
+        args: [{ id: existingId, entityName: 'Listing', data: { id: existingId, name: 'Already running' } }]
+      });
+
+      const data = {
+        id: userId,
+        listings: [
+          { id: existingId, name: 'First' },
+          { id: newId, name: 'Second' }
+        ]
+      };
+      const handle = await execute(workflows.ShouldSkipExistingChild, { id: userId, entityName: 'User', data });
+      await sleep(3000);
+
+      const second = client.workflow.getHandle(`Listing-${newId}`);
+      expect((await second.describe()).status.name).toBe('RUNNING');
+      expect((await existing.describe()).runId).toEqual(existing.firstExecutionRunId);
+      expect((await handle.describe()).status.name).toBe('RUNNING');
+      // Ending the parent also ends its child; the pre-existing workflow is not its child.
+      for (const h of [handle, existing]) await h.terminate('test done');
+    });
+  });
+
   describe('Error Handling and Recovery', () => {
     it('Should handle invalid state query by returning error', async () => {
       const userId = uuid4();

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Entity proxies: an entity whose id contains dots (such as `install.role`) no longer throws `"undefined" is not valid
+  JSON` on any write through its proxy. The `<entity>.<id>.` prefix is now removed as a whole before the rest of the
+  mutation path is split, and a proxy only handles mutations under its own exact prefix.
+- `StatefulWorkflow`: a managed path's `processData` runs with the workflow as `this`, like `condition` (it was called
+  unbound).
+- `StatefulWorkflow`: when a managed child's ID already exists (`WorkflowExecutionAlreadyStartedError`), the start is
+  logged and skipped. It used to stop the whole state-change pass, so the other children of that change never started.
+
 ## 2.0.0
 
 Strict by default, and runs on current Temporal SDKs. See [MIGRATION-2.0.md](./MIGRATION-2.0.md) for what to change.

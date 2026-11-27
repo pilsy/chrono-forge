@@ -31,7 +31,7 @@ import { EnhancedEntity, SchemaManager } from '../store/SchemaManager';
 import { StateManager } from '../store/StateManager';
 import { limitRecursion } from '../utils/limitRecursion';
 import { getCompositeKey } from '../utils/getCompositeKey';
-import { Duration, HandlerUnfinishedPolicy } from '@temporalio/common';
+import { Duration, HandlerUnfinishedPolicy, WorkflowExecutionAlreadyStartedError } from '@temporalio/common';
 import { flatten } from '../utils/flatten';
 import { unflatten } from '../utils';
 import { mergeDeepRight } from 'ramda';
@@ -121,7 +121,11 @@ export type ManagedPath = {
       selector?: string;
     };
   };
-  processData?: (entity: Record<string, any>, data: StatefulWorkflow['data']) => Record<string, any>;
+  processData?: (
+    this: StatefulWorkflow,
+    entity: Record<string, any>,
+    data: StatefulWorkflow['data']
+  ) => Record<string, any>;
 };
 
 /**
@@ -2326,7 +2330,9 @@ export abstract class StatefulWorkflow<
 
       const data =
         typeof config.processData === 'function'
-          ? config.processData(
+          ? // 2.0.1: called with the workflow as `this`, like `condition` (it was called unbound).
+            config.processData.call(
+              this,
               limitRecursion(id, String(entityName), newState, this.stateManager),
               limitRecursion(this.id, this.entityName, newState, this.stateManager)
             )
@@ -2434,6 +2440,13 @@ export abstract class StatefulWorkflow<
           }
         });
     } catch (err) {
+      // 2.0.1: a child with this ID already exists (still running, or closed under a reuse policy that refuses it,
+      // e.g. after continue-as-new dropped the handles). Rethrowing stopped the whole state-change pass, so later
+      // children in the same pass never started. Log it and go on with the others.
+      if (err instanceof WorkflowExecutionAlreadyStartedError) {
+        this.log.warn(`Child workflow ${workflowId} already exists; not starting it again`);
+        return;
+      }
       if (err instanceof Error) {
         this.log.error(`Failed to start new child workflow: ${err.message}\n${err.stack}`);
       } else {

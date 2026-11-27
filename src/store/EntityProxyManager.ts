@@ -89,8 +89,9 @@ export class EntityProxyManager {
 
     // Setup mutation handler for this entity
     mutationTree.onMutation((mutation: ProxyMutation) => {
-      // Only handle mutations for this specific entity
-      if (mutation.path.startsWith(`${entityName}.${entityId}`)) {
+      // Only handle mutations for this specific entity: the exact `<entityName>.<entityId>.` prefix, so `User.1`
+      // never handles a mutation of `User.10`.
+      if (mutation.path.startsWith(`${entityName}.${entityId}.`)) {
         this.handleEntityMutation(entityName, entityId, mutation);
       }
     });
@@ -121,8 +122,14 @@ export class EntityProxyManager {
       return;
     }
 
-    // Extract the path parts
-    const pathParts = mutation.path.split('.');
+    // Extract the path parts after `<entityName>.<entityId>.`. An entity id may itself contain dots (for example
+    // `install.role`), so the prefix is removed as a whole before splitting; splitting the whole path would read part
+    // of the id as the field name.
+    const prefix = `${entityName}.${entityId}.`;
+    if (!mutation.path.startsWith(prefix)) {
+      return;
+    }
+    const pathParts = [entityName, entityId, ...mutation.path.slice(prefix.length).split('.')];
     if (pathParts.length < 3) {
       return;
     }
