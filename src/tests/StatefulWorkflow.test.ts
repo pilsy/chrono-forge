@@ -10,6 +10,7 @@ import { normalizeEntities } from '../store';
 import { getCompositeKey, getMemo, limitRecursion } from '../utils';
 import { TestAction } from './testWorkflows/ShouldExecuteStateful';
 import { omit } from 'lodash';
+import { WithStartWorkflowOperation } from '@temporalio/client';
 
 describe('StatefulWorkflow', () => {
   let execute: (
@@ -916,6 +917,80 @@ describe('StatefulWorkflow', () => {
       expect((await handle.describe()).status.name).toBe('RUNNING');
       // Ending the parent also ends its child; the pre-existing workflow is not its child.
       for (const h of [handle, existing]) await h.terminate('test done');
+    });
+
+    it('children.strict: a child cancelled from outside is not started again', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const data = { id: userId, listings: [{ id: listingId, name: 'Listing' }] };
+      const handle = await execute(workflows.ShouldUseStrictChildren, { id: userId, entityName: 'User', data });
+      await sleep(3000);
+      const child = getClient().workflow.getHandle(`Listing-${listingId}`);
+      expect((await child.describe()).status.name).toBe('RUNNING');
+
+      await child.cancel();
+      await sleep(4000);
+      expect((await child.describe()).status.name).toBe('CANCELLED');
+      await handle.terminate('test done');
+    });
+
+    it('children.strict: a child outlives its parent (ABANDON)', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const data = { id: userId, listings: [{ id: listingId, name: 'Listing' }] };
+      const handle = await execute(workflows.ShouldUseStrictChildren, { id: userId, entityName: 'User', data });
+      await sleep(3000);
+      await handle.terminate('test done');
+      await sleep(1000);
+      const child = getClient().workflow.getHandle(`Listing-${listingId}`);
+      expect((await child.describe()).status.name).toBe('RUNNING');
+      await child.terminate('test done');
+    });
+
+    it('Should keep a change from a signal sent with the start (start data first)', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const client = getClient();
+      const handle = await client.workflow.signalWithStart(workflows.ShouldLoadStartDataFirst, {
+        taskQueue: 'test',
+        workflowId: `User-${userId}`,
+        args: [{ id: userId, entityName: 'User', data: { id: userId, listings: [] } }],
+        signal: 'update',
+        signalArgs: [
+          { data: { id: userId, listings: [{ id: listingId, name: 'From the signal' }] }, entityName: 'User' }
+        ]
+      });
+      await sleep(3000);
+
+      const state = await handle.query('state');
+      expect(state.User[userId].listings).toEqual([listingId]);
+      expect(state.Listing[listingId].name).toEqual('From the signal');
+      expect((await client.workflow.getHandle(`Listing-${listingId}`).describe()).status.name).toBe('RUNNING');
+      await handle.terminate('test done');
+    });
+
+    it('Should run an action sent with the start on the start data (update-with-start)', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const client = getClient();
+      const startWorkflowOperation = new WithStartWorkflowOperation(workflows.ShouldLoadStartDataFirst, {
+        taskQueue: 'test',
+        workflowId: `User-${userId}`,
+        workflowIdConflictPolicy: 'FAIL',
+        args: [{ id: userId, entityName: 'User', data: { id: userId, name: 'Start', listings: [] } }]
+      });
+      const result = await client.workflow.executeUpdateWithStart('addListing', {
+        args: [{ id: listingId, name: 'From the action' }],
+        startWorkflowOperation
+      });
+      expect(result).toEqual({ count: 1 });
+      const handle = await startWorkflowOperation.workflowHandle();
+      await sleep(3000);
+
+      const state = await handle.query('state');
+      expect(state.User[userId]).toMatchObject({ name: 'Start', listings: [listingId] });
+      expect((await client.workflow.getHandle(`Listing-${listingId}`).describe()).status.name).toBe('RUNNING');
+      await handle.terminate('test done');
     });
   });
 

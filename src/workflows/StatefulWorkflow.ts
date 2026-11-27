@@ -261,6 +261,12 @@ export type StatefulWorkflowOptions = {
   workflowType?: string;
   children?: {
     autoStart?: boolean;
+    /**
+     * 2.0.1, opt-in (the default in 3.0): safe defaults for managed children. Unless a managed path sets its own:
+     * `workflowIdReusePolicy` REJECT_DUPLICATE, `parentClosePolicy` ABANDON, `retry.maximumAttempts` 1. A child
+     * cancelled from outside is not started again.
+     */
+    strict?: boolean;
     update?: {
       enabled?: boolean;
       sync?: boolean;
@@ -1014,6 +1020,22 @@ export abstract class StatefulWorkflow<
 
     this.apiUrl = this.params?.apiUrl ?? options?.apiUrl;
     this.apiToken = this.params?.apiToken;
+
+    // 2.0.1: queue the start state and data here, before any signal or update handler is bound. They used to be
+    // queued in onSetup, after handlers that arrived with the start (signal-with-start, update-with-start) had already
+    // changed state, so the start data was merged over them (an empty list in it wiped what a signal had added).
+    // Queued, not applied: the first pass still emits `created` and starts managed children.
+    if (this.params?.state && !isEmpty(this.params?.state)) {
+      void this.stateManager.dispatch(setState(this.params.state), false, workflow.workflowInfo().workflowId);
+    }
+
+    if (this.params?.data && !isEmpty(this.params?.data)) {
+      void this.stateManager.dispatch(
+        updateEntity(this.params.data, this.entityName),
+        false,
+        workflow.workflowInfo().workflowId
+      );
+    }
   }
 
   @On('setup')
@@ -1022,18 +1044,6 @@ export abstract class StatefulWorkflow<
       for (const subscription of this.params.subscriptions) {
         await this.subscribe(subscription);
       }
-    }
-
-    if (this.params?.state && !isEmpty(this.params?.state)) {
-      await this.stateManager.dispatch(setState(this.params.state), false, workflow.workflowInfo().workflowId);
-    }
-
-    if (this.params?.data && !isEmpty(this.params?.data)) {
-      await this.stateManager.dispatch(
-        updateEntity(this.params.data, this.entityName),
-        false,
-        workflow.workflowInfo().workflowId
-      );
     }
   }
 
@@ -1065,7 +1075,7 @@ export abstract class StatefulWorkflow<
   protected async executeWorkflow(): Promise<any> {
     this.log.trace(`executeWorkflow`);
 
-    if (this.schema) this.configureManagedPaths(this.schema);
+    this.ensureManagedPaths();
     if (this.startDelay) await workflow.sleep(this.startDelay);
 
     try {
@@ -1831,6 +1841,10 @@ export abstract class StatefulWorkflow<
   ): Promise<void> {
     this.log.trace(`processChildState`);
 
+    // 2.0.1: a signal or update that arrives with the start can change state before executeWorkflow configured the
+    // managed paths; configure them on first need so those changes start their children too.
+    this.ensureManagedPaths();
+
     const newData = limitRecursion(this.id, this.entityName, newState, this.stateManager);
     const oldData = limitRecursion(this.id, this.entityName, previousState);
 
@@ -2206,6 +2220,21 @@ export abstract class StatefulWorkflow<
    * - The method relies on the structure provided by `parentSchema` to accurately configure management paths
    *   necessary for processing entity states.
    */
+  private managedPathsConfigured = false;
+
+  /** `children.strict` from the options (see StatefulWorkflowOptions). */
+  protected strictChildren(): boolean {
+    return (this.options as StatefulWorkflowOptions | undefined)?.children?.strict === true;
+  }
+
+  /** Configure `managedPaths` from the schema once, on first need (field initializers have run by then). */
+  protected ensureManagedPaths(): void {
+    if (!this.managedPathsConfigured && this.schema) {
+      this.configureManagedPaths(this.schema);
+      this.managedPathsConfigured = true;
+    }
+  }
+
   protected configureManagedPaths(
     parentSchema: Schema & { schema?: { [key: string]: Schema & [{ _idAttribute: string; _key: string }] } }
   ): void {
@@ -2306,22 +2335,27 @@ export abstract class StatefulWorkflow<
         newItem = newState[config.entityName as string][newItem];
       }
 
+      const strict = this.strictChildren();
       const {
         workflowType,
         entityName,
         cancellationType = workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_REQUESTED,
-        parentClosePolicy = workflow.ParentClosePolicy.TERMINATE,
+        parentClosePolicy = strict ? workflow.ParentClosePolicy.ABANDON : workflow.ParentClosePolicy.TERMINATE,
         workflowIdConflictPolicy = workflow.WorkflowIdConflictPolicy.TERMINATE_EXISTING,
-        workflowIdReusePolicy = workflow.WorkflowIdReusePolicy.ALLOW_DUPLICATE,
+        workflowIdReusePolicy = strict
+          ? workflow.WorkflowIdReusePolicy.REJECT_DUPLICATE
+          : workflow.WorkflowIdReusePolicy.ALLOW_DUPLICATE,
         workflowTaskTimeout = 30000,
         startDelay = 1000,
         startToCloseTimeout = '30 days',
-        retry = {
-          initialInterval: 1000 * 1,
-          maximumInterval: 1000 * 20,
-          backoffCoefficient: 1.5,
-          maximumAttempts: 30
-        }
+        retry = strict
+          ? { maximumAttempts: 1 }
+          : {
+              initialInterval: 1000 * 1,
+              maximumInterval: 1000 * 20,
+              backoffCoefficient: 1.5,
+              maximumAttempts: 30
+            }
       } = config;
 
       this.log.trace(
@@ -2414,6 +2448,7 @@ export abstract class StatefulWorkflow<
         .catch(async (error) => {
           if (
             workflow.isCancellation(error) &&
+            !strict &&
             this.status !== 'cancelled' &&
             this.status !== 'cancelling' &&
             this.handles.has(workflowId)
@@ -2961,6 +2996,11 @@ export abstract class StatefulWorkflow<
    * - Sets pendingUpdate to true to ensure state is processed after action execution
    */
   protected async runAction(methodName: string, ...args: any[]): Promise<any> {
+    // 2.0.1: apply queued changes first, so an action sees the latest state: in an update-with-start, the start data
+    // is still queued when the action runs, and `this.data` was undefined.
+    if (this.pendingChanges.length) {
+      await this.processState();
+    }
     this.actionRunning = true;
     let result: any;
     let error: any;

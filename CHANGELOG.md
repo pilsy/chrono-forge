@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Added
+
+- `StatefulWorkflow`: `children: { strict: true }` (opt-in; planned as the default in 3.0). Managed children then default
+  to `workflowIdReusePolicy` REJECT_DUPLICATE, `parentClosePolicy` ABANDON and no retries, and a child cancelled from
+  outside is not started again. A managed path's own settings still win.
+
+### Changed
+
+- `StatefulWorkflow`: the start `state` and `data` are queued in the constructor, before any signal or update handler is
+  bound, so handlers that arrive with the start (signal-with-start, update-with-start) work on top of the start data
+  instead of having it merged over their changes. Managed paths are configured on first need, and an `@Action` first
+  applies queued changes, so it sees the start data.
+- `StateManager.dispatch`: changes apply in the order they were dispatched; a sync dispatch no longer jumps ahead of
+  changes already queued.
+
 ### Fixed
 
 - Entity proxies: an entity whose id contains dots (such as `install.role`) no longer throws `"undefined" is not valid
