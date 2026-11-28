@@ -10,6 +10,7 @@ import { normalizeEntities } from '../store';
 import { getCompositeKey, getMemo, limitRecursion } from '../utils';
 import { TestAction } from './testWorkflows/ShouldExecuteStateful';
 import { omit } from 'lodash';
+import { WithStartWorkflowOperation } from '@temporalio/client';
 
 describe('StatefulWorkflow', () => {
   let execute: (
@@ -873,6 +874,179 @@ describe('StatefulWorkflow', () => {
 
       const parentData = await handle.query('data');
       expect(parentData).toEqual(data);
+    });
+  });
+
+  describe('2.0.1 managed child fixes', () => {
+    it('Should call processData with the workflow as this', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const data = { id: userId, listings: [{ id: listingId, name: 'Listing' }] };
+      const handle = await execute(workflows.ShouldBindProcessData, { id: userId, entityName: 'User', data });
+      await sleep(3000);
+
+      const childState = await getClient().workflow.getHandle(`Listing-${listingId}`).query('state');
+      expect(childState.Listing[listingId].name).toEqual(`Listing via ${userId}`);
+      await handle.terminate('test done'); // also ends the child (parent close policy)
+    });
+
+    it('Should start the other children when one child ID already exists', async () => {
+      const userId = uuid4();
+      const [existingId, newId] = [uuid4(), uuid4()];
+      const client = getClient();
+      // A workflow already runs under the first listing's child ID.
+      const existing = await client.workflow.start(workflows.ShouldExecuteStatefulChild, {
+        taskQueue: 'test',
+        workflowId: `Listing-${existingId}`,
+        args: [{ id: existingId, entityName: 'Listing', data: { id: existingId, name: 'Already running' } }]
+      });
+
+      const data = {
+        id: userId,
+        listings: [
+          { id: existingId, name: 'First' },
+          { id: newId, name: 'Second' }
+        ]
+      };
+      const handle = await execute(workflows.ShouldSkipExistingChild, { id: userId, entityName: 'User', data });
+      await sleep(3000);
+
+      const second = client.workflow.getHandle(`Listing-${newId}`);
+      expect((await second.describe()).status.name).toBe('RUNNING');
+      expect((await existing.describe()).runId).toEqual(existing.firstExecutionRunId);
+      expect((await handle.describe()).status.name).toBe('RUNNING');
+      // Ending the parent also ends its child; the pre-existing workflow is not its child.
+      for (const h of [handle, existing]) await h.terminate('test done');
+    });
+
+    it('children.strict: a child cancelled from outside is not started again', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const data = { id: userId, listings: [{ id: listingId, name: 'Listing' }] };
+      const handle = await execute(workflows.ShouldUseStrictChildren, { id: userId, entityName: 'User', data });
+      await sleep(3000);
+      const child = getClient().workflow.getHandle(`Listing-${listingId}`);
+      expect((await child.describe()).status.name).toBe('RUNNING');
+
+      await child.cancel();
+      await sleep(4000);
+      expect((await child.describe()).status.name).toBe('CANCELLED');
+      await handle.terminate('test done');
+    });
+
+    it('children.strict: a child outlives its parent (ABANDON)', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const data = { id: userId, listings: [{ id: listingId, name: 'Listing' }] };
+      const handle = await execute(workflows.ShouldUseStrictChildren, { id: userId, entityName: 'User', data });
+      await sleep(3000);
+      await handle.terminate('test done');
+      await sleep(1000);
+      const child = getClient().workflow.getHandle(`Listing-${listingId}`);
+      expect((await child.describe()).status.name).toBe('RUNNING');
+      await child.terminate('test done');
+    });
+
+    it('Should keep a change from a signal sent with the start (start data first)', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const client = getClient();
+      const handle = await client.workflow.signalWithStart(workflows.ShouldLoadStartDataFirst, {
+        taskQueue: 'test',
+        workflowId: `User-${userId}`,
+        args: [{ id: userId, entityName: 'User', data: { id: userId, listings: [] } }],
+        signal: 'update',
+        signalArgs: [
+          { data: { id: userId, listings: [{ id: listingId, name: 'From the signal' }] }, entityName: 'User' }
+        ]
+      });
+      await sleep(3000);
+
+      const state = await handle.query('state');
+      expect(state.User[userId].listings).toEqual([listingId]);
+      expect(state.Listing[listingId].name).toEqual('From the signal');
+      expect((await client.workflow.getHandle(`Listing-${listingId}`).describe()).status.name).toBe('RUNNING');
+      await handle.terminate('test done');
+    });
+
+    it('Should run execute for a change made by a signal sent with the start (no lost wake-up)', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const client = getClient();
+      const handle = await client.workflow.signalWithStart(workflows.ShouldRunExecuteAfterEarlySignal, {
+        taskQueue: 'test',
+        workflowId: `User-${userId}`,
+        args: [{ id: userId, entityName: 'User', data: { id: userId, listings: [] } }],
+        signal: 'update',
+        signalArgs: [
+          { data: { id: userId, listings: [{ id: listingId, name: 'From the signal' }] }, entityName: 'User' }
+        ]
+      });
+      await sleep(5000);
+
+      const state = await handle.query('state');
+      expect(state.User[userId]).toMatchObject({ listings: [listingId], seen: 1 });
+      await handle.terminate('test done');
+    });
+
+    it('Should run an action sent with the start on the start data (update-with-start)', async () => {
+      const userId = uuid4();
+      const listingId = uuid4();
+      const client = getClient();
+      const startWorkflowOperation = new WithStartWorkflowOperation(workflows.ShouldLoadStartDataFirst, {
+        taskQueue: 'test',
+        workflowId: `User-${userId}`,
+        workflowIdConflictPolicy: 'FAIL',
+        args: [{ id: userId, entityName: 'User', data: { id: userId, name: 'Start', listings: [] } }]
+      });
+      const result = await client.workflow.executeUpdateWithStart('addListing', {
+        args: [{ id: listingId, name: 'From the action' }],
+        startWorkflowOperation
+      });
+      expect(result).toEqual({ count: 1 });
+      const handle = await startWorkflowOperation.workflowHandle();
+      await sleep(3000);
+
+      const state = await handle.query('state');
+      expect(state.User[userId]).toMatchObject({ name: 'Start', listings: [listingId] });
+      expect((await client.workflow.getHandle(`Listing-${listingId}`).describe()).status.name).toBe('RUNNING');
+      await handle.terminate('test done');
+    });
+  });
+
+  describe('2.0.1 loop', () => {
+    const timersStarted = async (handle) =>
+      (await handle.fetchHistory()).events.filter((event) => !!event.timerStartedEventAttributes).length;
+
+    it('Should run each step of a state-machine execute() without sleeping', async () => {
+      const userId = uuid4();
+      const handle = await getClient().workflow.start(workflows.ShouldStepWithoutSleeping, {
+        taskQueue: 'test',
+        workflowId: `User-${userId}`,
+        args: [{ id: userId, entityName: 'User', data: { id: userId, step: 0 } }]
+      });
+      await sleep(2000);
+
+      const state = await handle.query('state');
+      expect(state.User[userId].step).toBe(3);
+      expect(await timersStarted(handle)).toBe(0);
+      await handle.terminate('test done');
+    });
+
+    it('Should still yield when execute() leaves changes on every pass', async () => {
+      const userId = uuid4();
+      const handle = await getClient().workflow.start(workflows.ShouldYieldOnRunawayChanges, {
+        taskQueue: 'test',
+        workflowId: `User-${userId}`,
+        args: [{ id: userId, entityName: 'User', data: { id: userId, step: 0 } }]
+      });
+      await sleep(4000);
+
+      const state = await handle.query('state');
+      expect(state.User[userId].step).toBeGreaterThanOrEqual(100);
+      expect(await timersStarted(handle)).toBeGreaterThanOrEqual(1);
+      expect((await handle.describe()).status.name).toBe('RUNNING');
+      await handle.terminate('test done');
     });
   });
 

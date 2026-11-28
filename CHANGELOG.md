@@ -1,5 +1,42 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `StatefulWorkflow`: `children: { strict: true }` (opt-in; planned as the default in 3.0). Managed children then default
+  to `workflowIdReusePolicy` REJECT_DUPLICATE, `parentClosePolicy` ABANDON and no retries, and a child cancelled from
+  outside is not started again. A managed path's own settings still win.
+
+### Changed
+
+- `StatefulWorkflow`: the start `state` and `data` are queued in the constructor, before any signal or update handler is
+  bound, so handlers that arrive with the start (signal-with-start, update-with-start) work on top of the start data
+  instead of having it merged over their changes. Managed paths are configured on first need, and an `@Action` first
+  applies queued changes, so it sees the start data.
+- `StateManager.dispatch`: changes apply in the order they were dispatched; a sync dispatch no longer jumps ahead of
+  changes already queued.
+- `StatefulWorkflow`: when `execute()` leaves changes pending, the loop applies them in another pass at once instead of
+  sleeping 2.5 s first. A state machine that writes one step per pass no longer waits about 8 s per task. After 100
+  such passes in a row (`maxImmediatePasses`) the loop still sleeps once, so an `execute()` that writes on every pass
+  yields instead of tripping Temporal's deadlock detector.
+
+### Fixed
+
+- `StatefulWorkflow`: the loop consumes a wake-up (`pendingIteration`) after it waits, not before. A state change made
+  before the loop first waited (by a signal sent with the start) or while `execute()` ran was dropped, and the
+  workflow slept with work pending.
+- `Workflow` (continue-as-new loop): the same fix. The loop cleared `pendingIteration` before it waited and again after
+  `execute()`, so a wake-up set by a signal while `execute()` ran was dropped. Setting `pendingIteration` inside
+  `execute()` now also runs another pass, as documented.
+- Entity proxies: a write through the proxy of an entity whose id contains dots (such as `install.role`) no longer
+  throws `"undefined" is not valid JSON`. The `<entity>.<id>.` prefix is now removed as a whole before the rest of the
+  mutation path is split, and a proxy only handles mutations under its own exact prefix.
+- `StatefulWorkflow`: a managed path's `processData` runs with the workflow as `this`, like `condition` (it was called
+  unbound).
+- `StatefulWorkflow`: when a managed child's ID already exists (`WorkflowExecutionAlreadyStartedError`), the start is
+  logged and skipped. It used to stop the whole state-change pass, so the other children of that change never started.
+
 ## 2.0.0
 
 Strict by default, and runs on current Temporal SDKs. See [MIGRATION-2.0.md](./MIGRATION-2.0.md) for what to change.

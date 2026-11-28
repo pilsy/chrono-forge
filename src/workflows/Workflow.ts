@@ -627,10 +627,6 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
     try {
       while (this.iteration <= this.maxIterations) {
-        if (this.pendingIteration) {
-          this.pendingIteration = false;
-        }
-
         await workflow.condition(
           () =>
             (typeof (this as any).condition === 'function' && (this as any).condition()) ||
@@ -642,6 +638,10 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
           // @ts-ignore
           this.conditionTimeout ?? undefined
         );
+        // 2.0.1: consume the wake-up after the wait, as StatefulWorkflow does. 2.0 cleared it before the wait and again
+        // after execute(), so a wake-up set by a signal while execute() ran was dropped and the loop slept with work
+        // pending.
+        this.pendingIteration = false;
 
         await this.waitWhilePaused();
 
@@ -674,10 +674,6 @@ export abstract class Workflow<P = unknown, O = unknown> extends EventEmitter {
 
         if (this.pendingUpdate) {
           this.pendingUpdate = false;
-        }
-
-        if (this.pendingIteration) {
-          this.pendingIteration = false;
         }
       }
 

@@ -452,6 +452,18 @@ describe('Workflow', () => {
     });
   });
 
+  describe('2.0.1 loop', () => {
+    it('Should run another pass for a wake-up signalled while execute() runs (no lost wake-up)', async () => {
+      const handle = await execute(workflows.ShouldKeepWakeUpDuringExecute);
+      await sleep(1000);
+      await handle.signal('wake');
+      await sleep(4000);
+
+      expect(await handle.query('passes')).toBe(2);
+      await handle.terminate('test done');
+    });
+  });
+
   describe('Signal Handling', () => {
     it('Should bind signals correctly', async () => {
       const handle = await execute(workflows.ShouldBindSignalsCorrectly);

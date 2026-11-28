@@ -31,7 +31,7 @@ import { EnhancedEntity, SchemaManager } from '../store/SchemaManager';
 import { StateManager } from '../store/StateManager';
 import { limitRecursion } from '../utils/limitRecursion';
 import { getCompositeKey } from '../utils/getCompositeKey';
-import { Duration, HandlerUnfinishedPolicy } from '@temporalio/common';
+import { Duration, HandlerUnfinishedPolicy, WorkflowExecutionAlreadyStartedError } from '@temporalio/common';
 import { flatten } from '../utils/flatten';
 import { unflatten } from '../utils';
 import { mergeDeepRight } from 'ramda';
@@ -121,7 +121,11 @@ export type ManagedPath = {
       selector?: string;
     };
   };
-  processData?: (entity: Record<string, any>, data: StatefulWorkflow['data']) => Record<string, any>;
+  processData?: (
+    this: StatefulWorkflow,
+    entity: Record<string, any>,
+    data: StatefulWorkflow['data']
+  ) => Record<string, any>;
 };
 
 /**
@@ -257,6 +261,12 @@ export type StatefulWorkflowOptions = {
   workflowType?: string;
   children?: {
     autoStart?: boolean;
+    /**
+     * 2.0.1, opt-in (the default in 3.0): safe defaults for managed children. Unless a managed path sets its own:
+     * `workflowIdReusePolicy` REJECT_DUPLICATE, `parentClosePolicy` ABANDON, `retry.maximumAttempts` 1. A child
+     * cancelled from outside is not started again.
+     */
+    strict?: boolean;
     update?: {
       enabled?: boolean;
       sync?: boolean;
@@ -468,6 +478,17 @@ export abstract class StatefulWorkflow<
    * Current workflow iteration count.
    */
   protected iteration = 0;
+
+  /**
+   * 2.0.1: passes in a row that ended with changes still pending, each followed at once by another pass.
+   */
+  protected immediatePasses = 0;
+
+  /**
+   * 2.0.1: after this many immediate passes in a row the loop sleeps once (2.5 s), so an execute() that leaves changes
+   * on every pass yields instead of running the workflow task into Temporal's deadlock detector.
+   */
+  protected maxImmediatePasses = 100;
 
   /**
    * Internal reference to the Schema instance for this workflow.
@@ -1010,6 +1031,22 @@ export abstract class StatefulWorkflow<
 
     this.apiUrl = this.params?.apiUrl ?? options?.apiUrl;
     this.apiToken = this.params?.apiToken;
+
+    // 2.0.1: queue the start state and data here, before any signal or update handler is bound. They used to be
+    // queued in onSetup, after handlers that arrived with the start (signal-with-start, update-with-start) had already
+    // changed state, so the start data was merged over them (an empty list in it wiped what a signal had added).
+    // Queued, not applied: the first pass still emits `created` and starts managed children.
+    if (this.params?.state && !isEmpty(this.params?.state)) {
+      void this.stateManager.dispatch(setState(this.params.state), false, workflow.workflowInfo().workflowId);
+    }
+
+    if (this.params?.data && !isEmpty(this.params?.data)) {
+      void this.stateManager.dispatch(
+        updateEntity(this.params.data, this.entityName),
+        false,
+        workflow.workflowInfo().workflowId
+      );
+    }
   }
 
   @On('setup')
@@ -1018,18 +1055,6 @@ export abstract class StatefulWorkflow<
       for (const subscription of this.params.subscriptions) {
         await this.subscribe(subscription);
       }
-    }
-
-    if (this.params?.state && !isEmpty(this.params?.state)) {
-      await this.stateManager.dispatch(setState(this.params.state), false, workflow.workflowInfo().workflowId);
-    }
-
-    if (this.params?.data && !isEmpty(this.params?.data)) {
-      await this.stateManager.dispatch(
-        updateEntity(this.params.data, this.entityName),
-        false,
-        workflow.workflowInfo().workflowId
-      );
     }
   }
 
@@ -1061,15 +1086,11 @@ export abstract class StatefulWorkflow<
   protected async executeWorkflow(): Promise<any> {
     this.log.trace(`executeWorkflow`);
 
-    if (this.schema) this.configureManagedPaths(this.schema);
+    this.ensureManagedPaths();
     if (this.startDelay) await workflow.sleep(this.startDelay);
 
     try {
       while (this.iteration <= this.maxIterations) {
-        if (this.pendingIteration) {
-          this.pendingIteration = false;
-        }
-
         await workflow.condition(
           () =>
             (typeof (this as any).condition === 'function' && (this as any).condition()) ||
@@ -1082,6 +1103,10 @@ export abstract class StatefulWorkflow<
           // @ts-ignore
           this.conditionTimeout ?? undefined
         );
+        // 2.0.1: consume the wake-up after the wait, not before it. Clearing it before the wait dropped a wake-up that
+        // arrived before the loop first waited (a state change made by a signal sent with the start) or while
+        // execute() ran, and the loop slept with work pending.
+        this.pendingIteration = false;
         this.log.trace(`executeWorkflow: ${this.iteration}`);
 
         if (this.status === 'paused') {
@@ -1108,11 +1133,18 @@ export abstract class StatefulWorkflow<
           this.pendingUpdate = false;
         }
 
+        // 2.0.1: changes that execute() left pending are applied by another pass at once. 2.0 slept 2.5 s first, which
+        // cost a state machine that writes one step per pass about 8 s per task. An execute() that leaves changes on
+        // every pass still yields: after `maxImmediatePasses` passes in a row, one 2.5 s sleep, as before.
         if (!this.isInTerminalState() && this.pendingChanges.length) {
-          this.log.warn(`Pending changes after processing: ${this.pendingChanges.length}`);
-          await workflow.sleep(2500);
+          if (++this.immediatePasses >= this.maxImmediatePasses) {
+            this.log.warn(`Pending changes after ${this.immediatePasses} passes: ${this.pendingChanges.length}`);
+            this.immediatePasses = 0;
+            await workflow.sleep(2500);
+          }
           continue;
         }
+        this.immediatePasses = 0;
 
         if (this.isInTerminalState()) {
           if (this.status !== 'errored') {
@@ -1827,6 +1859,10 @@ export abstract class StatefulWorkflow<
   ): Promise<void> {
     this.log.trace(`processChildState`);
 
+    // 2.0.1: a signal or update that arrives with the start can change state before executeWorkflow configured the
+    // managed paths; configure them on first need so those changes start their children too.
+    this.ensureManagedPaths();
+
     const newData = limitRecursion(this.id, this.entityName, newState, this.stateManager);
     const oldData = limitRecursion(this.id, this.entityName, previousState);
 
@@ -2202,6 +2238,21 @@ export abstract class StatefulWorkflow<
    * - The method relies on the structure provided by `parentSchema` to accurately configure management paths
    *   necessary for processing entity states.
    */
+  private managedPathsConfigured = false;
+
+  /** `children.strict` from the options (see StatefulWorkflowOptions). */
+  protected strictChildren(): boolean {
+    return (this.options as StatefulWorkflowOptions | undefined)?.children?.strict === true;
+  }
+
+  /** Configure `managedPaths` from the schema once, on first need (field initializers have run by then). */
+  protected ensureManagedPaths(): void {
+    if (!this.managedPathsConfigured && this.schema) {
+      this.configureManagedPaths(this.schema);
+      this.managedPathsConfigured = true;
+    }
+  }
+
   protected configureManagedPaths(
     parentSchema: Schema & { schema?: { [key: string]: Schema & [{ _idAttribute: string; _key: string }] } }
   ): void {
@@ -2302,22 +2353,27 @@ export abstract class StatefulWorkflow<
         newItem = newState[config.entityName as string][newItem];
       }
 
+      const strict = this.strictChildren();
       const {
         workflowType,
         entityName,
         cancellationType = workflow.ChildWorkflowCancellationType.WAIT_CANCELLATION_REQUESTED,
-        parentClosePolicy = workflow.ParentClosePolicy.TERMINATE,
+        parentClosePolicy = strict ? workflow.ParentClosePolicy.ABANDON : workflow.ParentClosePolicy.TERMINATE,
         workflowIdConflictPolicy = workflow.WorkflowIdConflictPolicy.TERMINATE_EXISTING,
-        workflowIdReusePolicy = workflow.WorkflowIdReusePolicy.ALLOW_DUPLICATE,
+        workflowIdReusePolicy = strict
+          ? workflow.WorkflowIdReusePolicy.REJECT_DUPLICATE
+          : workflow.WorkflowIdReusePolicy.ALLOW_DUPLICATE,
         workflowTaskTimeout = 30000,
         startDelay = 1000,
         startToCloseTimeout = '30 days',
-        retry = {
-          initialInterval: 1000 * 1,
-          maximumInterval: 1000 * 20,
-          backoffCoefficient: 1.5,
-          maximumAttempts: 30
-        }
+        retry = strict
+          ? { maximumAttempts: 1 }
+          : {
+              initialInterval: 1000 * 1,
+              maximumInterval: 1000 * 20,
+              backoffCoefficient: 1.5,
+              maximumAttempts: 30
+            }
       } = config;
 
       this.log.trace(
@@ -2326,7 +2382,9 @@ export abstract class StatefulWorkflow<
 
       const data =
         typeof config.processData === 'function'
-          ? config.processData(
+          ? // 2.0.1: called with the workflow as `this`, like `condition` (it was called unbound).
+            config.processData.call(
+              this,
               limitRecursion(id, String(entityName), newState, this.stateManager),
               limitRecursion(this.id, this.entityName, newState, this.stateManager)
             )
@@ -2408,6 +2466,7 @@ export abstract class StatefulWorkflow<
         .catch(async (error) => {
           if (
             workflow.isCancellation(error) &&
+            !strict &&
             this.status !== 'cancelled' &&
             this.status !== 'cancelling' &&
             this.handles.has(workflowId)
@@ -2434,6 +2493,13 @@ export abstract class StatefulWorkflow<
           }
         });
     } catch (err) {
+      // 2.0.1: a child with this ID already exists (still running, or closed under a reuse policy that refuses it,
+      // e.g. after continue-as-new dropped the handles). Rethrowing stopped the whole state-change pass, so later
+      // children in the same pass never started. Log it and go on with the others.
+      if (err instanceof WorkflowExecutionAlreadyStartedError) {
+        this.log.warn(`Child workflow ${workflowId} already exists; not starting it again`);
+        return;
+      }
       if (err instanceof Error) {
         this.log.error(`Failed to start new child workflow: ${err.message}\n${err.stack}`);
       } else {
@@ -2948,6 +3014,11 @@ export abstract class StatefulWorkflow<
    * - Sets pendingUpdate to true to ensure state is processed after action execution
    */
   protected async runAction(methodName: string, ...args: any[]): Promise<any> {
+    // 2.0.1: apply queued changes first, so an action sees the latest state: in an update-with-start, the start data
+    // is still queued when the action runs, and `this.data` was undefined.
+    if (this.pendingChanges.length) {
+      await this.processState();
+    }
     this.actionRunning = true;
     let result: any;
     let error: any;
@@ -2993,6 +3064,7 @@ export abstract class StatefulWorkflow<
       this.pendingIteration = false;
       this.pendingUpdate = false;
       this.iteration = 0;
+      this.immediatePasses = 0;
       this.selectorPatternCache.clear();
       this.subscriptionHandles.clear();
       this.ancestorHandles.clear();

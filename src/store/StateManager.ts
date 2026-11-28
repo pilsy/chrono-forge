@@ -168,10 +168,11 @@ export class StateManager extends EventEmitter {
     const actionArray = Array.isArray(actions) ? actions : [actions];
     const queueItems = actionArray.map((action) => ({ action, origin }));
 
+    // 2.0.1: changes apply in the order they were dispatched. A sync dispatch used to apply its own changes at once,
+    // ahead of changes already queued (such as a workflow's start data), which were then merged over it.
+    queueItems.forEach((item) => this._queue.enqueue(item));
     if (sync && !this._processing) {
-      await this.processChanges(queueItems);
-    } else {
-      queueItems.forEach((item) => this._queue.enqueue(item));
+      await this.processChanges();
     }
   }
 
