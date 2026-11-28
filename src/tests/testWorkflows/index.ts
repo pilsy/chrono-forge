@@ -54,3 +54,8 @@ export {
   ShouldLoadStartDataFirst,
   ShouldRunExecuteAfterEarlySignal
 } from './ShouldFixStatefulFindings';
+export {
+  ShouldStepWithoutSleeping,
+  ShouldYieldOnRunawayChanges,
+  ShouldKeepWakeUpDuringExecute
+} from './ShouldLoopWithoutWaiting';

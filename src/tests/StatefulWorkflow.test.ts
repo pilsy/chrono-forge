@@ -1014,6 +1014,42 @@ describe('StatefulWorkflow', () => {
     });
   });
 
+  describe('2.0.1 loop', () => {
+    const timersStarted = async (handle) =>
+      (await handle.fetchHistory()).events.filter((event) => !!event.timerStartedEventAttributes).length;
+
+    it('Should run each step of a state-machine execute() without sleeping', async () => {
+      const userId = uuid4();
+      const handle = await getClient().workflow.start(workflows.ShouldStepWithoutSleeping, {
+        taskQueue: 'test',
+        workflowId: `User-${userId}`,
+        args: [{ id: userId, entityName: 'User', data: { id: userId, step: 0 } }]
+      });
+      await sleep(2000);
+
+      const state = await handle.query('state');
+      expect(state.User[userId].step).toBe(3);
+      expect(await timersStarted(handle)).toBe(0);
+      await handle.terminate('test done');
+    });
+
+    it('Should still yield when execute() leaves changes on every pass', async () => {
+      const userId = uuid4();
+      const handle = await getClient().workflow.start(workflows.ShouldYieldOnRunawayChanges, {
+        taskQueue: 'test',
+        workflowId: `User-${userId}`,
+        args: [{ id: userId, entityName: 'User', data: { id: userId, step: 0 } }]
+      });
+      await sleep(4000);
+
+      const state = await handle.query('state');
+      expect(state.User[userId].step).toBeGreaterThanOrEqual(100);
+      expect(await timersStarted(handle)).toBeGreaterThanOrEqual(1);
+      expect((await handle.describe()).status.name).toBe('RUNNING');
+      await handle.terminate('test done');
+    });
+  });
+
   describe('Error Handling and Recovery', () => {
     it('Should handle invalid state query by returning error', async () => {
       const userId = uuid4();

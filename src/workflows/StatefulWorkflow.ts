@@ -480,6 +480,17 @@ export abstract class StatefulWorkflow<
   protected iteration = 0;
 
   /**
+   * 2.0.1: passes in a row that ended with changes still pending, each followed at once by another pass.
+   */
+  protected immediatePasses = 0;
+
+  /**
+   * 2.0.1: after this many immediate passes in a row the loop sleeps once (2.5 s), so an execute() that leaves changes
+   * on every pass yields instead of running the workflow task into Temporal's deadlock detector.
+   */
+  protected maxImmediatePasses = 100;
+
+  /**
    * Internal reference to the Schema instance for this workflow.
    */
   protected schema: Schema;
@@ -1122,11 +1133,18 @@ export abstract class StatefulWorkflow<
           this.pendingUpdate = false;
         }
 
+        // 2.0.1: changes that execute() left pending are applied by another pass at once. 2.0 slept 2.5 s first, which
+        // cost a state machine that writes one step per pass about 8 s per task. An execute() that leaves changes on
+        // every pass still yields: after `maxImmediatePasses` passes in a row, one 2.5 s sleep, as before.
         if (!this.isInTerminalState() && this.pendingChanges.length) {
-          this.log.warn(`Pending changes after processing: ${this.pendingChanges.length}`);
-          await workflow.sleep(2500);
+          if (++this.immediatePasses >= this.maxImmediatePasses) {
+            this.log.warn(`Pending changes after ${this.immediatePasses} passes: ${this.pendingChanges.length}`);
+            this.immediatePasses = 0;
+            await workflow.sleep(2500);
+          }
           continue;
         }
+        this.immediatePasses = 0;
 
         if (this.isInTerminalState()) {
           if (this.status !== 'errored') {
@@ -3046,6 +3064,7 @@ export abstract class StatefulWorkflow<
       this.pendingIteration = false;
       this.pendingUpdate = false;
       this.iteration = 0;
+      this.immediatePasses = 0;
       this.selectorPatternCache.clear();
       this.subscriptionHandles.clear();
       this.ancestorHandles.clear();

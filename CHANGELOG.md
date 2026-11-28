@@ -16,12 +16,19 @@
   applies queued changes, so it sees the start data.
 - `StateManager.dispatch`: changes apply in the order they were dispatched; a sync dispatch no longer jumps ahead of
   changes already queued.
+- `StatefulWorkflow`: when `execute()` leaves changes pending, the loop applies them in another pass at once instead of
+  sleeping 2.5 s first. A state machine that writes one step per pass no longer waits about 8 s per task. After 100
+  such passes in a row (`maxImmediatePasses`) the loop still sleeps once, so an `execute()` that writes on every pass
+  yields instead of tripping Temporal's deadlock detector.
 
 ### Fixed
 
 - `StatefulWorkflow`: the loop consumes a wake-up (`pendingIteration`) after it waits, not before. A state change made
   before the loop first waited (by a signal sent with the start) or while `execute()` ran was dropped, and the
   workflow slept with work pending.
+- `Workflow` (continue-as-new loop): the same fix. The loop cleared `pendingIteration` before it waited and again after
+  `execute()`, so a wake-up set by a signal while `execute()` ran was dropped. Setting `pendingIteration` inside
+  `execute()` now also runs another pass, as documented.
 - Entity proxies: a write through the proxy of an entity whose id contains dots (such as `install.role`) no longer
   throws `"undefined" is not valid JSON`. The `<entity>.<id>.` prefix is now removed as a whole before the rest of the
   mutation path is split, and a proxy only handles mutations under its own exact prefix.
